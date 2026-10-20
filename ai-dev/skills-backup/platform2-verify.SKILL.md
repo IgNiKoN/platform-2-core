@@ -16,6 +16,8 @@ description: "Роли ТЕСТЕР и ДОКУМЕНТАТОР Platform 2.0 / �
 
 Общее чтение: `AGENTS.md`, `FILE_MAP.md`, `ai-dev/CURRENT_CONTEXT.md`, `ai-dev/WORKFLOW.md`, карточка `ai-dev/tasks/<ID>.md`, отчёт Исполнителя, точный commit/diff.
 
+Вопросы владельцу — **всегда кнопками с вариантами** (AskUserQuestion), рекомендуемый первым с пометкой «(рекомендую)».
+
 ## TESTER
 
 - Читать `ai-dev/roles/TESTER.md`, `ai-dev/DEFINITION_OF_DONE.md`, `ai-dev/standards/CHANGE_IMPACT_AND_REGRESSION.md`.
