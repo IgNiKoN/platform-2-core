@@ -6,6 +6,8 @@ import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import type { AccessEntry, AuthApi } from '../../platform/auth/auth.service.ts';
 import { PlanfactTable } from './PlanfactTable.ts';
+import { PlanfactWorks } from './PlanfactWorks.ts';
+import type { DataApi } from './data.service.ts';
 import type { PlanfactDemo } from './model.ts';
 
 type Mode = 'loading' | 'login' | 'authed' | 'demo';
@@ -16,8 +18,8 @@ function accessLabel(entries: AccessEntry[]): string {
   return Array.from(new Set(parts)).join('; ');
 }
 
-export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo }): ReactElement {
-  const { auth, data } = props;
+export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null }): ReactElement {
+  const { auth, data, api } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -82,7 +84,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo })
           h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setMode('login') }, 'Войти'))
       : null;
 
-  return h('div', null, bar, h(PlanfactTable, { data }));
+  return h('div', null, bar, mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data }));
 }
 
 export const PLANFACT_AUTH_CSS = `

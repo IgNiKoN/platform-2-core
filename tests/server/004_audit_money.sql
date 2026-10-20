@@ -42,7 +42,7 @@ begin
   select count(*) into n from public.pf_list_works(pa); res := res || format(E'9 прораб видит работ (2): %s\n', n);
 
   reset role; perform pg_temp.as_user(uadm);
-  select count(*) into n from public.pf_list_audit(pa); res := res || format(E'10 админ видит записей журнала (1: работа ПТО): %s\n', n);
+  select count(*) into n from public.pf_list_audit(pa); res := res || format(E'10 админ видит записей журнала (2: Работа А и Работа ПТО): %s\n', n);
   select actor_email into t from public.pf_list_audit(pa) limit 1; res := res || format(E'11 автор в журнале (%s): %s\n', upto||'@test.invalid', t);
   select count(*) into n from public.pf_list_audit(pa) where (new_data ? 'plan_amount'); res := res || format(E'12 суммы в журнале у админа без money.view (0): %s\n', n);
 
