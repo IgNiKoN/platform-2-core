@@ -1,7 +1,7 @@
 /* Файл: js/services/storage/storage-db.core.js — перенесено из js/storage.js без изменения логики */
 /* Файл: js/storage.js */
 
-const DB_NAME = 'RBI_QUALITY_DB';
+const DB_NAME = 'PLATFORM2_DB';
 // Повышаем версию только при изменении структуры IndexedDB
 const DB_VERSION = 29; // БЫЛО 28, СТАЛО 29 — units_v2 + паритет с self-heal bump (локально уже 29)
 

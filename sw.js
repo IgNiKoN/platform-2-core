@@ -3,7 +3,8 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
 const SW_VERSION = '18.59.59';
-const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
+const CACHE_PREFIX = 'platform2-';
+const CACHE_NAME = `${CACHE_PREFIX}v${SW_VERSION}`;
 
 /**
  * Business path prefix → shortId (app.entry allowSet / RBI_SW_ALLOWLIST).
@@ -328,7 +329,8 @@ self.addEventListener('activate', event => {
     caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
+          // Platform 2.0: удаляем только свои старые кэши, чужие (другие приложения на origin) не трогаем
+          if (cacheName.startsWith(CACHE_PREFIX) && cacheName !== CACHE_NAME) {
             console.log('[SW] Удаляем старый кэш:', cacheName);
             return caches.delete(cacheName);
           }
@@ -349,9 +351,8 @@ self.addEventListener('fetch', event => {
     return;   // Браузер обработает запрос напрямую, без вмешательства SW
   }
 
-  // ✅ Пропускаем запросы к API (база данных, функции), чтобы не ломать синхронизацию
-  const isApi = event.request.url.includes('api.rbi-q.ru') &&
-    !event.request.url.includes('/storage/v1/object/public/');
+  // ✅ Пропускаем запросы к API Supabase (база, авторизация, функции) по пути, без привязки к хосту
+  const isApi = /\/(rest|auth|functions|realtime)\/v1\//.test(event.request.url);
   if (isApi) return;
 
   event.respondWith(

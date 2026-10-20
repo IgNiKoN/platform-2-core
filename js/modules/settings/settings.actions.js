@@ -466,8 +466,8 @@
             }
 
             // 3. ЖЕСТКО удаляем всю базу данных целиком (самый надежный способ)
-            // DB_NAME берется из storage.js ('RBI_QUALITY_DB')
-            const req = indexedDB.deleteDatabase(typeof DB_NAME !== 'undefined' ? DB_NAME : 'RBI_QUALITY_DB');
+            // DB_NAME берется из storage-db.core.js ('PLATFORM2_DB')
+            const req = indexedDB.deleteDatabase(typeof DB_NAME !== 'undefined' ? DB_NAME : 'PLATFORM2_DB');
 
             await new Promise((resolve) => {
                 req.onsuccess = resolve;

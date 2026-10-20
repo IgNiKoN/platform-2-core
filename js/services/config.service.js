@@ -1,9 +1,13 @@
 /* Файл: js/services/config.service.js */
 /* Config Service v0.1 — платформенный доступ к window.APP_CONFIG (перенесён из js/config.js) */
 
+/* Platform 2.0 (P2-0002): облако выключено — адрес и ключ пустые.
+   Единственное место настройки сервера. Старый адрес и порядок подключения — docs/SERVERS.md
+   (подключать только после P2-0004, иначе запись пойдёт в таблицы Quality). */
 window.APP_CONFIG = {
-    SUPABASE_URL: 'https://api.rbi-q.ru',
-    SUPABASE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc3NTA3MjAwLCJleHAiOjE5MzUyNzM2MDB9.f2s_pInfJu74ptaavpJx7J3I6Arwavcjnkzl1z39wPk'
+    SUPABASE_URL: '',
+    SUPABASE_KEY: '',
+    CLOUD_DISABLED_MESSAGE: 'Облачный вход отключён в dev-сборке'
 };
 
 (function () {
@@ -20,6 +24,14 @@ window.APP_CONFIG = {
 
         getSupabaseKey: function () {
             return window.APP_CONFIG.SUPABASE_KEY;
+        },
+
+        isCloudEnabled: function () {
+            return !!(window.APP_CONFIG.SUPABASE_URL && window.APP_CONFIG.SUPABASE_KEY);
+        },
+
+        getCloudDisabledMessage: function () {
+            return window.APP_CONFIG.CLOUD_DISABLED_MESSAGE;
         },
 
         getConfig: function () {

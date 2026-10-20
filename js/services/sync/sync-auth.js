@@ -50,7 +50,7 @@ window.rbiBuildAuthPassword = async function (projectCode, userName, pin) {
 // === AUTH: вход или регистрация через Supabase Auth ===
 window.rbiEnsureAuthSession = async function (projectCode, userName, pin) {
     if (!window.supabaseClient) {
-        throw new Error('Supabase не подключен.');
+        throw new Error(window.APP_CONFIG.CLOUD_DISABLED_MESSAGE || 'Supabase не подключен.');
     }
 
     const email = await window.rbiBuildTechnicalEmail(projectCode, userName);
@@ -140,7 +140,7 @@ window.initSync = async function () {
         if (block && !block.innerHTML.includes('Облако отключено')) {
             block.insertAdjacentHTML(
                 'afterbegin',
-                '<div class="p-3 bg-red-50 text-red-600 text-[10px] font-bold text-center border-b border-red-200">⚠️ Облако отключено</div>'
+                '<div class="p-3 bg-red-50 text-red-600 text-[10px] font-bold text-center border-b border-red-200">⚠️ Облако отключено: ' + (window.APP_CONFIG.CLOUD_DISABLED_MESSAGE || '') + '</div>'
             );
         }
         return;
