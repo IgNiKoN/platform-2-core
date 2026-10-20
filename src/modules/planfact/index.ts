@@ -3,6 +3,7 @@
  * Контракт модуля: init(ctx) / mount(el) / unmount(). Выключатель — manifest.enabled.
  */
 import { createElement } from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { PlanfactTable, PLANFACT_CSS } from './PlanfactTable.ts';
@@ -28,13 +29,14 @@ function ensureStyle(doc: Document): void {
   doc.head.appendChild(style);
 }
 
-/** Монтирует React-экран в el. Повторный mount сначала размонтирует предыдущий. */
+/** Монтирует React-экран в el (синхронно: после вызова таблица уже в DOM). Повторный mount сначала размонтирует предыдущий. */
 export function mount(el: HTMLElement): void {
   if (root) unmount();
   ensureStyle(el.ownerDocument);
   mountedEl = el;
   root = createRoot(el);
-  root.render(createElement(PlanfactTable, { data: demo as PlanfactDemo }));
+  const r = root;
+  flushSync(() => r.render(createElement(PlanfactTable, { data: demo as PlanfactDemo })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
