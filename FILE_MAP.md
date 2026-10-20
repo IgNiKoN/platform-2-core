@@ -33,6 +33,17 @@
 
 **Коррекции к снимку ZIP (20.10.2026):** `.gitignore` нового репозитория не игнорирует `docs/` и `README.md` (правило `/dist/` корневое); `npm ci --offline` не нужен, обычный `npm ci` проходит; `tsc --noEmit` даёт 0 ошибок (старые 6 ошибок в `plan-viewer.ts`/`object-bridge.ts` устарели).
 
+## Изменения P2-0004 (ветка `task/P2-0004-access-rls`, не в `main` до приёмки)
+
+| Что | Где |
+|---|---|
+| Миграции сервера (up/down) | `supabase/migrations/001–004_*.sql`; разведка `supabase/checks/001_discovery_readonly.sql` |
+| Серверные тесты | `tests/server/rest.test.mjs` (`npm run test:server`, нужен `.env.local`), `002_permissions.sql`, `004_audit_money.sql` (SQL Editor, с откатом) |
+| Вход (почта + пароль) | `src/platform/auth/auth.service.ts` (клиент Supabase, `readAuthConfig`, `getClient`) |
+| Экран: вход/шапка | `src/modules/planfact/PlanfactApp.ts`; работы/журнал `PlanfactWorks.ts`; данные `data.service.ts` (только `public.pf_*`) |
+| Настройка сервера | `js/services/config.service.js` (`P2_SUPABASE_URL`, `P2_SUPABASE_ANON_KEY`); `.env.example` |
+| Документы | `docs/SERVERS.md`, `docs/TECH_DEBT.md` (пп. 9–16), `CHANGELOG.md` |
+
 ## Изменения P2-0002 (ветка `task/P2-0002-shell-planfact`, не в `main` до приёмки)
 
 Проверено Исполнителем 20.10.2026 по коду ветки (самопроверка, не TESTER). Строки выше про адрес БД и манифесты для этой ветки **устарели**.
