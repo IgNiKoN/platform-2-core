@@ -1,0 +1,81 @@
+/**
+ * Platform entry: модуль «План/Факт» (Vite-бандл → js/dist/planfact/planfact.js).
+ * Контракт модуля: init(ctx) / mount(el) / unmount(). Выключатель — manifest.enabled.
+ */
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { Root } from 'react-dom/client';
+import { PlanfactTable, PLANFACT_CSS } from './PlanfactTable.ts';
+import type { PlanfactDemo } from './model.ts';
+import demo from './demo-data.json' with { type: 'json' };
+
+const ROUTE = '#/planfact';
+const VIEW_ID = 'tab-planfact';
+const STYLE_ID = 'planfact-style';
+
+let root: Root | null = null;
+let mountedEl: HTMLElement | null = null;
+
+interface ShellCtx {
+  shell?: { renderSidebar?: () => void } | null;
+}
+
+function ensureStyle(doc: Document): void {
+  if (doc.getElementById(STYLE_ID)) return;
+  const style = doc.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = PLANFACT_CSS;
+  doc.head.appendChild(style);
+}
+
+/** Монтирует React-экран в el. Повторный mount сначала размонтирует предыдущий. */
+export function mount(el: HTMLElement): void {
+  if (root) unmount();
+  ensureStyle(el.ownerDocument);
+  mountedEl = el;
+  root = createRoot(el);
+  root.render(createElement(PlanfactTable, { data: demo as PlanfactDemo }));
+}
+
+/** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
+export function unmount(): void {
+  if (root) root.unmount();
+  root = null;
+  if (mountedEl) mountedEl.replaceChildren();
+  mountedEl = null;
+}
+
+export function isMounted(): boolean {
+  return root !== null;
+}
+
+function ensureView(): HTMLElement {
+  let el = document.getElementById(VIEW_ID);
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = VIEW_ID;
+  el.className = 'view-section hidden';
+  const anchor = document.getElementById('tab-mode-placeholder');
+  if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(el, anchor.nextSibling);
+  else document.body.appendChild(el);
+  return el;
+}
+
+/** Маршрут #/planfact: показать вкладку модуля (как switchViewNode оболочки) и смонтировать экран. */
+function showView(): void {
+  const el = ensureView();
+  document.querySelectorAll('.view-section').forEach((n) => n.classList.remove('active'));
+  el.classList.add('active');
+  const header = document.getElementById('main-header');
+  if (header) header.style.display = 'none';
+  if (mountedEl !== el || !root) mount(el);
+}
+
+export async function init(ctx?: ShellCtx): Promise<void> {
+  const router = (window as unknown as { AppRouter?: { addRoute?: (p: string, fn: () => void) => void } }).AppRouter;
+  if (router && typeof router.addRoute === 'function') {
+    router.addRoute(ROUTE, showView);
+    if (String(location.hash || '').indexOf(ROUTE) === 0) showView();
+  }
+  if (ctx && ctx.shell && typeof ctx.shell.renderSidebar === 'function') ctx.shell.renderSidebar();
+}
