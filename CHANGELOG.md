@@ -7,4 +7,5 @@
 - Модуль `planfact` (React 19.3.1 + TS): демо-таблица работ (ед., план, факт, %), темы оболочки через CSS-переменные; контракт `init/mount/unmount`; выключатель `enabled` в manifest.
 - Общий пункт меню модулей Platform 2.0 (`getPlatformMenuItems()` в `app-shell.js`).
 - Скрипты: `npm run dev`, `npm test`, `npm run build:planfact`; удалён `check:boundaries` (нет `_ai/scripts`).
+- Регламент разработки перенесён в репозиторий (`CLAUDE.md`, `AGENTS.md`, `FILE_MAP.md`, `README_START_HERE.md`, `ai-dev/`).
 - `docs/SERVERS.md` — старый адрес сервера и порядок подключения (после P2-0004).
