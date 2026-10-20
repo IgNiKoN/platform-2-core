@@ -6,7 +6,10 @@ import { createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
-import { PlanfactTable, PLANFACT_CSS } from './PlanfactTable.ts';
+import { PLANFACT_CSS } from './PlanfactTable.ts';
+import { PlanfactApp, PLANFACT_AUTH_CSS } from './PlanfactApp.ts';
+import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
+import type { AuthApi } from '../../platform/auth/auth.service.ts';
 import type { PlanfactDemo } from './model.ts';
 import demo from './demo-data.json' with { type: 'json' };
 
@@ -16,6 +19,15 @@ const STYLE_ID = 'planfact-style';
 
 let root: Root | null = null;
 let mountedEl: HTMLElement | null = null;
+let auth: AuthApi | null | undefined;
+
+function getAuth(): AuthApi | null {
+  if (auth === undefined) {
+    const cfg = readAuthConfig();
+    auth = cfg ? createAuthService(cfg) : null;
+  }
+  return auth;
+}
 
 interface ShellCtx {
   shell?: { renderSidebar?: () => void } | null;
@@ -25,7 +37,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS;
   doc.head.appendChild(style);
 }
 
@@ -36,7 +48,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactTable, { data: demo as PlanfactDemo })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
