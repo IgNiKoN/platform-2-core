@@ -31,6 +31,12 @@ const perms = async (k, p) => (await (await rpc('pf_my_permissions', { p_project
 const fp = await perms('alfaForeman', pA);
 check('прораб: нет works.edit и money.view, есть fact.create', !fp.includes('planfact.works.edit') && !fp.includes('planfact.money.view') && fp.includes('planfact.fact.create'));
 check('ПТО: есть works.edit', (await perms('alfaPto', pA)).includes('planfact.works.edit'));
+const ctxOf = async (k) => (await (await rpc('pf_my_context', {}, tok[k])).json());
+const cp = await ctxOf('alfaPto'), cf = await ctxOf('alfaForeman'), cb = await ctxOf('betaPto');
+check('шапка: ПТО Альфы = Альфа · Инженер ПТО', cp.length === 1 && cp[0].company_name === 'Альфа' && cp[0].role_name === 'Инженер ПТО');
+check('шапка: прораб = Альфа · Прораб / мастер', cf.length === 1 && cf[0].role_name === 'Прораб / мастер');
+check('шапка: ПТО Беты видит только Бету', cb.length === 1 && cb[0].company_name === 'Бета');
+const anCtx = await rpc('pf_my_context', {}); check('anon не вызывает pf_my_context', anCtx.status === 401 || anCtx.status === 403);
 const fAdd = await rpc('pf_add_work', { p_project: pA, p_name: 'ВЗЛОМ-ПРОРАБ' }, tok.alfaForeman);
 check('прораб: pf_add_work отклонён', !fAdd.ok, `статус ${fAdd.status}`);
 const cross = await rpc('pf_add_work', { p_project: pB, p_name: 'ВЗЛОМ-ЧУЖОЙ' }, tok.alfaPto);
