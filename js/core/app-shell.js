@@ -24,6 +24,18 @@
   ];
   var pendingModuleSelection = null;
 
+  /**
+   * Platform 2.0: пункты меню модулей из manifest (menu.section 'platform', enabled !== false).
+   * Единая точка: новый модуль появляется в меню без правок оболочки. Клик — через data-path (router).
+   */
+  function getPlatformMenuItems() {
+    var loader = window.RBI && window.RBI.moduleLoader;
+    if (!loader || typeof loader.getMenuItems !== 'function') return [];
+    return loader.getMenuItems().filter(function (item) {
+      return item.section === 'platform' && item.path;
+    });
+  }
+
   function _i18n() {
     return window.RBI && window.RBI.services && window.RBI.services.i18n;
   }
@@ -254,6 +266,14 @@
             '</button>';
         }
       });
+      getPlatformMenuItems().forEach(function (item) {
+        var pActive = String(location.hash || '').indexOf(item.path) === 0;
+        html += '<button type="button" data-sidebar-module-id="' + item.id + '" data-path="' + item.path + '"' +
+          ' class="app-sidebar-item' + (pActive ? ' active' : '') + '" title="' + item.label + '">' +
+          '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18M10 3v18M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"></path></svg>' +
+          '<span class="app-sidebar-item-label">' + item.label + '</span>' +
+          '</button>';
+      });
       PLACEHOLDER_MODULES.forEach(function (mod) {
         var phLabel = _navLabel(mod.id, mod.label);
         html += '<button type="button" data-shell-action="showPlaceholderModule" data-shell-action-arg="' + mod.id + '"' +
@@ -390,6 +410,12 @@
             (v2Active ? '<span class="text-[8px] font-black text-indigo-500">●</span>' : '') +
             '</button>';
         }
+      });
+
+      getPlatformMenuItems().forEach(function (item) {
+        html += '<button type="button" data-path="' + item.path + '"' +
+          ' class="w-full text-left px-3.5 py-2.5 text-[11px] font-bold uppercase flex items-center justify-between gap-2 transition-colors text-slate-700 dark:text-slate-300">' +
+          '<span>' + item.label + '</span></button>';
       });
 
       html += '<div class="border-t border-[var(--card-border)] my-1"></div>';
