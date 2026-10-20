@@ -43,5 +43,23 @@ const cross = await rpc('pf_add_work', { p_project: pB, p_name: 'ВЗЛОМ-ЧУ
 check('ПТО Альфы: добавление в проект Беты отклонено', !cross.ok, `статус ${cross.status}`);
 const direct = await fetch(`${URL_}/rest/v1/works`, { method: 'POST', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaPto}`, 'Content-Type': 'application/json', 'Accept-Profile': 'planfact', 'Content-Profile': 'planfact' }, body: '{}' });
 check('схема planfact не открыта через REST напрямую', !direct.ok, `статус ${direct.status}`);
+// --- этап 4: суммы, журнал, добавление ---
+const stamp = 'REST-тест ' + new Date().toISOString();
+const addOk = await rpc('pf_add_work', { p_project: pA, p_name: stamp, p_unit: 'шт', p_plan_qty: 1 }, tok.alfaPto);
+check('ПТО добавил работу через pf_add_work', addOk.ok, `статус ${addOk.status}`);
+const wPto = await wl('alfaPto', pA), wFor = await wl('alfaForeman', pA), wAdm = await wl('alfaAdmin', pA);
+check('новая работа видна в списке ПТО', wPto.some((w) => w.name === stamp));
+check('ПТО видит суммы (есть money.view)', wPto.some((w) => w.plan_amount !== null));
+check('прораб не видит ни одной суммы', wFor.length > 0 && wFor.every((w) => w.plan_amount === null));
+check('администратор не видит ни одной суммы', wAdm.length > 0 && wAdm.every((w) => w.plan_amount === null));
+const aud = async (k, p) => (await (await rpc('pf_list_audit', { p_project: p }, tok[k])).json());
+const audAdm = await aud('alfaAdmin', pA);
+check('админ видит в журнале запись: кто=alfa-pto, что=INSERT', audAdm.some((r) => r.actor_email === 'alfa-pto@test.invalid' && r.action === 'INSERT' && r.new_data?.name === stamp));
+check('в журнале у админа нет сумм', audAdm.every((r) => !r.new_data || !('plan_amount' in r.new_data)));
+check('ПТО не видит журнал', (await aud('alfaPto', pA)).length === 0);
+check('прораб не видит журнал', (await aud('alfaForeman', pA)).length === 0);
+check('ПТО Беты не видит журнал Альфы', (await aud('betaPto', pA)).length === 0);
+const tamper = await fetch(`${URL_}/rest/v1/audit_log`, { method: 'DELETE', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaAdmin}`, 'Content-Profile': 'planfact' } });
+check('журнал не удалить через REST', !tamper.ok, `статус ${tamper.status}`);
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');
 process.exit(fails ? 1 : 0);
