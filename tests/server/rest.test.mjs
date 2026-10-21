@@ -180,10 +180,19 @@ else {
   const accV = await j(await rpc('pf_my_company_access', {}, tok.alfaAdmin));
   const cV = accV[0]?.company_id;
   const stampV = 'REST-ВОР ' + new Date().toISOString();
-  let pv = null, imp = null;
+  let pv = null, imp = null; const asgV = [];
   try {
     pv = await j(await rpc('pf_create_project', { p_company: cV, p_name: stampV }, tok.alfaAdmin));
     const sec = await j(await rpc('pf_add_location', { p_project: pv, p_parent: null, p_type: 'section', p_name: 'Секция 1' }, tok.alfaAdmin));
+    // Тестовые ПТО и прораб назначены на основной проект Альфы — на время теста назначаем их и на проект REST-ВОР (в конце — отзыв).
+    const rolesV = await j(await rpc('pf_list_company_roles', { p_company: cV }, tok.alfaAdmin));
+    const membersV = await j(await rpc('pf_list_company_members', { p_company: cV }, tok.alfaAdmin));
+    for (const [email, tpl] of [['alfa-pto@test.invalid', 'pto'], ['alfa-foreman@test.invalid', 'foreman']]) {
+      const u = membersV.find((m) => m.email === email)?.user_id, r = rolesV.find((x) => x.template_code === tpl)?.id;
+      const a = await rpc('pf_assign_role', { p_user: u, p_role: r, p_project: pv }, tok.alfaAdmin);
+      check(`назначение ${tpl} на проект REST-ВОР`, a.ok, `статус ${a.status}`);
+      if (a.ok) asgV.push(await j(a));
+    }
     check('ПТО: право planfact.vor.manage в проекте', (await perms('alfaPto', pv)).includes('planfact.vor.manage'));
     check('прораб: права planfact.vor.manage нет', !(await perms('alfaForeman', pv)).includes('planfact.vor.manage'));
     const sha = 'e'.repeat(64);
@@ -233,6 +242,7 @@ else {
     check('таблицы ВОР не открыты через REST напрямую', !directV.ok, `статус ${directV.status}`);
     check('anon: pf_vor_list_imports закрыт', !(await rpc('pf_vor_list_imports', { p_project: pv })).ok);
   } finally {
+    for (const a of asgV) check('назначение на проект REST-ВОР отозвано', (await rpc('pf_revoke_assignment', { p_assignment: a }, tok.alfaAdmin)).ok);
     if (pv) check('проект REST-ВОР отправлен в архив', (await rpc('pf_update_project', { p_project: pv, p_name: stampV, p_code: null, p_archived: true }, tok.alfaAdmin)).ok);
   }
 }
