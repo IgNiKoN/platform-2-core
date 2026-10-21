@@ -19,7 +19,7 @@ const dateFmt = (d: string): string => { try { return new Date(d + 'T00:00:00').
 const srcLabel = (s: string): string => s === 'manual' ? 'вручную' : s.startsWith('import:') ? 'из ВОР' : s.startsWith('estimate:') ? 'из сметы' : s;
 
 /** Поле цены в строке: сохраняет по Enter/уходу с поля, если значение изменилось. */
-function PriceField(props: { value: number | null; label: string; disabled: boolean; onSave: (v: number) => Promise<boolean>; testid: string }): ReactElement {
+export function PriceField(props: { value: number | null; label: string; disabled: boolean; onSave: (v: number) => Promise<boolean>; testid: string }): ReactElement {
   const { value, label, disabled, onSave, testid } = props;
   const [text, setText] = useState(money(value));
   const [bad, setBad] = useState(false);

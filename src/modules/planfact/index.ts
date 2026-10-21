@@ -22,6 +22,7 @@ import { VOR_WORKS_CSS } from './vor/VorWorks.ts';
 import { VOR_POSITIONS_CSS } from './vor/VorPositions.ts';
 import { createVorService } from './vor/vor.service.ts';
 import { PRICES_CSS } from './estimate/PricesTab.ts';
+import { ESTIMATE_CSS } from './estimate/EstimateView.ts';
 import { PRICES_IMPORT_CSS } from './estimate/PricesImport.ts';
 import { createEstimateService } from './estimate/estimate.service.ts';
 import type { EstimateApi } from './estimate/estimate.service.ts';
@@ -57,7 +58,8 @@ function getAuth(): AuthApi | null {
   return auth;
 }
 
-interface NavItem { id: string; label: string; path: string; icon?: string; requiresAccess?: boolean }
+/** requiresAccess: true — доступ к компании; 'estimate' — право на цены и сметы (planfact.estimate.manage). */
+interface NavItem { id: string; label: string; path: string; icon?: string; requiresAccess?: boolean | 'estimate' }
 interface ShellCtx {
   shell?: { renderSidebar?: () => void } | null;
   nav?: NavItem[];   // подвкладки из манифеста (js/modules/planfact/planfact.manifest.js) — единственный источник
@@ -67,6 +69,7 @@ type RbiGlobal = { RBI?: { platformNav?: { id: string; title: string; items: { p
 type ModeMgr = { AppModeManager?: { renderBottomNav?: () => void } };
 let navItems: NavItem[] = [];
 let hasDirectories = false;
+let hasEstimate = false;
 let navActive = false;
 
 /** Подвкладки модуля в нижнем таббаре (телефон/планшет) и nav2 (≥1280) — общий механизм оболочки window.RBI.platformNav. */
@@ -74,14 +77,15 @@ function syncPlatformNav(): void {
   const w = window as unknown as RbiGlobal & ModeMgr;
   w.RBI = w.RBI || {};
   w.RBI.platformNav = navActive
-    ? { id: 'planfact', title: 'План/Факт', items: navItems.filter((i) => !i.requiresAccess || hasDirectories).map((i) => ({ path: i.path, label: i.label, icon: i.icon })) }
+    ? { id: 'planfact', title: 'План/Факт', items: navItems.filter((i) => !i.requiresAccess || (i.requiresAccess === 'estimate' ? hasEstimate : hasDirectories)).map((i) => ({ path: i.path, label: i.label, icon: i.icon })) }
     : null;
   if (w.AppModeManager && typeof w.AppModeManager.renderBottomNav === 'function') w.AppModeManager.renderBottomNav();
 }
 
-function onAccess(has: boolean): void {
-  if (has === hasDirectories) return;
+function onAccess(has: boolean, est: boolean): void {
+  if (has === hasDirectories && est === hasEstimate) return;
   hasDirectories = has;
+  hasEstimate = est;
   if (navActive) syncPlatformNav();
 }
 
@@ -89,7 +93,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS;
   doc.head.appendChild(style);
 }
 

@@ -4,6 +4,7 @@
  * материал — canon_name + ЕИ строки (lower(btrim)).
  */
 import { canonName } from '../vor/matching.ts';
+import { kop } from './calc.ts';
 import type { VorRow } from '../vor/vor.service.ts';
 import type { PriceInput, PriceItem } from './estimate.service.ts';
 
@@ -116,4 +117,4 @@ export function parsePriceInput(s: string): number | null {
 }
 
 export const money = (n: number | null | undefined): string =>
-  n === null || n === undefined ? '' : n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  n === null || n === undefined ? '' : kop(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
