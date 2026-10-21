@@ -125,6 +125,8 @@ test('ПТО: проект → «Сохранить черновик» → за�
   await choose(el, 'вор.xlsx');
   el.querySelector('[data-testid="vor-save"]').click(); await tick();
   assert.deepEqual(saved, [{ rows: 3, sheet: 'ВОР', sha: 'a'.repeat(64), profileId: 'f0' }]);
+  assert.ok(el.querySelector('[data-testid="vor-draft"]'), 'после сохранения открыт черновик');
+  el.querySelector('[data-testid="vor-back"]').click(); await tick();
   assert.match(el.querySelector('[data-testid="vor-notice"]').textContent, /Черновик сохранён: 3 строк/);
   assert.match(el.querySelector('[data-testid="vor-imports"]').textContent, /вор\.xlsx.*лист «ВОР».*Черновик/);
   el.querySelector('[data-testid="vor-delete"]').click(); await tick();
@@ -191,12 +193,14 @@ test('профиль формы: правка колонки сразу меня
   assert.equal(profiles[0].name, 'Заказчик — ФКП');
   assert.equal((profiles[0].column_map as { unit: unknown }).unit, null);
   assert.equal(saved[0].profileId, 'f0');
+  el.querySelector('[data-testid="vor-back"]').click(); await tick();
   // Лист 141 — та же форма: узнан, ЕИ «нет» из профиля, без правки
   const sel = el.querySelector('[data-testid="vor-sheet"]');
   sel.value = '141'; sel.dispatchEvent(new win.Event('change', { bubbles: true })); await tick();
   assert.match(el.querySelector('[data-testid="vor-profile-status"]').textContent, /Форма узнана: «Заказчик — ФКП»/);
   assert.equal(el.querySelector('select[data-role="unit"]').value, '');
   el.querySelector('[data-testid="vor-save"]').click(); await tick();
+  el.querySelector('[data-testid="vor-back"]').click(); await tick();
   assert.equal(profiles.length, 1, 'узнанная форма не создаёт второй профиль');
   assert.equal(saved[1].profileId, 'f0');
 });

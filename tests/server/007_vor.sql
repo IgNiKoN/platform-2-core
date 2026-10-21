@@ -68,13 +68,14 @@ begin
             {"row_no": 11, "kind": "group", "name": "Полы", "context": {"section": "1"}},
             {"row_no": 12, "kind": "work", "number": "5", "name": "Устройство пола", "unit_text": "м2", "qty": 399.89, "prices": {"Работа": 10}, "context": {"section": "1", "apartments": "кв. 3, 16"}, "raw": [5, "Устройство пола", "м2", null, 399.89]},
             {"row_no": 13, "kind": "material", "name": "Смесь", "unit_text": "кг", "qty": 2999.18, "norm": 7.5, "parent_row_no": 12, "context": {"section": "1"}},
-            {"row_no": 14, "kind": "work", "name": "Окраска стен", "unit_text": "м2", "qty": 0, "context": {"section": "1", "floor": {"from": 2, "to": 2}}}]';
+            {"row_no": 14, "kind": "work", "name": "Окраска стен", "unit_text": "м2", "qty": 0, "context": {"section": "1", "floor": {"from": 2, "to": 2}}},
+            {"row_no": 15, "kind": "work", "name": "Монтаж дверей", "unit_text": "шт", "qty": 162, "context": {"section": "1", "floor": {"from": 4, "to": 12}}}]';
   n := public.pf_vor_add_rows(imp, rows);
-  res := res || case when n = 5 then E'7 OK 5 строк сохранены\n' else format(E'7 FAIL сохранено %s\n', n) end;
+  res := res || case when n = 6 then E'7 OK 6 строк сохранены\n' else format(E'7 FAIL сохранено %s\n', n) end;
   select count(*) into n from public.pf_vor_import_rows(imp) where row_no = 13 and parent_row_no = 12 and norm = 7.5;
   res := res || case when n = 1 then E'8 OK материал привязан к своей работе\n' else E'8 FAIL связь материал → работа\n' end;
-  select count(*) into n from public.pf_vor_list_imports(pa) where id = imp and row_count = 5 and works = 2;
-  res := res || case when n = 1 then E'9 OK счётчики загрузки: 5 строк, 2 работы\n' else E'9 FAIL счётчики\n' end;
+  select count(*) into n from public.pf_vor_list_imports(pa) where id = imp and row_count = 6 and works = 3;
+  res := res || case when n = 1 then E'9 OK счётчики загрузки: 6 строк, 3 работы\n' else E'9 FAIL счётчики\n' end;
   begin perform public.pf_vor_add_rows(imp, (select jsonb_agg(jsonb_build_object('row_no', 1000 + g, 'kind', 'work', 'name', 'x')) from generate_series(1, 1001) g));
     res := res || E'10 FAIL порция > 1 000 принята\n';
   exception when others then res := res || E'10 OK порция > 1 000 отклонена\n'; end;
@@ -124,7 +125,7 @@ begin
   select count(*) into n from public.pf_vor_list_imports(pa);
   res := res || case when n = 2 then E'22 OK прораб видит загрузки своего проекта\n' else format(E'22 FAIL прораб видит %s\n', n) end;
   select count(*) into n from public.pf_vor_import_rows(imp);
-  res := res || case when n = 5 then E'23 OK прораб читает строки\n' else E'23 FAIL строки прорабу\n' end;
+  res := res || case when n = 6 then E'23 OK прораб читает строки\n' else E'23 FAIL строки прорабу\n' end;
   begin perform public.pf_vor_create_import(pa, 'x.xlsx', repeat('a', 64), 'Лист'); res := res || E'24 FAIL прораб загрузил ВОР\n';
   exception when others then res := res || case when sqlstate = '42501' then E'24 OK прораб: загрузка — 42501\n' else E'24 FAIL ' || sqlerrm || E'\n' end; end;
   begin perform public.pf_vor_add_rows(imp, '[{"row_no": 50, "kind": "work", "name": "x"}]'); res := res || E'25 FAIL прораб дописал строки\n';
@@ -190,21 +191,24 @@ begin
   exception when others then res := res || case when sqlstate = '22023' then E'47 OK подтверждение заблокировано: есть неразобранные строки\n' else E'47 FAIL ' || sqlerrm || E'\n' end; end;
   perform public.pf_vor_resolve_rows(imp, jsonb_build_array(
     jsonb_build_object('row_no', 12, 'location_id', sec1, 'work_type_id', wt, 'unit_id', m2, 'match', 'green'),
-    jsonb_build_object('row_no', 14, 'location_id', fl2, 'work_type_id', wt2, 'unit_id', m2, 'match', 'green')));
+    jsonb_build_object('row_no', 14, 'location_id', fl2, 'work_type_id', wt2, 'unit_id', m2, 'match', 'green'),
+    jsonb_build_object('row_no', 15, 'location_id', sec1, 'work_type_id', wt2, 'unit_id', m2, 'match', 'green')));
   n := public.pf_vor_confirm(imp);
-  res := res || case when n = 2 then E'48 OK ВОР подтверждён: 2 позиции\n' else format(E'48 FAIL позиций %s\n', n) end;
+  res := res || case when n = 3 then E'48 OK ВОР подтверждён: 3 позиции\n' else format(E'48 FAIL позиций %s\n', n) end;
   select count(*) into n from planfact.vor_source_rows s where s.import_id = imp and s.kind = 'work'
     and s.qty = (select sum(p.qty * l.share) from planfact.vor_links l join planfact.vor_positions p on p.id = l.position_id where l.source_row_id = s.id);
-  res := res || case when n = 2 then E'49 OK Σ позиций = объём строки заказчика по каждой строке (в т.ч. нулевой объём)\n' else format(E'49 FAIL сошлось %s из 2\n', n) end;
+  res := res || case when n = 3 then E'49 OK Σ позиций = объём строки заказчика по каждой строке (в т.ч. нулевой объём)\n' else format(E'49 FAIL сошлось %s из 3\n', n) end;
   select count(*) into n from planfact.vor_links l join planfact.vor_positions p on p.id = l.position_id where p.import_id = imp and l.share = 1;
-  res := res || case when n = 2 then E'50 OK связки 1:1, доля 1\n' else E'50 FAIL связки\n' end;
+  res := res || case when n = 3 then E'50 OK связки 1:1, доля 1\n' else E'50 FAIL связки\n' end;
+  select count(*) into n from public.pf_vor_positions(pa) where source_row_no = 15 and location_path = 'Секция 1' and apartments_note = 'эт. 4–12';
+  res := res || case when n = 1 then E'50a OK «Этажи 4–12»: позиция на секции с пометкой «эт. 4–12»\n' else E'50a FAIL пометка диапазона этажей\n' end;
   select count(*) into n from public.pf_vor_positions(pa) where location_path = 'Секция 1' and work_type = 'Устройство пола' and unit_code = 'м²'
     and qty = 399.89 and apartments_note = 'кв. 3, 16' and source_row_no = 12;
   res := res || case when n = 1 then E'51 OK позиция: место + вид работ + ЕИ + объём + пометка квартир\n' else E'51 FAIL позиция\n' end;
   select count(*) into n from public.pf_vor_positions(pa, fl2);
   res := res || case when n = 1 then E'52 OK фильтр по месту: этаж — 1 позиция\n' else format(E'52 FAIL фильтр этажа %s\n', n) end;
   select count(*) into n from public.pf_vor_positions(pa, sec1);
-  res := res || case when n = 2 then E'53 OK фильтр по месту: секция с потомками — 2 позиции\n' else format(E'53 FAIL фильтр секции %s\n', n) end;
+  res := res || case when n = 3 then E'53 OK фильтр по месту: секция с потомками — 3 позиции\n' else format(E'53 FAIL фильтр секции %s\n', n) end;
 
   -- 8. Неизменяемость
   begin perform public.pf_vor_add_rows(imp, '[{"row_no": 70, "kind": "work", "name": "x"}]'); res := res || E'54 FAIL строки дописаны в подтверждённый\n';
@@ -229,7 +233,7 @@ begin
   -- 9. Прораб видит позиции, черновик удаляется ПТО, журнал
   perform pg_temp.as_user(ufor);
   select count(*) into n from public.pf_vor_positions(pa);
-  res := res || case when n = 2 then E'62 OK прораб видит позиции своего проекта\n' else E'62 FAIL позиции прорабу\n' end;
+  res := res || case when n = 3 then E'62 OK прораб видит позиции своего проекта\n' else E'62 FAIL позиции прорабу\n' end;
   reset role; perform pg_temp.as_user(upto);
   imp3 := public.pf_vor_create_import(pa, 'пустой.xlsx', repeat('d', 64), 'Лист');
   perform public.pf_vor_add_rows(imp3, '[{"row_no": 1, "kind": "work", "name": "Без объёма", "unit_text": "м2"}]');

@@ -99,7 +99,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   // «ВОР»: при доступе к компании; в локальном демо-режиме — только просмотр разбора файла (сервер не нужен).
   const vor = route.page === 'vor' && ((mode === 'authed' && companies.length > 0) || mode === 'demo');
   const body = vor
-    ? h('div', { className: 'pf-root' }, h(VorTab, { api: mode === 'authed' ? vorApi || null : null }))
+    ? h('div', { className: 'pf-root' }, h(VorTab, { api: mode === 'authed' ? vorApi || null : null, projects: mode === 'authed' ? projects || null : null }))
     : dirs && projects
     ? h(CompanyScope, { api: projects, render: (c) => route.sub === 'units' ? h(UnitsTab, { api: projects, company: c }) : h(ProjectsTab, { api: projects, company: c }) })
     : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });

@@ -8,6 +8,8 @@ import type { ChangeEvent, ReactElement } from 'react';
 import { parseSheet, contextLabel, columnMapFrom, editColumn } from './parse.ts';
 import type { ColumnMap, EditableRole, ParseResult, ParsedRow, RowKind, SheetData } from './parse.ts';
 import { VorColumns } from './VorColumns.ts';
+import { VorDraft } from './VorDraft.ts';
+import type { ProjectsApi } from '../../../platform/company/projects.service.ts';
 import { VOR_MANAGE } from './vor.service.ts';
 import type { VorApi, VorImport, VorProfile, VorProject } from './vor.service.ts';
 
@@ -31,8 +33,8 @@ export async function loadFile(file: File): Promise<LoadedFile> {
 const dateFmt = (iso: string): string => { try { return new Date(iso).toLocaleDateString('ru-RU'); } catch { return iso; } };
 
 /** Загрузки ВОР проекта: файл · лист · статус · строки/работы · кто и когда. Черновик можно удалить (право vor.manage). */
-function ImportsList(props: { items: VorImport[] | null; canManage: boolean; busy: boolean; onDelete: (i: VorImport) => void }): ReactElement {
-  const { items, canManage, busy, onDelete } = props;
+function ImportsList(props: { items: VorImport[] | null; canManage: boolean; busy: boolean; onDelete: (i: VorImport) => void; onOpen: (i: VorImport) => void }): ReactElement {
+  const { items, canManage, busy, onDelete, onOpen } = props;
   const [confirm, setConfirm] = useState('');
   if (items === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   return h('div', { className: 'pf-card pj-list', 'data-testid': 'vor-imports' },
@@ -42,6 +44,8 @@ function ImportsList(props: { items: VorImport[] | null; canManage: boolean; bus
             h('b', null, i.file_name), h('span', { className: 'pf-muted' }, `лист «${i.sheet_name}»`),
             h('span', { className: 'pj-badge' + (i.status === 'confirmed' ? ' vor-badge--ok' : '') }, i.status === 'confirmed' ? 'Подтверждён' : 'Черновик'),
             h('span', { className: 'pf-muted' }, `${i.row_count} строк · ${i.works} работ${i.positions ? ` · ${i.positions} позиций` : ''} · ${dateFmt(i.created_at)}${i.created_by_email ? ' · ' + i.created_by_email : ''}`)),
+          h('span', { className: 'pj-actions' },
+            h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'vor-open', onClick: () => onOpen(i) }, i.status === 'draft' && canManage ? 'Разобрать' : 'Открыть')),
           canManage && i.status === 'draft'
             ? (confirm === i.id
                 ? h('span', { className: 'pj-actions' },
@@ -69,9 +73,10 @@ function RowView(props: { r: ParsedRow }): ReactElement {
     h('span', { className: 'vor-c-qty pf-num' }, fmt(r.qty), r.norm !== null ? h('span', { className: 'vor-norm' }, `норма ${fmt(r.norm)}`) : null));
 }
 
-export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise<LoadedFile> }): ReactElement {
+export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | null; load?: (f: File) => Promise<LoadedFile> }): ReactElement {
   const load = props.load || loadFile;
   const api = props.api || null;
+  const [openId, setOpenId] = useState('');
   const [projects, setProjects] = useState<VorProject[] | null>(api ? null : []);
   const [projectId, setProjectId] = useState('');
   const [perms, setPerms] = useState<string[]>([]);
@@ -101,6 +106,8 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
   const cur = sheet ? results[sheet] : null;
   const res = cur ? cur.r : null;
   const canManage = perms.includes(VOR_MANAGE);
+  const canProjects = perms.includes('planfact.projects.manage');
+  const opened = openId && imports ? imports.find((i) => i.id === openId) || null : null;
   const edited = !!(sheet && overrides[sheet]);
   const defaultName = cur && cur.profile ? cur.profile.name : file ? file.name.replace(/\.xlsx$/i, '') : '';
   const profileName = sheet && profileNames[sheet] !== undefined ? profileNames[sheet] : defaultName;
@@ -125,7 +132,7 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
   }
   useEffect(() => {
     if (!api || !projectId) return;
-    setPerms([]); setNotice('');
+    setPerms([]); setNotice(''); setOpenId('');
     void api.permissions(projectId).then(setPerms);
     void api.listProfiles(projectId).then(setProfiles);
     void reloadImports(projectId);
@@ -150,6 +157,7 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
     if (!r.ok) { setError(r.message); return; }
     setNotice(`Черновик сохранён: ${res.rows.length} строк листа «${res.sheet}».`);
     await reloadImports(projectId);
+    setOpenId(r.value);
   }
 
   async function removeImport(i: VorImport): Promise<void> {
@@ -186,6 +194,11 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
   if (api && projects === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   if (api && projects && !projects.length) return h('div', { className: 'pf-card pj-empty pf-muted', 'data-testid': 'vor-no-projects' }, 'Нет доступных проектов. Проект создаётся в «Справочники → Объекты».');
 
+  if (api && opened) {
+    return h(VorDraft, { key: opened.id, api, projects: props.projects || null, projectId, imp: opened, canManage, canProjects,
+      onBack: () => { setOpenId(''); void reloadImports(projectId); }, onChanged: () => undefined });
+  }
+
   return h('div', { className: 'pj-tab vor-tab', 'data-testid': 'vor-tab' },
     api && projects
       ? h('div', { className: 'pf-card pj-form' },
@@ -195,7 +208,7 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
           !canManage && perms.length ? h('span', { className: 'pf-muted', 'data-testid': 'vor-readonly' }, 'Только просмотр: загрузка ВОР доступна ПТО, РП и администратору.') : null)
       : null,
     api ? h('h3', { className: 'pf-title un-title' }, 'Загрузки проекта') : null,
-    api ? h(ImportsList, { items: imports, canManage, busy: !!saving, onDelete: (i) => { void removeImport(i); } }) : null,
+    api ? h(ImportsList, { items: imports, canManage, busy: !!saving, onDelete: (i) => { void removeImport(i); }, onOpen: (i) => setOpenId(i.id) }) : null,
     api && !canManage ? null : h('div', { className: 'pf-card pj-form' },
       h('label', { className: 'pf-btn vor-file' + (busy ? ' vor-file--busy' : '') },
         busy ? 'Читаю файл…' : 'Загрузить Excel (.xlsx)',

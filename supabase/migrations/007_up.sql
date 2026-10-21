@@ -480,6 +480,7 @@ begin
 end $$;
 
 -- 12. Подтверждение: позиции 1:1 из строк-работ + связки; Σ позиций = объём строки; дальше загрузка неизменяема.
+-- Пометка позиции: диапазон этажей («эт. 4–12» — позиция на секции) и список квартир («кв. 3, 16…» — на ближайшем узле).
 create or replace function public.pf_vor_confirm(p_import uuid)
 returns int language plpgsql security definer set search_path = pg_catalog, planfact as $$
 declare v_i planfact.vor_imports; v_open int; v_n int; v_diff int; r record; v_pos uuid;
@@ -495,7 +496,12 @@ begin
   if v_n = 0 then raise exception 'В загрузке нет строк-работ' using errcode = '22023'; end if;
   for r in select * from planfact.vor_source_rows where import_id = p_import and kind = 'work' order by row_no loop
     insert into planfact.vor_positions(company_id, project_id, import_id, location_id, work_type_id, unit_id, qty, apartments_note, status)
-    values (v_i.company_id, v_i.project_id, p_import, r.location_id, r.work_type_id, r.unit_id, r.qty, nullif(r.context ->> 'apartments', ''), 'confirmed')
+    values (v_i.company_id, v_i.project_id, p_import, r.location_id, r.work_type_id, r.unit_id, r.qty,
+            nullif(concat_ws(' · ',
+              case when (r.context -> 'floor' ->> 'from') is distinct from (r.context -> 'floor' ->> 'to')
+                   then 'эт. ' || (r.context -> 'floor' ->> 'from') || '–' || (r.context -> 'floor' ->> 'to') end,
+              nullif(r.context ->> 'apartments', '')), ''),
+            'confirmed')
     returning id into v_pos;
     insert into planfact.vor_links(project_id, source_row_id, position_id, share) values (v_i.project_id, r.id, v_pos, 1);
   end loop;
