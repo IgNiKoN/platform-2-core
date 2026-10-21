@@ -11,4 +11,4 @@
 
 Проверки: PGlite 011/011a FAIL 0 + регрессия, `npm test`, `check:ts`; 011a на сервер — по решению владельца, затем `test:server`.
 
-STATUS: PLAN_READY
+STATUS: NO_TASK_PENDING
