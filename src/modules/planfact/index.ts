@@ -16,6 +16,7 @@ import { createProjectsService } from '../../platform/company/projects.service.t
 import type { ProjectsApi } from '../../platform/company/projects.service.ts';
 import { PLANFACT_WORKS_CSS } from './PlanfactWorks.ts';
 import { VOR_CSS } from './vor/VorTab.ts';
+import { VOR_COLUMNS_CSS } from './vor/VorColumns.ts';
 import { createVorService } from './vor/vor.service.ts';
 import type { VorApi } from './vor/vor.service.ts';
 import { createDataService } from './data.service.ts';
@@ -79,7 +80,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS;
   doc.head.appendChild(style);
 }
 

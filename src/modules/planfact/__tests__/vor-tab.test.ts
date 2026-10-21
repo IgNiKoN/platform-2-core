@@ -8,7 +8,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { VorTab } from '../vor/VorTab.ts';
 import type { LoadedFile } from '../vor/VorTab.ts';
-import type { VorApi, VorImport } from '../vor/vor.service.ts';
+import type { VorApi, VorImport, VorProfile } from '../vor/vor.service.ts';
 import { chunks, toServerRow } from '../vor/vor.service.ts';
 import { routeFromHash } from '../PlanfactApp.ts';
 
@@ -43,7 +43,8 @@ function mount(load: (f: File) => Promise<LoadedFile>, api: VorApi | null = null
 /** Подставной сервер ВОР: права по проекту, хранилище загрузок, порции строк. */
 function fakeApi(perms: string[], opts: { saveError?: string } = {}) {
   const store: VorImport[] = [];
-  const saved: { rows: number; sheet: string; sha: string }[] = [];
+  const saved: { rows: number; sheet: string; sha: string; profileId?: string | null }[] = [];
+  const profiles: VorProfile[] = [];
   const no = async () => ({ ok: false as const, message: 'не нужно в этом тесте' });
   const api: VorApi = {
     async listProjects() { return [{ id: 'p1', name: 'ЖК Альфа', company_id: 'c' }]; },
@@ -52,17 +53,24 @@ function fakeApi(perms: string[], opts: { saveError?: string } = {}) {
     async importRows() { return []; },
     async saveDraft(p, rows, onProgress) {
       if (opts.saveError) return { ok: false, message: opts.saveError };
-      saved.push({ rows: rows.length, sheet: p.sheet, sha: p.sha256 });
+      saved.push({ rows: rows.length, sheet: p.sheet, sha: p.sha256, profileId: p.profileId });
       if (onProgress) onProgress(rows.length);
       store.push({ id: 'i' + store.length, file_name: p.fileName, sheet_name: p.sheet, status: 'draft', row_count: rows.length, works: 1, positions: 0,
         created_at: '2026-10-21T10:00:00Z', created_by_email: 'pto@test.invalid', confirmed_at: null, profile_id: null });
       return { ok: true, value: 'i' + (store.length - 1) };
     },
     async deleteImport(id) { const k = store.findIndex((x) => x.id === id); if (k >= 0) store.splice(k, 1); return { ok: true, value: null }; },
-    async listProfiles() { return []; }, saveProfile: no, async listWorkTypes() { return []; }, addWorkType: no,
+    async listProfiles() { return profiles.slice(); },
+    async saveProfile(_p, name, signature, map) {
+      const old = profiles.find((x) => x.signature === signature);
+      if (old) { old.name = name; old.column_map = map; return { ok: true, value: old.id }; }
+      profiles.push({ id: 'f' + profiles.length, name, signature, column_map: map, rules: {}, updated_at: '' });
+      return { ok: true, value: 'f' + (profiles.length - 1) };
+    },
+    async listWorkTypes() { return []; }, addWorkType: no,
     async dictionary() { return []; }, learn: no, resolveRows: no, confirm: no, async positions() { return []; }
   };
-  return { api, store, saved };
+  return { api, store, saved, profiles };
 }
 
 async function choose(el: N, name: string) {
@@ -116,7 +124,7 @@ test('ПТО: проект → «Сохранить черновик» → за�
   assert.ok(el.querySelector('[data-testid="vor-imports-empty"]'));
   await choose(el, 'вор.xlsx');
   el.querySelector('[data-testid="vor-save"]').click(); await tick();
-  assert.deepEqual(saved, [{ rows: 3, sheet: 'ВОР', sha: 'a'.repeat(64) }]);
+  assert.deepEqual(saved, [{ rows: 3, sheet: 'ВОР', sha: 'a'.repeat(64), profileId: 'f0' }]);
   assert.match(el.querySelector('[data-testid="vor-notice"]').textContent, /Черновик сохранён: 3 строк/);
   assert.match(el.querySelector('[data-testid="vor-imports"]').textContent, /вор\.xlsx.*лист «ВОР».*Черновик/);
   el.querySelector('[data-testid="vor-delete"]').click(); await tick();
@@ -148,4 +156,47 @@ test('порции по 1 000 и строка для сервера', () => {
   assert.equal(chunks(Array.from({ length: 2500 }, (_, i) => i), 1000).length, 3);
   const r = toServerRow({ rowNo: 13, kind: 'material', number: '6', name: 'Смесь', unitText: 'кг', qty: 75, norm: 7.5, prices: {}, context: { section: '1' }, parentRowNo: 12, raw: [6, 'Смесь'] });
   assert.deepEqual(r, { row_no: 13, kind: 'material', number: '6', name: 'Смесь', unit_text: 'кг', qty: 75, norm: 7.5, prices: {}, context: { section: '1' }, parent_row_no: 12, raw: [6, 'Смесь'] });
+});
+
+/** Две «формы» одного заказчика: лист 142 (Объём) и лист 141 (Кол-во, другая формулировка) + одна правка колонки. */
+const TWO: LoadedFile = { name: 'ФКП.xlsx', sha256: 'b'.repeat(64), sheets: [
+  { name: '142', rows: [['№', 'Наименование работ', 'Ед. изм.', 'Объём', 'Примечание'], [1, 'Пол «Альфа»', 'м2', 10, 'x'], [2, 'Стены «Бета»', 'м2', 20, 'y']] },
+  { name: '141', rows: [['№', 'Наименование работ', 'Ед.изм.', 'Кол-во', 'Примечание'], [1, 'Пол «Альфа»', 'м2', 5, 'x']] }
+] };
+
+test('профиль формы: правка колонки сразу меняет разбор; сохранение запоминает форму; второй лист той же формы узнан без правки', async () => {
+  const { api, profiles, saved } = fakeApi(['planfact.vor.manage']);
+  const el = mount(async () => TWO, api);
+  await tick();
+  await choose(el, 'ФКП.xlsx');
+  assert.match(el.querySelector('[data-testid="vor-profile-status"]').textContent, /Новая форма/);
+  // Правка: «Наименование» → колонка «Примечание» (E) — разбор сразу другой
+  const nameSel = el.querySelector('select[data-role="name"]');
+  nameSel.value = '4'; nameSel.dispatchEvent(new win.Event('change', { bubbles: true })); await tick();
+  const w0 = el.querySelector('[data-kind="work"]').textContent;
+  assert.ok(w0.includes('x') && !w0.includes('Пол'), w0);
+  assert.match(el.querySelector('[data-testid="vor-profile-status"]').textContent, /изменена вручную/);
+  el.querySelector('[data-testid="vor-cols-reset"]').click(); await tick();
+  assert.match(el.querySelector('[data-kind="work"]').textContent, /Пол «Альфа»/);
+  // Правка ЕИ → нет; название формы; сохранение
+  const unitSel = el.querySelector('select[data-role="unit"]');
+  unitSel.value = ''; unitSel.dispatchEvent(new win.Event('change', { bubbles: true })); await tick();
+  const nm = el.querySelector('[data-testid="vor-profile-name"]');
+  // react-dom загружен до подставного window → считает «input» неподдерживаемым и следит за полем через focusin + keyup
+  const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')!.set!;
+  nm.dispatchEvent(new win.FocusEvent('focusin', { bubbles: true }));
+  setter.call(nm, 'Заказчик — ФКП'); nm.dispatchEvent(new win.KeyboardEvent('keyup', { bubbles: true })); await tick();
+  el.querySelector('[data-testid="vor-save"]').click(); await tick();
+  assert.equal(profiles.length, 1);
+  assert.equal(profiles[0].name, 'Заказчик — ФКП');
+  assert.equal((profiles[0].column_map as { unit: unknown }).unit, null);
+  assert.equal(saved[0].profileId, 'f0');
+  // Лист 141 — та же форма: узнан, ЕИ «нет» из профиля, без правки
+  const sel = el.querySelector('[data-testid="vor-sheet"]');
+  sel.value = '141'; sel.dispatchEvent(new win.Event('change', { bubbles: true })); await tick();
+  assert.match(el.querySelector('[data-testid="vor-profile-status"]').textContent, /Форма узнана: «Заказчик — ФКП»/);
+  assert.equal(el.querySelector('select[data-role="unit"]').value, '');
+  el.querySelector('[data-testid="vor-save"]').click(); await tick();
+  assert.equal(profiles.length, 1, 'узнанная форма не создаёт второй профиль');
+  assert.equal(saved[1].profileId, 'f0');
 });

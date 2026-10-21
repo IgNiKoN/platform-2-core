@@ -2,7 +2,7 @@
 /** Разбор ВОР (P2-0006, этап 1): три формы на синтетических образцах (вымышленные наименования), ГПР → «не ВОР», числа, места, итоги. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSheet, parseNum, parseContextTitle, findHeader, contextLabel, MAX_ROWS } from '../vor/parse.ts';
+import { parseSheet, parseNum, parseContextTitle, findHeader, contextLabel, MAX_ROWS, headerSignature, editColumn, columnMapFrom } from '../vor/parse.ts';
 import type { Cell, SheetData } from '../vor/parse.ts';
 import { readWorkbook, cellValue, looksLikeXlsx } from '../vor/xlsx-reader.ts';
 
@@ -223,4 +223,39 @@ test('чтение .xlsx: значения формул из кэша, форм�
   await assert.rejects(readWorkbook(new TextEncoder().encode('не excel')), /не файл Excel/);
   assert.equal(cellValue({ richText: [{ text: 'а' }, { text: 'б' }] }), 'аб');
   assert.equal(cellValue({ error: '#REF!' }), null);
+});
+
+test('подпись формы: «Кол-во»/«Объём», «НДС 20 %»/«НДС» — одна форма; другой порядок колонок — другая', () => {
+  const a = headerSignature(['№ п/п', 'Наименование работ', 'Ед. изм.', 'Норма расхода', 'Объём', 'Цена, в т.ч. НДС 20% / Работа', 'Цена, в т.ч. НДС 20% / Материал']);
+  const b = headerSignature(['№ п/п', 'Наименование работ', 'Ед.изм.', 'Норма расхода', 'Кол-во', 'Цена, в том числе НДС / Работа', 'Цена, в том числе НДС / Материал', '', '']);
+  const c = headerSignature(['№ п/п', 'Ед. изм.', 'Наименование работ', 'Норма расхода', 'Объём']);
+  assert.equal(a, b);
+  assert.notEqual(a, c);
+  assert.equal(a, 'number|name|unit|norm|qty|цена:работа|цена:материал');
+  assert.equal(parseSheet(fkp()).signature, parseSheet({ ...fkp(), name: 'другой лист' }).signature);
+});
+
+test('правка колонок: роль переезжает, прежняя роль колонки снимается, колонка уходит из цен; «Наименование» не снять', () => {
+  const r = parseSheet(fkp());
+  const m = r.columns!;
+  const e1 = editColumn(m, r.labels, 'qty', 3);   // «Объём» → колонка нормы
+  assert.equal(e1.qty, 3); assert.equal(e1.norm, null);
+  const e2 = editColumn(m, r.labels, 'unit', 5);  // ЕИ → первая колонка цен
+  assert.equal(e2.unit, 5); assert.equal(e2.prices.some((p) => p.col === 5), false);
+  assert.equal(editColumn(m, r.labels, 'name', null), m);
+  assert.equal(editColumn(m, r.labels, 'unit', 1), m, 'колонку «Наименования» другой роли не отдать');
+  // правка сразу меняет разбор: «Объём» = колонка нормы → у работы объёма нет
+  const re = parseSheet(fkp(), e1);
+  assert.equal(re.rows.find((x) => x.rowNo === 9)!.qty, null);
+  const e3 = editColumn({ ...m, unit: null }, ['', '', '', '', 'Количество изделий, шт'], 'qty', 4);
+  assert.equal(e3.unitDefault, 'шт');
+});
+
+test('карта колонок из профиля: верная → ColumnMap, без «Наименования» или мусор → null', () => {
+  const m = parseSheet(fkp()).columns!;
+  assert.deepEqual(columnMapFrom(JSON.parse(JSON.stringify(m))), m);
+  assert.equal(columnMapFrom({ unit: 2 }), null);
+  assert.equal(columnMapFrom('x'), null);
+  assert.deepEqual(columnMapFrom({ name: 1, unit: 'b', prices: [{ label: 'x', col: 5 }, { bad: 1 }] }),
+    { number: null, name: 1, unit: null, qty: null, norm: null, type: null, unitDefault: null, prices: [{ label: 'x', col: 5 }] });
 });

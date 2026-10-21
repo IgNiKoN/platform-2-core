@@ -64,6 +64,7 @@ export interface ParseResult {
   reason: string | null;      // почему «не похоже на ВОР»
   headerRows: number[];        // 1-based строки шапки
   labels: string[];            // подпись каждой колонки (склеенная шапка)
+  signature: string;           // подпись формы для профиля (см. headerSignature)
   columns: ColumnMap | null;
   rows: ParsedRow[];
   checks: SumCheck[];
@@ -195,6 +196,53 @@ function findTypeColumn(rows: Cell[][], from: number, width: number): number | n
   return best;
 }
 
+/** Подпись формы — её структура: роль каждой колонки шапки по порядку («№ | наименование | ЕИ | норма | объём | цена:работа…»).
+ *  Не зависит от формулировок («Кол-во» = «Объём», «НДС 20 %» = «НДС»), поэтому листы одной формы узнаются одним профилем.
+ *  Колонка с подписью без роли — «·», пустая — пусто; хвостовые пустые отбрасываются. */
+export function headerSignature(labels: string[]): string {
+  const parts = labels.map((l) => {
+    const r = roleFromLabel(l);
+    if (r === 'price') {
+      const sub = low(l.split(' / ').pop() || '').replace(/[^\p{L}]+/gu, '');
+      return 'цена:' + (sub && !/цена|стоимост|сумма/.test(sub) ? sub.slice(0, 12) : '');
+    }
+    if (r === 'ignore') return cellText(l) ? '·' : '';
+    return r;
+  });
+  while (parts.length && !parts[parts.length - 1]) parts.pop();
+  return parts.join('|').slice(0, 2000);
+}
+
+/** Карта колонок из профиля (jsonb с сервера) → ColumnMap; неверная — null. */
+export function columnMapFrom(v: unknown): ColumnMap | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  const col = (k: string): number | null => (typeof o[k] === 'number' && Number.isInteger(o[k]) && (o[k] as number) >= 0 ? o[k] as number : null);
+  const name = col('name');
+  if (name === null) return null;
+  const prices = Array.isArray(o.prices) ? (o.prices as { label?: unknown; col?: unknown }[])
+    .filter((p) => typeof p.label === 'string' && typeof p.col === 'number').map((p) => ({ label: p.label as string, col: p.col as number })) : [];
+  return { number: col('number'), name, unit: col('unit'), qty: col('qty'), norm: col('norm'), type: col('type'),
+    unitDefault: typeof o.unitDefault === 'string' ? o.unitDefault : null, prices };
+}
+
+export type EditableRole = 'number' | 'name' | 'unit' | 'qty' | 'norm' | 'type';
+/** Ручная правка карты колонок: роль → колонка (null — нет). Одна колонка — одна роль (прежняя роль колонки снимается);
+ *  колонка уходит из цен; ЕИ по подписи объёма пересчитывается. «Наименование» снять нельзя. */
+export function editColumn(map: ColumnMap, labels: string[], role: EditableRole, col: number | null): ColumnMap {
+  if (role === 'name' && col === null) return map;
+  const next: ColumnMap = { ...map, prices: map.prices.filter((p) => p.col !== col) };
+  if (col !== null) for (const r of ['number', 'unit', 'qty', 'norm', 'type'] as const) if (r !== role && next[r] === col) next[r] = null;
+  if (col !== null && role !== 'name' && next.name === col) return map;
+  if (role === 'name') next.name = col as number; else next[role] = col;
+  next.unitDefault = null;
+  if (next.unit === null && next.qty !== null) {
+    const m = (labels[next.qty] || '').split(' / ')[0].match(/,\s*([^,]{1,12})$/);
+    if (m) next.unitDefault = m[1].trim();
+  }
+  return next;
+}
+
 /** Карта колонок по подписям шапки (первая подходящая колонка каждой роли; цены — все). */
 export function columnsFromLabels(labels: string[], typeCol: number | null): ColumnMap | null {
   const map: ColumnMap = { number: null, name: -1, unit: null, qty: null, norm: null, type: typeCol, unitDefault: null, prices: [] };
@@ -273,18 +321,19 @@ function applyContext(cur: RowContext, add: RowContext): RowContext {
 
 /** Разбор листа. columnsOverride — ручная правка карты колонок (профиль формы, этап 3). */
 export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null): ParseResult {
-  const base: ParseResult = { sheet: sheet.name, isVor: false, reason: null, headerRows: [], labels: [], columns: null, rows: [], checks: [],
+  const base: ParseResult = { sheet: sheet.name, isVor: false, reason: null, headerRows: [], labels: [], signature: '', columns: null, rows: [], checks: [],
     stats: { total: 0, works: 0, materials: 0, groups: 0, context: 0, worksWithUnit: 0, worksWithQty: 0 } };
   const rows = sheet.rows;
   if (rows.length > MAX_ROWS) return { ...base, reason: `В листе ${rows.length} строк — больше предела ${MAX_ROWS}. Разделите файл на части.` };
   const hdr = findHeader(rows);
   if (!hdr) return { ...base, reason: 'Не найдена шапка: нет колонок «Наименование» и «Ед. изм.» / «Количество».' };
   const sched = scheduleScore(hdr.labels);
-  if (sched >= 6) return { ...base, headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, reason: 'Похоже на график работ (колонки-даты), а не на ВОР.' };
+  const signature = headerSignature(hdr.labels);
+  if (sched >= 6) return { ...base, headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, signature, reason: 'Похоже на график работ (колонки-даты), а не на ВОР.' };
   const width = Math.max(hdr.labels.length, ...rows.slice(hdr.dataStart, hdr.dataStart + 50).map((r) => (r || []).length));
   const typeCol = findTypeColumn(rows, hdr.dataStart, width);
   const columns = columnsOverride || columnsFromLabels(hdr.labels, typeCol);
-  if (!columns) return { ...base, headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, reason: 'Не найдена колонка «Наименование».' };
+  if (!columns) return { ...base, headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, signature, reason: 'Не найдена колонка «Наименование».' };
 
   const out: ParsedRow[] = [];
   let ctx: RowContext = {};
@@ -348,7 +397,7 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
     else if (r.kind === 'context') stats.context++;
   }
   const isVor = stats.works > 0;
-  return { sheet: sheet.name, isVor, reason: isVor ? null : 'В листе не найдено ни одной строки-работы.', headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, columns, rows: out, checks, stats };
+  return { sheet: sheet.name, isVor, reason: isVor ? null : 'В листе не найдено ни одной строки-работы.', headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, signature, columns, rows: out, checks, stats };
 }
 
 /** Сверка итогов: число в колонке цены у строки «Итого» = сумма этой колонки по работам и материалам выше

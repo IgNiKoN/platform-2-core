@@ -5,10 +5,11 @@
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
-import { parseSheet, contextLabel } from './parse.ts';
-import type { ParseResult, ParsedRow, RowKind, SheetData } from './parse.ts';
+import { parseSheet, contextLabel, columnMapFrom, editColumn } from './parse.ts';
+import type { ColumnMap, EditableRole, ParseResult, ParsedRow, RowKind, SheetData } from './parse.ts';
+import { VorColumns } from './VorColumns.ts';
 import { VOR_MANAGE } from './vor.service.ts';
-import type { VorApi, VorImport, VorProject } from './vor.service.ts';
+import type { VorApi, VorImport, VorProfile, VorProject } from './vor.service.ts';
 
 const KIND_LABEL: Record<RowKind, string> = { work: 'Работа', material: 'Материал', group: 'Группа', context: 'Место', skip: 'Пропуск' };
 type Filter = 'all' | RowKind;
@@ -82,14 +83,35 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [profiles, setProfiles] = useState<VorProfile[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, ColumnMap>>({});
+  const [profileNames, setProfileNames] = useState<Record<string, string>>({});
 
-  const results = useMemo<Record<string, ParseResult>>(() => {
-    const out: Record<string, ParseResult> = {};
-    if (file) for (const s of file.sheets) out[s.name] = parseSheet(s);
+  /** Разбор каждого листа: ручная карта колонок → профиль формы, узнанный по подписи шапки → колонки по шапке. */
+  const results = useMemo<Record<string, { r: ParseResult; profile: VorProfile | null }>>(() => {
+    const out: Record<string, { r: ParseResult; profile: VorProfile | null }> = {};
+    if (file) for (const s of file.sheets) {
+      const auto = parseSheet(s);
+      const profile = auto.signature ? profiles.find((p) => p.signature === auto.signature) || null : null;
+      const map = overrides[s.name] || (profile ? columnMapFrom(profile.column_map) : null);
+      out[s.name] = { r: map ? parseSheet(s, map) : auto, profile };
+    }
     return out;
-  }, [file]);
-  const res = sheet ? results[sheet] : null;
+  }, [file, profiles, overrides]);
+  const cur = sheet ? results[sheet] : null;
+  const res = cur ? cur.r : null;
   const canManage = perms.includes(VOR_MANAGE);
+  const edited = !!(sheet && overrides[sheet]);
+  const defaultName = cur && cur.profile ? cur.profile.name : file ? file.name.replace(/\.xlsx$/i, '') : '';
+  const profileName = sheet && profileNames[sheet] !== undefined ? profileNames[sheet] : defaultName;
+
+  function editCol(role: EditableRole, col: number | null): void {
+    if (!res || !res.columns) return;
+    setOverrides({ ...overrides, [sheet]: editColumn(res.columns, res.labels, role, col) });
+  }
+  function resetCols(): void {
+    const next = { ...overrides }; delete next[sheet]; setOverrides(next);
+  }
 
   useEffect(() => {
     if (!api) return;
@@ -105,14 +127,24 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
     if (!api || !projectId) return;
     setPerms([]); setNotice('');
     void api.permissions(projectId).then(setPerms);
+    void api.listProfiles(projectId).then(setProfiles);
     void reloadImports(projectId);
   }, [projectId]);
 
   async function saveDraft(): Promise<void> {
     if (!api || !file || !res || !res.isVor || saving) return;
     setSaving('Сохраняю…'); setError(''); setNotice('');
+    // Профиль формы: новая форма или правленая карта колонок → запомнить (по подписи шапки), иначе — узнанный профиль.
+    let profileId = cur && cur.profile ? cur.profile.id : null;
+    if (res.columns && res.signature && (!profileId || edited || (cur && cur.profile && cur.profile.name !== profileName.trim()))) {
+      const pr = await api.saveProfile(projectId, profileName.trim() || defaultName || 'Форма ВОР', res.signature, res.columns as unknown as Record<string, unknown>);
+      if (!pr.ok) { setSaving(''); setError(pr.message); return; }
+      profileId = pr.value;
+      setProfiles(await api.listProfiles(projectId));
+      const next = { ...overrides }; delete next[res.sheet]; setOverrides(next);
+    }
     const totals = { works: res.stats.works, materials: res.stats.materials, rows: res.rows.length, checks: res.checks };
-    const r = await api.saveDraft({ projectId, fileName: file.name, sha256: file.sha256, sheet: res.sheet, profileId: null, totals }, res.rows,
+    const r = await api.saveDraft({ projectId, fileName: file.name, sha256: file.sha256, sheet: res.sheet, profileId, totals }, res.rows,
       (done) => setSaving(`Сохраняю… ${done} из ${res.rows.length} строк`));
     setSaving('');
     if (!r.ok) { setError(r.message); return; }
@@ -132,7 +164,7 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
   async function pick(ev: ChangeEvent<HTMLInputElement>): Promise<void> {
     const f = ev.currentTarget.files && ev.currentTarget.files[0];
     if (!f) return;
-    setBusy(true); setError(''); setFile(null); setSheet(''); setFilter('all');
+    setBusy(true); setError(''); setFile(null); setSheet(''); setFilter('all'); setOverrides({}); setProfileNames({});
     try {
       if (!/\.xlsx$/i.test(f.name)) throw new Error('Нужен файл Excel .xlsx (старый .xls сохраните как .xlsx).');
       const lf = await load(f);
@@ -172,7 +204,7 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
         ? h('label', { className: 'pf-field pj-grow' }, `Лист файла «${file.name}»`,
             h('select', { className: 'pj-input', value: sheet, 'data-testid': 'vor-sheet', onChange: (e: ChangeEvent<HTMLSelectElement>) => { setSheet(e.currentTarget.value); setFilter('all'); } },
               file.sheets.map((s) => h('option', { key: s.name, value: s.name },
-                s.name + (s.hidden ? ' (скрытый)' : '') + (results[s.name] && !results[s.name].isVor ? ' — не похоже на ВОР' : '')))))
+                s.name + (s.hidden ? ' (скрытый)' : '') + (results[s.name] && !results[s.name].r.isVor ? ' — не похоже на ВОР' : '')))))
         : h('span', { className: 'pf-muted pj-grow' }, api
             ? 'Файл заказчика в его форме: ФКП, себестоимость, ведомость договорной цены. Сначала посмотрите разбор, затем сохраните черновик.'
             : 'Файл заказчика в его форме: ФКП, себестоимость, ведомость договорной цены. Демо-режим: только просмотр разбора, без сохранения.'),
@@ -199,6 +231,10 @@ export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise
     bad.length
       ? h('div', { className: 'pf-card vor-bad', 'data-testid': 'vor-bad' }, bad.slice(0, 5).map((c) => h('div', { key: c.rowNo + c.label },
           `Строка ${c.rowNo}, «${c.label}»: в файле ${fmt(c.expected)}, по строкам ${fmt(c.actual)}`)))
+      : null,
+    res && res.isVor && res.columns && (!api || canManage)
+      ? h(VorColumns, { labels: res.labels, columns: res.columns, profileName: cur && cur.profile ? cur.profile.name : null, edited,
+          name: profileName, onEdit: editCol, onReset: resetCols, onName: (v) => setProfileNames({ ...profileNames, [sheet]: v }) })
       : null,
     res && res.isVor
       ? h('div', { className: 'pf-seg vor-filter', role: 'tablist' }, FILTERS.map((f) => h('button', { key: f.id, type: 'button', role: 'tab',
