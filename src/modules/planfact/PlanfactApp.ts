@@ -11,6 +11,7 @@ import { PlanfactWorks } from './PlanfactWorks.ts';
 import { CompanyScope } from '../../platform/company/CompanyScope.ts';
 import { ProjectsTab } from '../../platform/company/ProjectsTab.ts';
 import { UnitsTab } from '../../platform/company/UnitsTab.ts';
+import { VorTab } from './vor/VorTab.ts';
 import type { CompanyAccess, ProjectsApi } from '../../platform/company/projects.service.ts';
 import type { DataApi } from './data.service.ts';
 import type { PlanfactDemo } from './model.ts';
@@ -19,14 +20,14 @@ type Mode = 'loading' | 'login' | 'authed' | 'demo';
 const BASE = '#/planfact';
 /** Событие модуля: маршрут #/planfact… показан (его шлёт index.ts при каждом переходе роутера). */
 export const ROUTE_EVENT = 'planfact:route';
-type Page = 'works' | 'directories';
+type Page = 'works' | 'directories' | 'vor';
 type Sub = 'objects' | 'units';
 const SUBS: { id: Sub; label: string }[] = [{ id: 'objects', label: 'Объекты' }, { id: 'units', label: 'Единицы' }];
 
-/** Адрес #/planfact[/directories[/objects]] → страница и вкладка справочников. Пункты верхнего уровня — в боковом меню (манифест модуля). */
+/** Адрес #/planfact[/vor|/directories[/objects]] → страница и вкладка справочников. Пункты верхнего уровня — в боковом меню (манифест модуля). */
 export function routeFromHash(hash: string): { page: Page; sub: Sub } {
   const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
-  return { page: parts[0] === 'directories' ? 'directories' : 'works', sub: parts[1] === 'units' ? 'units' : 'objects' };
+  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'vor' ? 'vor' : 'works', sub: parts[1] === 'units' ? 'units' : 'objects' };
 }
 
 function accessLabel(entries: AccessEntry[]): string {
@@ -94,10 +95,16 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     const r = (window as unknown as { AppRouter?: { navigate?: (p: string) => void } }).AppRouter;
     if (r && typeof r.navigate === 'function') r.navigate(path); else window.location.hash = path;
   };
-  const body = dirs && projects
+  // «ВОР»: при доступе к компании; в локальном демо-режиме — только просмотр разбора файла (сервер не нужен).
+  const vor = route.page === 'vor' && ((mode === 'authed' && companies.length > 0) || mode === 'demo');
+  const body = vor
+    ? h('div', { className: 'pf-root' }, h(VorTab, {}))
+    : dirs && projects
     ? h(CompanyScope, { api: projects, render: (c) => route.sub === 'units' ? h(UnitsTab, { api: projects, company: c }) : h(ProjectsTab, { api: projects, company: c }) })
     : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });
-  const head = dirs
+  const head = vor
+    ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'ВОР — загрузка ведомости объёмов работ'))
+    : dirs
     ? h('div', { className: 'pf-root pf-dirhead' },
         h('h2', { className: 'pf-title' }, 'Справочники'),
         h('div', { className: 'pf-seg', role: 'tablist', 'data-testid': 'pf-dirtabs' },
