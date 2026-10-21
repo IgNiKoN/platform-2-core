@@ -15,15 +15,13 @@ import type { DataApi } from './data.service.ts';
 import type { PlanfactDemo } from './model.ts';
 
 type Mode = 'loading' | 'login' | 'authed' | 'demo';
-type Tab = 'works' | 'projects';
+type Page = 'works' | 'directories';
+type Sub = 'objects';
 
-const BASE = '#/planfact';
-const TAB_LABELS: Record<Tab, string> = { works: 'Работы', projects: 'Проекты' };
-
-/** Подвкладка из адреса #/planfact/<slug> (как у Quality); неизвестная → «Работы». */
-export function tabFromHash(hash: string): Tab {
-  const slug = String(hash || '').replace(/^#\/planfact\/?/, '').split('/')[0];
-  return slug === 'projects' ? 'projects' : 'works';
+/** Адрес #/planfact[/directories[/objects]] → страница и вкладка справочников. Пункты верхнего уровня — в боковом меню (манифест модуля). */
+export function routeFromHash(hash: string): { page: Page; sub: Sub } {
+  const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
+  return { page: parts[0] === 'directories' ? 'directories' : 'works', sub: 'objects' };
 }
 
 function accessLabel(entries: AccessEntry[]): string {
@@ -32,31 +30,28 @@ function accessLabel(entries: AccessEntry[]): string {
   return Array.from(new Set(parts)).join('; ');
 }
 
-export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null }): ReactElement {
-  const { auth, data, api, projects } = props;
+export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; onAccess?: (hasDirectories: boolean) => void }): ReactElement {
+  const { auth, data, api, projects, onAccess } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [who, setWho] = useState('');
   const [access, setAccess] = useState<AccessEntry[]>([]);
-  const [tab, setTabState] = useState<Tab>(tabFromHash(window.location.hash));
+  const [route, setRoute] = useState(routeFromHash(window.location.hash));
   const [companies, setCompanies] = useState<CompanyAccess[]>([]);
 
   useEffect(() => {
-    const onHash = (): void => setTabState(tabFromHash(window.location.hash));
+    const onHash = (): void => setRoute(routeFromHash(window.location.hash));
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-
-  function setTab(t: Tab): void {
-    setTabState(t);
-    window.location.hash = t === 'works' ? BASE : `${BASE}/${t}`;
-  }
 
   async function enter(a: AuthApi): Promise<void> {
     const mail = await a.getEmail();
     if (!mail) { setMode('login'); return; }
     setWho(mail);
     setAccess(await a.getAccess());
-    setCompanies(projects ? await projects.myAccess() : []);
+    const comp = projects ? await projects.myAccess() : [];
+    setCompanies(comp);
+    if (onAccess) onAccess(comp.length > 0);
     setMode('authed');
   }
 
@@ -66,7 +61,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 
   async function logout(): Promise<void> {
     if (auth) await auth.signOut();
-    setWho(''); setAccess([]); setMode('login');
+    setWho(''); setAccess([]); setCompanies([]); if (onAccess) onAccess(false); setMode('login');
   }
 
   if (mode === 'loading') return h('div', { className: 'pf-root pf-muted' }, 'Загрузка…');
@@ -85,25 +80,16 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
           h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setMode('login') }, 'Войти'))
       : null;
 
-  // Подвкладки: «Проекты» видны, только если у пользователя есть доступ к компании (сервер решает; админ видит все).
-  const tabs: Tab[] = mode === 'authed' && projects && companies.length ? ['works', 'projects'] : ['works'];
-  const current: Tab = tabs.includes(tab) ? tab : 'works';
-  const nav = tabs.length > 1
-    ? h('div', { className: 'pf-tabs', role: 'tablist', 'data-testid': 'pf-tabs' },
-        tabs.map((t) => h('button', { key: t, type: 'button', role: 'tab', 'aria-selected': current === t, 'data-tab': t,
-          className: 'pf-tab' + (current === t ? ' pf-tab--active' : ''), onClick: () => setTab(t) }, TAB_LABELS[t])))
-    : null;
-
-  const body = mode === 'authed' && projects && current === 'projects'
+  // «Справочники» открываются, только если сервер дал доступ к компании (пункт меню показывается по тому же признаку).
+  const dirs = mode === 'authed' && projects && companies.length > 0 && route.page === 'directories';
+  const body = dirs && projects
     ? h(CompanyScope, { api: projects, render: (c) => h(ProjectsTab, { api: projects, company: c }) })
     : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });
-  return h('div', null, bar, nav, body);
+  return h('div', null, bar, dirs ? h('h2', { className: 'pf-title pf-pagetitle' }, 'Справочники · Объекты') : null, body);
 }
 
 export const PLANFACT_TABS_CSS = `
-.pf-tabs{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 14px;padding-bottom:2px}
-.pf-tab{flex:0 0 auto;font-size:13px;font-weight:700;padding:10px 16px;min-height:40px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap}
-.pf-tab--active{background:var(--primary);border-color:var(--primary);color:var(--card-bg)}
+.pf-pagetitle{margin:0 0 12px}
 `;
 
 /** Стили входа перенесены в платформенный слой (LoginForm); имя сохранено для index.ts. */

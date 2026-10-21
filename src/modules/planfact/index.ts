@@ -41,8 +41,32 @@ function getAuth(): AuthApi | null {
   return auth;
 }
 
+interface NavItem { id: string; label: string; path: string; icon?: string; requiresAccess?: boolean }
 interface ShellCtx {
   shell?: { renderSidebar?: () => void } | null;
+  nav?: NavItem[];   // подвкладки из манифеста (js/modules/planfact/planfact.manifest.js) — единственный источник
+}
+
+type RbiGlobal = { RBI?: { platformNav?: { id: string; title: string; items: { path: string; label: string; icon?: string }[] } | null } };
+type ModeMgr = { AppModeManager?: { renderBottomNav?: () => void } };
+let navItems: NavItem[] = [];
+let hasDirectories = false;
+let navActive = false;
+
+/** Подвкладки модуля в нижнем таббаре (телефон/планшет) и nav2 (≥1280) — общий механизм оболочки window.RBI.platformNav. */
+function syncPlatformNav(): void {
+  const w = window as unknown as RbiGlobal & ModeMgr;
+  w.RBI = w.RBI || {};
+  w.RBI.platformNav = navActive
+    ? { id: 'planfact', title: 'План/Факт', items: navItems.filter((i) => !i.requiresAccess || hasDirectories).map((i) => ({ path: i.path, label: i.label, icon: i.icon })) }
+    : null;
+  if (w.AppModeManager && typeof w.AppModeManager.renderBottomNav === 'function') w.AppModeManager.renderBottomNav();
+}
+
+function onAccess(has: boolean): void {
+  if (has === hasDirectories) return;
+  hasDirectories = has;
+  if (navActive) syncPlatformNav();
 }
 
 function ensureStyle(doc: Document): void {
@@ -60,7 +84,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, onAccess })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
@@ -95,9 +119,15 @@ function showView(): void {
   const header = document.getElementById('main-header');
   if (header) header.style.display = 'none';
   if (mountedEl !== el || !root) mount(el);
+  navActive = true;
+  syncPlatformNav();
 }
 
 export async function init(ctx?: ShellCtx): Promise<void> {
+  if (ctx && Array.isArray(ctx.nav)) navItems = ctx.nav;
+  window.addEventListener('hashchange', () => {
+    if (navActive && String(location.hash || '').indexOf(ROUTE) !== 0) { navActive = false; syncPlatformNav(); }
+  });
   const router = (window as unknown as { AppRouter?: { addRoute?: (p: string, fn: () => void) => void } }).AppRouter;
   if (router && typeof router.addRoute === 'function') {
     router.addRoute(ROUTE, showView);

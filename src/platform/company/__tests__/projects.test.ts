@@ -8,7 +8,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { CompanyScope } from '../CompanyScope.ts';
 import { ProjectsTab } from '../ProjectsTab.ts';
-import { PlanfactApp, tabFromHash } from '../../../modules/planfact/PlanfactApp.ts';
+import { PlanfactApp, routeFromHash } from '../../../modules/planfact/PlanfactApp.ts';
 import type { CompanyAccess, ProjectItem, ProjectsApi } from '../projects.service.ts';
 import type { Result } from '../company.service.ts';
 import type { AuthApi } from '../../auth/auth.service.ts';
@@ -127,37 +127,45 @@ test('нет доступа ни к одной компании — сообще
   assert.ok(el.querySelector('[data-testid="pj-noaccess"]'));
 });
 
-test('адрес → подвкладка', () => {
-  assert.equal(tabFromHash('#/planfact'), 'works');
-  assert.equal(tabFromHash('#/planfact/projects'), 'projects');
-  assert.equal(tabFromHash('#/planfact/что-то'), 'works');
+test('адрес → страница модуля', () => {
+  assert.deepEqual(routeFromHash('#/planfact'), { page: 'works', sub: 'objects' });
+  assert.equal(routeFromHash('#/planfact/directories').page, 'directories');
+  assert.equal(routeFromHash('#/planfact/directories/objects').page, 'directories');
+  assert.equal(routeFromHash('#/planfact/что-то').page, 'works');
 });
 
 function fakeAuth(): AuthApi {
   return { async signIn() { return { ok: true }; }, async signOut() { /* нет */ }, async getEmail() { return 'adm@test.invalid'; },
     async getAccess() { return [{ company: 'Альфа', role: 'Администратор компании', projectId: null }]; } };
 }
-function mountApp(projects: ProjectsApi | null) {
+function mountApp(projects: ProjectsApi | null, onAccess?: (h: boolean) => void) {
   const el: N = win.document.createElement('div'); win.document.body.appendChild(el);
-  flushSync(() => createRoot(el).render(createElement(PlanfactApp, { auth: fakeAuth(), data: demo as PlanfactDemo, api: null, projects })));
+  flushSync(() => createRoot(el).render(createElement(PlanfactApp, { auth: fakeAuth(), data: demo as PlanfactDemo, api: null, projects, onAccess })));
   return el;
 }
 
-test('План/Факт: подвкладки «Работы» и «Проекты» при наличии доступа; переключение меняет адрес', async () => {
-  win.location.hash = '#/planfact';
-  const el = mountApp(fakeApi().api); await tick();
-  const tabs = [...el.querySelectorAll('[data-testid="pf-tabs"] [role="tab"]')].map((t: N) => t.textContent);
-  assert.deepEqual(tabs, ['Работы', 'Проекты']);
-  click(el.querySelector('[data-tab="projects"]')); await tick();
-  assert.equal(win.location.hash, '#/planfact/projects');
+test('План/Факт: «Справочники» (#/planfact/directories) показывают проекты; модуль сообщает оболочке, что доступ есть', async () => {
+  win.location.hash = '#/planfact/directories';
+  const seen: boolean[] = [];
+  const el = mountApp(fakeApi().api, (h) => seen.push(h)); await tick();
+  assert.deepEqual(seen, [true]);
   assert.ok(el.querySelector('[data-testid="pj-projects"]'));
-  click(el.querySelector('[data-tab="works"]')); await tick();
-  assert.equal(win.location.hash, '#/planfact');
+  assert.ok(el.textContent.includes('Справочники'));
+  assert.ok(!el.querySelector('[data-testid="pf-tabs"]'), 'внутри страницы нет собственной панели вкладок — пункты в боковом меню');
 });
 
-test('План/Факт: нет доступа к компании — подвкладок нет, только «Работы»', async () => {
-  win.location.hash = '#/planfact/projects';
-  const el = mountApp(fakeApi({ access: [] }).api); await tick();
-  assert.ok(!el.querySelector('[data-testid="pf-tabs"]'));
+test('План/Факт: «Работы» (#/planfact) — таблица; смена адреса переключает страницу', async () => {
+  win.location.hash = '#/planfact';
+  const el = mountApp(fakeApi().api); await tick();
+  assert.ok(!el.querySelector('[data-testid="pj-projects"]'));
+  win.location.hash = '#/planfact/directories'; win.dispatchEvent(new win.Event('hashchange')); await tick();
+  assert.ok(el.querySelector('[data-testid="pj-projects"]'));
+});
+
+test('План/Факт: нет доступа к компании — справочники не открываются, оболочке сообщено «нет»', async () => {
+  win.location.hash = '#/planfact/directories';
+  const seen: boolean[] = [];
+  const el = mountApp(fakeApi({ access: [] }).api, (h) => seen.push(h)); await tick();
+  assert.deepEqual(seen, [false]);
   assert.ok(!el.querySelector('[data-testid="pj-projects"]'));
 });
