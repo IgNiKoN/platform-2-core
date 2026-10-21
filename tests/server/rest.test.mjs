@@ -236,6 +236,50 @@ else {
     check('подтверждённый: строки не дописать', !(await rpc('pf_vor_add_rows', { p_import: imp, p_rows: [{ row_no: 60, kind: 'work', name: 'x' }] }, tok.alfaPto)).ok);
     check('подтверждённый: не удалить', !(await rpc('pf_vor_delete_import', { p_import: imp }, tok.alfaPto)).ok);
     check('Бета-ПТО не видит позиции Альфы', !(await rpc('pf_vor_positions', { p_project: pv, p_location: null }, tok.betaPto)).ok);
+    // --- P2-0006c: цены, смета, КП (миграция 008) — прораб цены не видит, Бета не видит Альфу, редакции КП неизменяемы. ---
+    const prProbe = await rpc('pf_price_list', { p_company: cV }, tok.alfaPto);
+    if (prProbe.status === 404) { console.log('NOT RUN: миграция 008 не применена — проверки цен и смет пропущены'); fails++; }
+    else {
+      check('ПТО читает справочник цен', prProbe.ok, `статус ${prProbe.status}`);
+      check('ПТО: право planfact.estimate.manage в проекте', (await perms('alfaPto', pv)).includes('planfact.estimate.manage'));
+      check('прораб: права planfact.estimate.manage нет', !(await perms('alfaForeman', pv)).includes('planfact.estimate.manage'));
+      const up = await rpc('pf_price_upsert', { p_company: cV, p_source: 'import:' + imp, p_items: [
+        { kind: 'work', work_type_id: wt, price_labor: 10, price_material: 1.5 },
+        { kind: 'material', name: stampV + ' смесь', unit_text: 'кг', price_material: 2 }] }, tok.alfaPto);
+      const upJ = await j(up);
+      check('ПТО записал цены (работа + материал) с источником «загрузка ВОР»', up.ok && upJ.created + upJ.updated === 2, `статус ${up.status}`);
+      check('прораб не читает цены', !(await rpc('pf_price_list', { p_company: cV }, tok.alfaForeman)).ok);
+      check('прораб не пишет цены', !(await rpc('pf_price_upsert', { p_company: cV, p_items: [], p_source: 'manual' }, tok.alfaForeman)).ok);
+      check('Бета-ПТО не читает цены Альфы', !(await rpc('pf_price_list', { p_company: cV }, tok.betaPto)).ok);
+      check('Бета-ПТО не пишет цены Альфы', !(await rpc('pf_price_upsert', { p_company: cV, p_items: [], p_source: 'manual' }, tok.betaPto)).ok);
+      check('шаблон надбавок компании открывается', (await j(await rpc('pf_overhead_template', { p_company: cV }, tok.alfaPto))).length > 0);
+      check('прораб не читает шаблон надбавок', !(await rpc('pf_overhead_template', { p_company: cV }, tok.alfaForeman)).ok);
+      check('прораб не создаёт смету', !(await rpc('pf_estimate_create', { p_project: pv, p_name: 'x', p_imports: [imp], p_area: null }, tok.alfaForeman)).ok);
+      check('Бета-ПТО не создаёт смету по ВОР Альфы', !(await rpc('pf_estimate_create', { p_project: pv, p_name: 'x', p_imports: [imp], p_area: null }, tok.betaPto)).ok);
+      const ce = await rpc('pf_estimate_create', { p_project: pv, p_name: stampV + ' смета', p_imports: [imp], p_area: 100 }, tok.alfaPto);
+      const est = await j(ce);
+      check('ПТО создал смету по подтверждённому ВОР', ce.ok && typeof est === 'string', `статус ${ce.status}`);
+      const er = await j(await rpc('pf_estimate_rows', { p_estimate: est }, tok.alfaPto));
+      const w11 = er.find((r) => r.row_no === 11), m12 = er.find((r) => r.row_no === 12);
+      check('цены подставлены из справочника (работа 10 / 1,5, материал 2)', Number(w11?.price_labor) === 10 && Number(w11?.price_material) === 1.5 && Number(m12?.price_material) === 2 && w11?.price_source === 'reference');
+      check('ручная цена сохранена', (await rpc('pf_estimate_set_prices', { p_estimate: est, p_items: [{ source_row_id: w11?.source_row_id, price_labor: 11, price_material: 1.5 }] }, tok.alfaPto)).ok);
+      const er2 = await j(await rpc('pf_estimate_rows', { p_estimate: est }, tok.alfaPto));
+      check('ручная цена помечена, справочник не изменился', er2.some((r) => r.row_no === 11 && Number(r.price_labor) === 11 && r.price_source === 'manual' && Number(r.ref_labor) === 10));
+      check('прораб не читает смету', !(await rpc('pf_estimate_rows', { p_estimate: est }, tok.alfaForeman)).ok);
+      check('Бета-ПТО не читает смету Альфы', !(await rpc('pf_estimate_rows', { p_estimate: est }, tok.betaPto)).ok);
+      check('КП по другому файлу отклонено', !(await rpc('pf_kp_create', { p_estimate: est, p_file_sha256: 'f'.repeat(64), p_snapshot: {}, p_total: 1, p_note: null }, tok.alfaPto)).ok);
+      const k1 = await rpc('pf_kp_create', { p_estimate: est, p_file_sha256: sha, p_snapshot: { rows: [{ row_no: 11, price_labor: 11 }] }, p_total: 4398.79, p_note: null }, tok.alfaPto);
+      const k1J = await j(k1);
+      check('редакция КП 1 создана', k1.ok && k1J.revision_no === 1, `статус ${k1.status}`);
+      check('прораб не читает КП', !(await rpc('pf_kp_get', { p_revision: k1J.id }, tok.alfaForeman)).ok);
+      check('Бета-ПТО не читает КП Альфы', !(await rpc('pf_kp_list', { p_estimate: est }, tok.betaPto)).ok);
+      const directK = await fetch(`${URL_}/rest/v1/kp_revisions?id=eq.${k1J.id}`, { method: 'PATCH', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaPto}`, 'Content-Type': 'application/json', 'Accept-Profile': 'planfact', 'Content-Profile': 'planfact' }, body: '{"total": 1}' });
+      check('редакцию КП не изменить через REST', !directK.ok, `статус ${directK.status}`);
+      check('редакция КП после попытки изменения — прежняя', Number((await j(await rpc('pf_kp_get', { p_revision: k1J.id }, tok.alfaPto)))?.total) === 4398.79);
+      const audE = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
+      check('журнал компании: цены, смета, КП', ['price_items', 'estimates', 'kp_revisions'].every((t) => audE.some((r) => r.table_name === t)));
+      check('anon: pf_price_list закрыт', !(await rpc('pf_price_list', { p_company: cV })).ok);
+    }
     const audV = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 100 }, tok.alfaAdmin));
     check('журнал компании: загрузка и подтверждение ВОР', audV.some((r) => r.table_name === 'vor_imports' && r.action === 'INSERT') && audV.some((r) => r.table_name === 'vor_imports' && r.new_data?.status === 'confirmed'));
     const directV = await fetch(`${URL_}/rest/v1/vor_imports`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaPto}`, 'Accept-Profile': 'planfact' } });
