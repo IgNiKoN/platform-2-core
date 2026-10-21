@@ -15,6 +15,13 @@ import { UNITS_CSS } from '../../platform/company/UnitsTab.ts';
 import { createProjectsService } from '../../platform/company/projects.service.ts';
 import type { ProjectsApi } from '../../platform/company/projects.service.ts';
 import { PLANFACT_WORKS_CSS } from './PlanfactWorks.ts';
+import { VOR_CSS } from './vor/VorTab.ts';
+import { VOR_COLUMNS_CSS } from './vor/VorColumns.ts';
+import { VOR_DRAFT_CSS } from './vor/VorDraft.ts';
+import { VOR_WORKS_CSS } from './vor/VorWorks.ts';
+import { VOR_POSITIONS_CSS } from './vor/VorPositions.ts';
+import { createVorService } from './vor/vor.service.ts';
+import type { VorApi } from './vor/vor.service.ts';
 import { createDataService } from './data.service.ts';
 import type { DataApi } from './data.service.ts';
 import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
@@ -31,6 +38,7 @@ let mountedEl: HTMLElement | null = null;
 let auth: AuthApi | null | undefined;
 let dataApi: DataApi | null = null;
 let projectsApi: ProjectsApi | null = null;
+let vorApi: VorApi | null = null;
 
 function getAuth(): AuthApi | null {
   if (auth === undefined) {
@@ -38,6 +46,7 @@ function getAuth(): AuthApi | null {
     auth = cfg ? createAuthService(cfg) : null;
     dataApi = auth ? createDataService() : null;
     projectsApi = auth ? createProjectsService() : null;
+    vorApi = auth ? createVorService() : null;
   }
   return auth;
 }
@@ -74,7 +83,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS;
   doc.head.appendChild(style);
 }
 
@@ -85,7 +94,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, onAccess })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, onAccess })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
