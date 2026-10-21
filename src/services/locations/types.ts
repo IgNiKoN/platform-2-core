@@ -50,3 +50,16 @@ export const CHILD_OF: Record<NodeType, NodeType | null> = {
   floor: 'section',
   apartment: 'floor'
 };
+
+/**
+ * Уровни дерева проекта Platform 2.0 (planfact.locations, P2-0005): без 'object' (объект — это сам проект) + 'other'.
+ * Добавлено рядом, поведение Quality (NodeType, CHILD_OF) не менялось. Подсказка уровня мягкая: уровни можно пропускать.
+ */
+export type PlanNodeType = Exclude<NodeType, 'object'> | 'other';
+export const PLAN_NODE_TYPES: PlanNodeType[] = ['building', 'section', 'floor', 'apartment', 'other'];
+export const PLAN_NODE_LABELS: Record<PlanNodeType, string> = {
+  building: 'Корпус', section: 'Секция', floor: 'Этаж', apartment: 'Квартира', other: 'Другое'
+};
+export const SUGGESTED_CHILD: Record<PlanNodeType | 'root', PlanNodeType> = {
+  root: 'building', building: 'section', section: 'floor', floor: 'apartment', apartment: 'other', other: 'other'
+};

@@ -4,6 +4,7 @@
  */
 import { getClient } from '../auth/auth.service.ts';
 import { mapCompanyError } from './company.service.ts';
+import type { PlanNodeType } from '../../services/locations/types.ts';
 import type { Result } from './company.service.ts';
 
 export interface CompanyAccess {
@@ -13,9 +14,8 @@ export interface CompanyAccess {
 export interface ProjectItem {
   id: string; name: string; code: string | null; archived_at: string | null; created_at: string; can_manage: boolean;
 }
-export type NodeType = 'building' | 'section' | 'floor' | 'apartment' | 'other';
 export interface LocationNode {
-  id: string; parent_id: string | null; node_type: NodeType; name: string; sort_order: number;
+  id: string; parent_id: string | null; node_type: PlanNodeType; name: string; sort_order: number;
   area: number | null; depth: number; path: string; child_count: number;
 }
 export interface UnitItem { id: string; company_id: string | null; code: string; name: string; is_common: boolean }
@@ -30,7 +30,7 @@ export interface ProjectsApi {
   createProject(companyId: string, name: string, code: string): Promise<Result<string>>;
   updateProject(projectId: string, name: string, code: string, archived: boolean | null): Promise<Result>;
   listLocations(projectId: string, parentId: string | null): Promise<LocationNode[]>;
-  addLocation(projectId: string, parentId: string | null, type: NodeType, name: string): Promise<Result<string>>;
+  addLocation(projectId: string, parentId: string | null, type: PlanNodeType, name: string): Promise<Result<string>>;
   renameLocation(locationId: string, name: string): Promise<Result>;
   deleteLocation(locationId: string, cascade: boolean): Promise<Result<number>>;
   generateBuilding(p: GenerateParams): Promise<Result<string>>;

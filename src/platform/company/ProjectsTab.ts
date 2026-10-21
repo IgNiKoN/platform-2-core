@@ -4,10 +4,12 @@
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
+import { LocationsTree } from './LocationsTree.ts';
 import type { CompanyAccess, ProjectItem, ProjectsApi } from './projects.service.ts';
 
-export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess; onOpen?: (p: ProjectItem) => void }): ReactElement {
-  const { api, company, onOpen } = props;
+export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess }): ReactElement {
+  const { api, company } = props;
+  const [opened, setOpened] = useState<ProjectItem | null>(null);
   const [rows, setRows] = useState<ProjectItem[] | null>(null);
   const [editing, setEditing] = useState('');
   const [error, setError] = useState('');
@@ -46,6 +48,7 @@ export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess; o
     if (await run(api.updateProject(p.id, name, code, null), 'Проект сохранён')) setEditing('');
   }
 
+  if (opened) return h(LocationsTree, { api, project: opened, canManage: company.can_manage_projects, onBack: () => { setOpened(null); void load(); } });
   if (rows === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   const active = rows.filter((p) => !p.archived_at);
   const archived = rows.filter((p) => p.archived_at);
@@ -71,7 +74,7 @@ export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess; o
             h('div', { className: 'pj-name' }, h('b', null, p.name), p.code ? h('span', { className: 'pj-code-badge' }, p.code) : null,
               p.archived_at ? h('span', { className: 'pj-badge' }, 'в архиве') : null),
             h('div', { className: 'pj-actions' },
-              onOpen && !p.archived_at ? h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'pj-open', onClick: () => onOpen(p) }, 'Структура') : null,
+              h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'pj-open', onClick: () => setOpened(p) }, 'Структура'),
               p.can_manage && !p.archived_at ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pj-rename', disabled: busy, onClick: () => { setEditing(p.id); setError(''); setNotice(''); } }, 'Изменить') : null,
               p.can_manage ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pj-archive', disabled: busy,
                 onClick: () => { void run(api.updateProject(p.id, p.name, p.code || '', !p.archived_at), p.archived_at ? 'Проект возвращён из архива' : 'Проект перенесён в архив'); } },
