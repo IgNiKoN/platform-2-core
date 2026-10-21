@@ -39,6 +39,9 @@ export interface RowContext {
   section?: string;
   floor?: FloorRange;
   apartments?: string;
+  /** Корпус в файле не указан, а номера секций пошли заново («Секция 1…6», затем снова «Секция 2») — это другой корпус:
+   *  номер блока по порядку (1, 2, …). ПТО выбирает корпус для блока на шаге «Места»; молча секции не сливаются. */
+  block?: number;
 }
 
 export interface ParsedRow {
@@ -339,6 +342,7 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
   let ctx: RowContext = {};
   let lastWork: number | null = null;
   let blockStart = 0; // начало строк корпуса — для «Итого Корпус N»
+  let block = 1, lastSection: number | null = null, restarted = false; // повтор номеров секций без корпуса → новый блок
   for (let i = hdr.dataStart; i < rows.length; i++) {
     const r = rows[i] || [];
     const name = cellText(r[columns.name]) || altTitle(r, columns);
@@ -362,11 +366,19 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
         for (let k = blockStart; k < out.length; k++) if (out[k].kind !== 'skip' && out[k].context.building === undefined) out[k].context = { building: m[1], ...out[k].context };
         blockStart = out.length + 1;
         ctx = {};
+        lastSection = null;
       }
     } else if (FOOTER_RE.test(name)) row.kind = 'skip';
     else if (ctxTitle) {
       row.kind = 'context';
+      if (ctxTitle.building !== undefined) lastSection = null;
+      if (ctxTitle.section !== undefined && ctxTitle.building === undefined) {
+        const n = parseInt(ctxTitle.section, 10);
+        if (lastSection !== null && Number.isFinite(n) && n <= lastSection) { block++; restarted = true; }
+        if (Number.isFinite(n)) lastSection = n;
+      }
       ctx = applyContext(ctx, ctxTitle);
+      ctx.block = block;
       if (ctxTitle.building !== undefined) blockStart = out.length;
       if (apartments) ctx = { ...ctx, apartments };
     } else if (typeMark === 'Г') row.kind = 'group';
@@ -382,6 +394,9 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
     if (row.kind !== 'skip') row.context = { ...ctx };
     out.push(row);
   }
+
+  // Блоки нужны, только если номера секций начинались заново и корпус не известен (ни из заголовка, ни из «Итого Корпус N»).
+  for (const r of out) if (r.context.block !== undefined && (!restarted || r.context.building !== undefined)) delete r.context.block;
 
   // Подписи, реквизиты и прочее после последней работы/материала — не данные.
   let lastData = -1;
@@ -425,6 +440,7 @@ export function sumChecks(rows: ParsedRow[], columns: ColumnMap): SumCheck[] {
 export function contextLabel(c: RowContext): string {
   const parts: string[] = [];
   if (c.building) parts.push(`Корпус ${c.building}`);
+  else if (c.block) parts.push(`Блок ${c.block} (корпус не указан)`);
   if (c.section) parts.push(`Секция ${c.section}`);
   if (c.floor) parts.push(c.floor.from === c.floor.to ? `Этаж ${c.floor.from}` : `Этажи ${c.floor.from}–${c.floor.to}`);
   if (c.apartments) parts.push(c.apartments);

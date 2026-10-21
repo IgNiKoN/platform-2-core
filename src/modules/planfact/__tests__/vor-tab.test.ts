@@ -67,7 +67,7 @@ function fakeApi(perms: string[], opts: { saveError?: string } = {}) {
       profiles.push({ id: 'f' + profiles.length, name, signature, column_map: map, rules: {}, updated_at: '' });
       return { ok: true, value: 'f' + (profiles.length - 1) };
     },
-    async listWorkTypes() { return []; }, addWorkType: no,
+    async listWorkTypes() { return []; }, addWorkType: no, addWorkTypes: no,
     async dictionary() { return []; }, learn: no, resolveRows: no, confirm: no, async positions() { return []; }
   };
   return { api, store, saved, profiles };

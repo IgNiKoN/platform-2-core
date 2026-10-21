@@ -8,26 +8,36 @@
  *  - корпуса в контексте нет, а в корне проекта ровно один корпус — секция ищется в нём;
  *  - «Этажи 4–12» (диапазон) — позиция на уровне секции, диапазон уходит в пометку позиции («эт. 4–12»);
  *  - «кв. 3, 16…» — позиция на ближайшем узле (секция/этаж), список квартир — в пометке;
- *  - строки без места — на узел «Весь объект» в корне (или на узел, выбранный ПТО).
+ *  - строки без места — на узел «Весь объект» в корне (решение владельца 21.10.2026);
+ *  - «блок N» (корпус в файле не указан, номера секций пошли заново) — ПТО выбирает корпус блока; до выбора место не привязано.
  */
 import type { RowContext } from './parse.ts';
 
 export type PlaceType = 'building' | 'section' | 'floor' | 'other';
 export interface TreeNode { id: string; parent_id: string | null; node_type: string; name: string; path: string }
 export interface PlaceStep { type: PlaceType; value: string; name: string }
-export interface Place { key: string; label: string; steps: PlaceStep[] }
-export interface Binding { key: string; nodeId: string | null; path: string | null; missing: PlaceStep[]; missingParent: string | null }
+export interface Place { key: string; label: string; steps: PlaceStep[]; pendingBlock?: number }
+export interface Binding { key: string; nodeId: string | null; path: string | null; missing: PlaceStep[]; missingParent: string | null; pendingBlock?: number }
+/** Корпус, выбранный ПТО для блока: номер и название (как у узла дерева или нового узла). */
+export interface BlockChoice { value: string; name: string }
 export type LoadChildren = (parentId: string | null) => Promise<TreeNode[]>;
 
 export const WHOLE_OBJECT = 'Весь объект';
 const NONE_KEY = '∅';
 
-/** Шаги места по контексту строки. Диапазон этажей не даёт шага (позиция — на секции). Пустой контекст → «Весь объект». */
-export function placeOf(ctx: RowContext): Place {
+/** Шаги места по контексту строки. Диапазон этажей не даёт шага (позиция — на секции). Пустой контекст → «Весь объект».
+ *  Блок без корпуса: корпус берётся из выбора ПТО (blocks), иначе место ждёт выбора (pendingBlock). */
+export function placeOf(ctx: RowContext, blocks?: Record<number, BlockChoice>): Place {
   const steps: PlaceStep[] = [];
+  const chosen = !ctx.building && ctx.block ? (blocks || {})[ctx.block] : undefined;
   if (ctx.building) steps.push({ type: 'building', value: ctx.building, name: `Корпус ${ctx.building}` });
+  else if (chosen) steps.push({ type: 'building', value: chosen.value, name: chosen.name });
   if (ctx.section) steps.push({ type: 'section', value: ctx.section, name: `Секция ${ctx.section}` });
   if (ctx.floor && ctx.floor.from === ctx.floor.to) steps.push({ type: 'floor', value: String(ctx.floor.from), name: `Этаж ${ctx.floor.from}` });
+  if (!ctx.building && ctx.block && !chosen) {
+    return { key: `block:${ctx.block}/` + steps.map((s) => `${s.type}:${s.value.toLowerCase()}`).join('/'),
+      label: [`Блок ${ctx.block} (корпус не указан)`, ...steps.map((s) => s.name)].join(' · '), steps, pendingBlock: ctx.block };
+  }
   if (!steps.length) return { key: NONE_KEY, label: 'Без указания места', steps: [{ type: 'other', value: '', name: WHOLE_OBJECT }] };
   return { key: steps.map((s) => `${s.type}:${s.value.toLowerCase()}`).join('/'), label: steps.map((s) => s.name).join(' · '), steps };
 }
@@ -66,6 +76,7 @@ export async function bindPlaces(places: Place[], load: LoadChildren): Promise<B
   };
   const out: Binding[] = [];
   for (const pl of places) {
+    if (pl.pendingBlock) { out.push({ key: pl.key, nodeId: null, path: null, missing: [], missingParent: null, pendingBlock: pl.pendingBlock }); continue; }
     let parent: string | null = null;
     let node: TreeNode | null = null;
     let i = 0;
@@ -91,7 +102,7 @@ export function missingList(bindings: Binding[], places: Place[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const b of bindings) {
-    if (b.nodeId) continue;
+    if (b.nodeId || b.pendingBlock) continue;
     const pl = places.find((p) => p.key === b.key);
     if (!pl) continue;
     const have = pl.steps.slice(0, pl.steps.length - b.missing.length).map((s) => s.name);
@@ -106,7 +117,7 @@ export async function createMissing(bindings: Binding[], places: Place[], add: (
   const made = new Map<string, string>();   // «родитель|тип:значение» → id созданного
   let n = 0;
   for (const b of bindings) {
-    if (b.nodeId) continue;
+    if (b.nodeId || b.pendingBlock) continue;
     const pl = places.find((p) => p.key === b.key);
     if (!pl) continue;
     let parent = b.missingParent;

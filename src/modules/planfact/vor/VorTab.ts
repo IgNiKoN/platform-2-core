@@ -195,7 +195,9 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
   if (api && projects && !projects.length) return h('div', { className: 'pf-card pj-empty pf-muted', 'data-testid': 'vor-no-projects' }, 'Нет доступных проектов. Проект создаётся в «Справочники → Объекты».');
 
   if (api && opened) {
-    return h(VorDraft, { key: opened.id, api, projects: props.projects || null, projectId, imp: opened, canManage, canProjects,
+    const company = (projects || []).find((p) => p.id === projectId)?.company_id || '';
+    return h(VorDraft, { key: opened.id, api, projects: props.projects || null, projectId, companyId: company, imp: opened, canManage, canProjects,
+      canUnits: perms.includes('planfact.units.manage'),
       onBack: () => { setOpenId(''); void reloadImports(projectId); }, onChanged: () => undefined });
   }
 

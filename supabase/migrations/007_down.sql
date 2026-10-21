@@ -6,6 +6,7 @@ drop function if exists public.pf_vor_confirm(uuid);
 drop function if exists public.pf_vor_resolve_rows(uuid, jsonb);
 drop function if exists public.pf_vor_learn(uuid, jsonb);
 drop function if exists public.pf_vor_dictionary(uuid);
+drop function if exists public.pf_vor_add_work_types(uuid, jsonb);
 drop function if exists public.pf_vor_add_work_type(uuid, text, uuid, text);
 drop function if exists public.pf_vor_list_work_types(uuid);
 drop function if exists public.pf_vor_save_profile(uuid, text, text, jsonb, jsonb);

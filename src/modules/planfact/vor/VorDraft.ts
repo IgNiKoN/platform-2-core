@@ -4,16 +4,17 @@
  * проверяет сервер в pf_add_location). Привязка сохраняется в строки черновика (pf_vor_resolve_rows).
  */
 import { createElement as h, useEffect, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ChangeEvent, FocusEvent, KeyboardEvent, ReactElement } from 'react';
 import type { ProjectsApi } from '../../../platform/company/projects.service.ts';
 import type { PlanNodeType } from '../../../services/locations/types.ts';
 import { placeOf, placeNote, bindPlaces, missingList, createMissing } from './places.ts';
-import type { Binding, Place, TreeNode } from './places.ts';
+import type { Binding, BlockChoice, Place, TreeNode } from './places.ts';
 import type { Resolution, VorApi, VorImport, VorRow } from './vor.service.ts';
+import { VorWorks } from './VorWorks.ts';
 
 export interface DraftProps {
-  api: VorApi; projects: ProjectsApi | null; projectId: string; imp: VorImport;
-  canManage: boolean; canProjects: boolean; onBack: () => void; onChanged: () => void;
+  api: VorApi; projects: ProjectsApi | null; projectId: string; companyId: string; imp: VorImport;
+  canManage: boolean; canProjects: boolean; canUnits: boolean; onBack: () => void; onChanged: () => void;
 }
 
 interface PlaceInfo { place: Place; rows: number; binding: Binding | null }
@@ -24,13 +25,16 @@ export function withLocation(r: VorRow, locationId: string | null): Resolution {
 }
 
 export function VorDraft(props: DraftProps): ReactElement {
-  const { api, projects, projectId, imp, canManage, canProjects, onBack, onChanged } = props;
+  const { api, projects, projectId, companyId, imp, canManage, canProjects, canUnits, onBack, onChanged } = props;
   const editable = canManage && imp.status === 'draft';
   const [rows, setRows] = useState<VorRow[] | null>(null);
   const [places, setPlaces] = useState<PlaceInfo[] | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [blocks, setBlocks] = useState<Record<number, BlockChoice>>({});
+  const [roots, setRoots] = useState<TreeNode[]>([]);
+  const [showPlaces, setShowPlaces] = useState(false);
 
   const works = (rows || []).filter((r) => r.kind === 'work');
 
@@ -40,31 +44,57 @@ export function VorDraft(props: DraftProps): ReactElement {
   }
 
   /** Привязать места строк к дереву; изменившиеся привязки — в черновик (если можно править). */
-  async function bind(list: VorRow[]): Promise<void> {
+  async function bind(input: VorRow[], choice: Record<number, BlockChoice> = blocks): Promise<void> {
+    let list = input;
     const uniq = new Map<string, PlaceInfo>();
     for (const r of list) if (r.kind === 'work') {
-      const pl = placeOf(r.context || {});
+      const pl = placeOf(r.context || {}, choice);
       const cur = uniq.get(pl.key);
       if (cur) cur.rows++; else uniq.set(pl.key, { place: pl, rows: 1, binding: null });
     }
     const infos = Array.from(uniq.values());
     const bindings = await bindPlaces(infos.map((i) => i.place), loadChildren);
     infos.forEach((i, k) => { i.binding = bindings[k]; });
+    // Сначала сохранить привязку, потом показать разделы (виды работ пишут те же строки — без гонки).
+    if (editable) {
+      const byKey = new Map(bindings.map((b) => [b.key, b]));
+      // Блок без выбранного корпуса: уже сохранённое место (выбрано раньше) не сбрасываем.
+      const changed = list.filter((r) => r.kind === 'work').map((r) => {
+        const b = byKey.get(placeOf(r.context || {}, choice).key);
+        return { r, loc: b && b.pendingBlock ? r.location_id : (b ? b.nodeId : null) };
+      }).filter((x) => x.r.location_id !== x.loc);
+      if (changed.length) {
+        const res = await api.resolveRows(imp.id, changed.map((x) => withLocation(x.r, x.loc)));
+        if (!res.ok) setError(res.message);
+        else list = list.map((r) => { const c = changed.find((x) => x.r.row_no === r.row_no); return c ? { ...r, location_id: c.loc } : r; });
+      }
+    }
+    setRows(list);
     setPlaces(infos);
-    if (!editable) return;
-    const byKey = new Map(bindings.map((b) => [b.key, b.nodeId]));
-    const changed = list.filter((r) => r.kind === 'work').map((r) => ({ r, loc: byKey.get(placeOf(r.context || {}).key) ?? null }))
-      .filter((x) => x.r.location_id !== x.loc);
-    if (!changed.length) return;
-    const res = await api.resolveRows(imp.id, changed.map((x) => withLocation(x.r, x.loc)));
-    if (!res.ok) { setError(res.message); return; }
-    setRows(list.map((r) => { const c = changed.find((x) => x.r.row_no === r.row_no); return c ? { ...r, location_id: c.loc } : r; }));
+    if (infos.some((i) => i.place.pendingBlock)) setRoots((await loadChildren(null)).filter((n) => n.node_type === 'building'));
+  }
+
+  function chooseBlock(block: number, value: string): void {
+    const node = roots.find((n) => n.id === value);
+    const next = { ...blocks };
+    if (node) next[block] = { value: (node.name.match(/(\d+[\p{L}]?)/u) || [node.name])[0], name: node.name };
+    else if (value.trim()) next[block] = { value: value.trim(), name: `Корпус ${value.trim()}` };
+    else delete next[block];
+    setBlocks(next);
+    if (rows) void bind(rows, next);
+  }
+
+  /** Решения строк → черновик; локальные строки обновляются после ответа сервера. */
+  async function save(items: Resolution[]): Promise<boolean> {
+    const r = await api.resolveRows(imp.id, items);
+    if (!r.ok) { setError(r.message); return false; }
+    const by = new Map(items.map((i) => [i.row_no, i]));
+    setRows((prev) => prev ? prev.map((x) => { const i = by.get(x.row_no); return i ? { ...x, location_id: i.location_id, work_type_id: i.work_type_id, unit_id: i.unit_id, match: i.match } : x; }) : prev);
+    return true;
   }
 
   async function load(): Promise<void> {
-    const list = await api.importRows(imp.id);
-    setRows(list);
-    await bind(list);
+    await bind(await api.importRows(imp.id));
   }
   useEffect(() => { void load(); }, [imp.id]);
 
@@ -88,6 +118,14 @@ export function VorDraft(props: DraftProps): ReactElement {
 
   if (rows === null || places === null) return h('div', { className: 'pf-muted' }, 'Загрузка черновика…');
   const missing = missingList(places.map((p) => p.binding as Binding), places.map((p) => p.place));
+  // Блоки без корпуса (выбранные и нет) — список остаётся на экране, выбор можно поменять.
+  const blockRows = works.filter((r) => r.context && r.context.block && !r.context.building);
+  const pendingBlocks = Array.from(new Set(blockRows.map((r) => r.context.block as number))).sort((a, b) => a - b)
+    .map((block) => {
+      const rs = blockRows.filter((r) => r.context.block === block);
+      const secs = Array.from(new Set(rs.map((r) => r.context.section).filter(Boolean)));
+      return { block, rows: rs.length, label: secs.length ? 'секции ' + secs.join(', ') : 'без секций' };
+    });
   const boundRows = works.filter((r) => r.location_id).length;
 
   return h('div', { className: 'pj-tab vor-draft', 'data-testid': 'vor-draft' },
@@ -101,12 +139,32 @@ export function VorDraft(props: DraftProps): ReactElement {
     h('div', { className: 'vor-summary' },
       h('span', { className: 'vor-stat' + (boundRows === works.length ? ' vor-stat--ok' : ' vor-stat--bad'), 'data-testid': 'vor-bound' },
         `Привязано строк-работ: ${boundRows} из ${works.length}`)),
-    h('div', { className: 'pf-card pj-list', 'data-testid': 'vor-places' },
+    boundRows === works.length && !showPlaces && !pendingBlocks.length
+      ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'vor-show-places', onClick: () => setShowPlaces(true) },
+          `Все места привязаны — показать (${places.length})`)
+      : h('div', { className: 'pf-card pj-list', 'data-testid': 'vor-places' },
       places.map((p) => h('div', { key: p.place.key, className: 'pj-row vor-place-row', 'data-place': p.place.key },
         h('div', { className: 'pj-name' }, h('b', null, p.place.label), h('span', { className: 'pf-muted' }, `${p.rows} строк`)),
         p.binding && p.binding.nodeId
           ? h('span', { className: 'vor-stat--ok' }, '→ ' + p.binding.path)
-          : h('span', { className: 'vor-stat--bad' }, 'нет в дереве объекта')))),
+          : p.place.pendingBlock
+            ? h('span', { className: 'vor-stat--bad' }, 'выберите корпус блока')
+            : h('span', { className: 'vor-stat--bad' }, 'нет в дереве объекта')))),
+    pendingBlocks.length
+      ? h('div', { className: 'pf-card vor-missing', 'data-testid': 'vor-blocks' },
+          h('b', null, 'Корпус в файле не указан, а номера секций начинаются заново — это разные корпуса. Выберите корпус для каждого блока (если в дереве корпуса нет — впишите номер, затем «Создать недостающие»):'),
+          pendingBlocks.map((b) => h('label', { key: b.block, className: 'pf-field' }, `Блок ${b.block} (${b.label}, ${b.rows} строк)`,
+            editable
+              ? h('span', { className: 'vor-block-pick' },
+                  h('select', { className: 'pj-input', 'data-testid': 'vor-block-select', 'data-block': b.block, value: roots.find((n) => blocks[b.block] && n.name === blocks[b.block].name)?.id || '',
+                    onChange: (e: ChangeEvent<HTMLSelectElement>) => chooseBlock(b.block, e.currentTarget.value) },
+                    h('option', { value: '' }, '— корпус из дерева объекта —'),
+                    roots.map((n) => h('option', { key: n.id, value: n.id }, n.name))),
+                  h('input', { type: 'text', className: 'pj-input', placeholder: 'или № нового корпуса', maxLength: 20, 'data-testid': 'vor-block-new',
+                    onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') chooseBlock(b.block, e.currentTarget.value); },
+                    onBlur: (e: FocusEvent<HTMLInputElement>) => { if (e.currentTarget.value.trim()) chooseBlock(b.block, e.currentTarget.value); } }))
+              : null)))
+      : null,
     missing.length
       ? h('div', { className: 'pf-card vor-missing', 'data-testid': 'vor-missing' },
           h('div', null, h('b', null, `Не хватает узлов в дереве объекта (${missing.length}):`)),
@@ -121,7 +179,8 @@ export function VorDraft(props: DraftProps): ReactElement {
       'Правила: «Этажи 4–12» — позиция на секции с пометкой «эт. 4–12»; «кв. 3, 16…» — позиция на ближайшем узле с пометкой квартир; строки без места — на узел «Весь объект».'),
     works.some((r) => placeNote(r.context || {}))
       ? h('div', { className: 'pf-muted' }, `Строк с пометкой (диапазон этажей / квартиры): ${works.filter((r) => placeNote(r.context || {})).length}`)
-      : null);
+      : null,
+    h(VorWorks, { api, projects, projectId, companyId, rows, editable, canUnits, save }));
 }
 
 export const VOR_DRAFT_CSS = `
@@ -130,5 +189,7 @@ export const VOR_DRAFT_CSS = `
 .vor-missing{padding:12px 14px;display:flex;flex-direction:column;gap:8px;font-size:13px}
 .vor-missing ul{margin:0;padding-left:18px}
 .vor-rule{font-size:11px}
+.vor-block-pick{display:flex;flex-wrap:wrap;gap:6px}
+.vor-block-pick select,.vor-block-pick input{flex:1 1 200px;min-width:0;min-height:40px}
 @media (max-width:600px){.vor-missing .pf-btn{width:100%}}
 `;

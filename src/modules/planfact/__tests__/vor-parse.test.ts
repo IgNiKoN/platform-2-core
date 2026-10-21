@@ -259,3 +259,21 @@ test('карта колонок из профиля: верная → ColumnMap,
   assert.deepEqual(columnMapFrom({ name: 1, unit: 'b', prices: [{ label: 'x', col: 5 }, { bad: 1 }] }),
     { number: null, name: 1, unit: null, qty: null, norm: null, type: null, unitDefault: null, prices: [{ label: 'x', col: 5 }] });
 });
+
+test('корпус не указан, номера секций пошли заново → блоки 1, 2 (без слияния секций разных корпусов); с корпусом — блоков нет', () => {
+  const rows: Cell[][] = [
+    ['№', 'Наименование работ', 'Ед. изм.', 'Объём'],
+    [1, 'Секция 1'], [2, 'Пол «Альфа»', 'м2', 1],
+    [3, 'Секция 2'], [4, 'Пол «Альфа»', 'м2', 2],
+    [5, 'Секция 2'], [6, 'Пол «Альфа»', 'м2', 3],
+    [7, 'Секция 3'], [8, 'Пол «Альфа»', 'м2', 4],
+    [N, 'ИТОГО:']
+  ];
+  const r = parseSheet({ name: 'ФКП 141', rows });
+  const w = r.rows.filter((x) => x.kind === 'work').map((x) => [x.context.block, x.context.section]);
+  assert.deepEqual(w, [[1, '1'], [1, '2'], [2, '2'], [2, '3']]);
+  assert.equal(contextLabel(r.rows.find((x) => x.rowNo === 6)!.context), 'Блок 2 (корпус не указан) · Секция 2');
+  const one = parseSheet({ name: 'без повторов', rows: [rows[0], rows[1], rows[2], rows[3], rows[4]] });
+  assert.ok(one.rows.every((x) => x.context.block === undefined), 'номера не повторялись — блоков нет');
+  assert.ok(parseSheet(fkp()).rows.every((x) => x.context.block === undefined), 'корпус из «Итого Корпус N» — блоков нет');
+});

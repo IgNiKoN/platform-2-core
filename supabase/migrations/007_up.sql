@@ -410,6 +410,32 @@ begin
   return v_id;
 end $$;
 
+-- Пачка видов работ [{name, unit_id}] ≤ 1 000 (разбор 🔴 «Создать для всех»): есть такой (canon_name + ЕИ) — его id, нет — создаётся.
+-- Возвращает [{name, unit_id, id, created}] в порядке входа.
+create or replace function public.pf_vor_add_work_types(p_project uuid, p_items jsonb)
+returns jsonb language plpgsql security definer set search_path = pg_catalog, planfact as $$
+declare v_company uuid; r record; v_id uuid; v_name text; v_out jsonb := '[]'::jsonb; v_new boolean;
+begin
+  v_company := planfact.require_vor_manage(p_project);
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then raise exception 'Ожидается массив' using errcode = '22023'; end if;
+  if jsonb_array_length(p_items) > 1000 then raise exception 'Не более 1 000 видов работ за один вызов' using errcode = '22023'; end if;
+  for r in select e.j ->> 'name' as name, nullif(e.j ->> 'unit_id', '')::uuid as unit_id, e.ord from jsonb_array_elements(p_items) with ordinality as e(j, ord) order by e.ord loop
+    v_name := btrim(regexp_replace(coalesce(r.name, ''), '\s+', ' ', 'g'));
+    if v_name = '' or length(v_name) > 500 then raise exception 'Пустое или слишком длинное наименование вида работ' using errcode = '22023'; end if;
+    if r.unit_id is not null and not planfact.unit_allowed(r.unit_id, v_company) then raise exception 'Единица измерения не найдена' using errcode = '22023'; end if;
+    select id into v_id from planfact.work_types where company_id = v_company and deleted_at is null
+      and canon_name = planfact.canon_name(v_name) and unit_id is not distinct from r.unit_id;
+    v_new := v_id is null;
+    if v_new then
+      insert into planfact.work_types(company_id, name, canon_name, unit_id) values (v_company, v_name, planfact.canon_name(v_name), r.unit_id)
+      returning id into v_id;
+      perform planfact.log_admin_change(v_company, p_project, 'work_types', v_id, 'INSERT', null, jsonb_build_object('name', v_name, 'unit_id', r.unit_id));
+    end if;
+    v_out := v_out || jsonb_build_object('name', v_name, 'unit_id', r.unit_id, 'id', v_id, 'created', v_new);
+  end loop;
+  return v_out;
+end $$;
+
 create or replace function public.pf_vor_dictionary(p_project uuid)
 returns table(canon_name text, unit_text text, work_type_id uuid, hits int)
 language plpgsql stable security definer set search_path = pg_catalog, planfact as $$
@@ -566,14 +592,14 @@ revoke all on function planfact.vor_guard_confirmed(), planfact.require_vor_mana
 revoke all on function public.pf_vor_create_import(uuid, text, text, text, uuid, jsonb), public.pf_vor_add_rows(uuid, jsonb),
   public.pf_vor_list_imports(uuid), public.pf_vor_import_rows(uuid), public.pf_vor_delete_import(uuid),
   public.pf_vor_list_profiles(uuid), public.pf_vor_save_profile(uuid, text, text, jsonb, jsonb),
-  public.pf_vor_list_work_types(uuid), public.pf_vor_add_work_type(uuid, text, uuid, text), public.pf_vor_dictionary(uuid),
+  public.pf_vor_list_work_types(uuid), public.pf_vor_add_work_type(uuid, text, uuid, text), public.pf_vor_add_work_types(uuid, jsonb), public.pf_vor_dictionary(uuid),
   public.pf_vor_learn(uuid, jsonb), public.pf_vor_resolve_rows(uuid, jsonb), public.pf_vor_confirm(uuid),
   public.pf_vor_positions(uuid, uuid), public.pf_list_company_audit(uuid, int)
   from public, anon;
 grant execute on function public.pf_vor_create_import(uuid, text, text, text, uuid, jsonb), public.pf_vor_add_rows(uuid, jsonb),
   public.pf_vor_list_imports(uuid), public.pf_vor_import_rows(uuid), public.pf_vor_delete_import(uuid),
   public.pf_vor_list_profiles(uuid), public.pf_vor_save_profile(uuid, text, text, jsonb, jsonb),
-  public.pf_vor_list_work_types(uuid), public.pf_vor_add_work_type(uuid, text, uuid, text), public.pf_vor_dictionary(uuid),
+  public.pf_vor_list_work_types(uuid), public.pf_vor_add_work_type(uuid, text, uuid, text), public.pf_vor_add_work_types(uuid, jsonb), public.pf_vor_dictionary(uuid),
   public.pf_vor_learn(uuid, jsonb), public.pf_vor_resolve_rows(uuid, jsonb), public.pf_vor_confirm(uuid),
   public.pf_vor_positions(uuid, uuid), public.pf_list_company_audit(uuid, int)
   to authenticated;

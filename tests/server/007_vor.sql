@@ -105,6 +105,18 @@ begin
   exception when others then res := res || E'15 OK ЕИ другой компании отклонена\n'; end;
   select count(*) into n from public.pf_vor_list_work_types(pa);
   res := res || case when n = 2 then E'16 OK ПТО видит 2 вида работ своей компании\n' else format(E'16 FAIL видов работ %s\n', n) end;
+  rows := public.pf_vor_add_work_types(pa, jsonb_build_array(jsonb_build_object('name', 'окраска  СТЕН', 'unit_id', m2),
+    jsonb_build_object('name', 'Монтаж дверей', 'unit_id', null), jsonb_build_object('name', 'Монтаж дверей', 'unit_id', null)));
+  res := res || case when (rows -> 0 ->> 'id')::uuid = wt2 and (rows -> 0 ->> 'created')::boolean = false
+                      and (rows -> 1 ->> 'created')::boolean and (rows -> 2 ->> 'id') = (rows -> 1 ->> 'id') and not (rows -> 2 ->> 'created')::boolean
+    then E'16a OK пачка видов работ: существующий — его id, новый — создан один раз\n' else format(E'16a FAIL пачка: %s\n', rows) end;
+  begin perform public.pf_vor_add_work_types(pa, jsonb_build_array(jsonb_build_object('name', 'x', 'unit_id', ub))); res := res || E'16b FAIL ЕИ другой компании в пачке\n';
+  exception when others then res := res || E'16b OK пачка: ЕИ другой компании отклонена\n'; end;
+  -- нормализация наименований: те же образцы, что в unit-тесте клиента (canonName)
+  reset role;
+  select string_agg(planfact.canon_name(x), '|' order by o) into t from unnest(array['  Устройство   ПОЛА ', E'Окраска\tстен  в 2 слоя', 'Ёмкость Ё']) with ordinality as u(x, o);
+  res := res || case when t = 'устройство пола|окраска стен в 2 слоя|ёмкость ё' then E'16c OK canon_name = клиентский canonName на образцах\n' else format(E'16c FAIL canon_name: %s\n', t) end;
+  perform pg_temp.as_user(upto);
   n := public.pf_vor_learn(pa, jsonb_build_array(jsonb_build_object('name', ' Устройство  ПОЛА', 'unit_text', 'М2', 'work_type_id', wt)));
   select count(*) into n from public.pf_vor_dictionary(pa) where canon_name = 'устройство пола' and unit_text = 'м2' and work_type_id = wt;
   res := res || case when n = 1 then E'17 OK словарь: наименование нормализовано (canon_name), ЕИ — нижний регистр\n' else E'17 FAIL словарь\n' end;
@@ -132,6 +144,8 @@ begin
   exception when others then res := res || case when sqlstate = '42501' then E'25 OK прораб: запись строк — 42501\n' else E'25 FAIL ' || sqlerrm || E'\n' end; end;
   begin perform public.pf_vor_add_work_type(pa, 'Прорабская', m2); res := res || E'26 FAIL прораб создал вид работ\n';
   exception when others then res := res || E'26 OK прораб: вид работ — отказ\n'; end;
+  begin perform public.pf_vor_add_work_types(pa, '[{"name": "Прорабская"}]'); res := res || E'26a FAIL прораб создал виды работ пачкой\n';
+  exception when others then res := res || E'26a OK прораб: пачка видов работ — отказ\n'; end;
   begin perform public.pf_vor_learn(pa, jsonb_build_array(jsonb_build_object('name', 'x', 'work_type_id', wt))); res := res || E'27 FAIL прораб пополнил словарь\n';
   exception when others then res := res || E'27 OK прораб: словарь — отказ\n'; end;
   begin perform public.pf_vor_resolve_rows(imp, '[]'); res := res || E'28 FAIL прораб меняет решения строк\n';

@@ -71,3 +71,17 @@ test('частично есть: создаётся только недоста�
   assert.equal(await createMissing(b, places, t.add), 1);
   assert.equal((await bindPlaces(places, t.load))[0].path, 'Корпус 1 · Секция 4 · Этаж 13');
 });
+
+test('блок без корпуса: ждёт выбора ПТО (не создаётся и не сливается); после выбора — привязка к секции выбранного корпуса', async () => {
+  const t = tree([N('b7', null, 'building', 'Корпус 7', 'Корпус 7'), N('b8', null, 'building', 'Корпус 8', 'Корпус 8'),
+    N('s72', 'b7', 'section', 'Секция 2', 'Корпус 7 · Секция 2'), N('s82', 'b8', 'section', 'Секция 2', 'Корпус 8 · Секция 2')]);
+  const p1 = placeOf({ block: 1, section: '2' }), p2 = placeOf({ block: 2, section: '2' });
+  assert.notEqual(p1.key, p2.key, 'секции разных блоков — разные места');
+  const b = await bindPlaces([p1, p2], t.load);
+  assert.deepEqual(b.map((x) => [x.nodeId, x.pendingBlock]), [[null, 1], [null, 2]]);
+  assert.deepEqual(missingList(b, [p1, p2]), [], 'в «недостающие» не попадают');
+  assert.equal(await createMissing(b, [p1, p2], t.add), 0);
+  const q1 = placeOf({ block: 1, section: '2' }, { 1: { value: '7', name: 'Корпус 7' }, 2: { value: '8', name: 'Корпус 8' } });
+  const q2 = placeOf({ block: 2, section: '2' }, { 1: { value: '7', name: 'Корпус 7' }, 2: { value: '8', name: 'Корпус 8' } });
+  assert.deepEqual((await bindPlaces([q1, q2], t.load)).map((x) => x.path), ['Корпус 7 · Секция 2', 'Корпус 8 · Секция 2']);
+});

@@ -42,6 +42,8 @@ export interface VorApi {
   saveProfile(projectId: string, name: string, signature: string, columnMap: Record<string, unknown>): Promise<Result<string>>;
   listWorkTypes(projectId: string): Promise<WorkType[]>;
   addWorkType(projectId: string, name: string, unitId: string | null): Promise<Result<string>>;
+  /** Пачка видов работ (существующий canon+ЕИ — его id): [{name, unit_id}] → [{name, unit_id, id, created}]. */
+  addWorkTypes(projectId: string, items: { name: string; unit_id: string | null }[]): Promise<Result<{ name: string; unit_id: string | null; id: string; created: boolean }[]>>;
   dictionary(projectId: string): Promise<DictEntry[]>;
   learn(projectId: string, items: { name: string; unit_text: string; work_type_id: string }[]): Promise<Result<number>>;
   resolveRows(importId: string, items: Resolution[]): Promise<Result<number>>;
@@ -112,6 +114,15 @@ export function createVorService(): VorApi | null {
     saveProfile: (p, name, signature, map) => call<string>('pf_vor_save_profile', { p_project: p, p_name: name, p_signature: signature, p_column_map: map, p_rules: {} }),
     listWorkTypes: (p) => rows<WorkType>('pf_vor_list_work_types', { p_project: p }),
     addWorkType: (p, name, unit) => call<string>('pf_vor_add_work_type', { p_project: p, p_name: name, p_unit: unit, p_code: null }),
+    async addWorkTypes(p, items) {
+      const out: { name: string; unit_id: string | null; id: string; created: boolean }[] = [];
+      for (const part of chunks(items, ROWS_CHUNK)) {
+        const r = await call<{ name: string; unit_id: string | null; id: string; created: boolean }[]>('pf_vor_add_work_types', { p_project: p, p_items: part });
+        if (!r.ok) return r;
+        out.push(...(r.value || []));
+      }
+      return { ok: true, value: out };
+    },
     dictionary: (p) => rows<DictEntry>('pf_vor_dictionary', { p_project: p }),
     learn: (p, items) => batched('pf_vor_learn', 'p_items', { p_project: p }, items),
     resolveRows: (i, items) => batched('pf_vor_resolve_rows', 'p_items', { p_import: i }, items),

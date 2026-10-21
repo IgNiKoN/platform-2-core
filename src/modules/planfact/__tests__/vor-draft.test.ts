@@ -27,15 +27,17 @@ const R = (row_no: number, kind: VorRow['kind'], context: VorRow['context']): Vo
 const ROWS = [R(10, 'context', { building: '7', section: '1' }), R(11, 'work', { building: '7', section: '1', apartments: 'кв. 3' }),
   R(12, 'work', { building: '7', section: '2' }), R(13, 'work', { section: '4', floor: { from: 4, to: 12 } })];
 
-function setup(nodes: LocationNode[]) {
+function setup(nodes: LocationNode[], rows: VorRow[] = ROWS) {
   const resolved: Resolution[] = [];
   const created: string[] = [];
   const api = {
-    async importRows() { return ROWS.map((r) => ({ ...r })); },
-    async resolveRows(_i: string, items: Resolution[]) { resolved.push(...items); return { ok: true, value: items.length }; }
+    async importRows() { return rows.map((r) => ({ ...r })); },
+    async resolveRows(_i: string, items: Resolution[]) { resolved.push(...items); return { ok: true, value: items.length }; },
+    async listWorkTypes() { return []; }, async dictionary() { return []; }
   } as unknown as VorApi;
   let seq = 0;
   const projects = {
+    async listUnits() { return [{ id: 'm2', company_id: null, code: 'м²', name: 'Квадратный метр', is_common: true }]; },
     async listLocations(_p: string, parent: string | null) { return nodes.filter((n) => n.parent_id === parent); },
     async addLocation(_p: string, parent: string | null, type: LocationNode['node_type'], name: string) {
       const pp = nodes.find((n) => n.id === parent);
@@ -75,6 +77,8 @@ test('пустое дерево: список недостающих → «Со�
   assert.equal(el.querySelector('[data-testid="vor-missing"]'), null);
   assert.equal(resolved.length, 3);
   assert.equal(resolved.find((x) => x.row_no === 13)!.location_id, nodes.find((n) => n.name === 'Секция 4')!.id, '«Этажи 4–12» → секция');
+  assert.equal(el.querySelector('[data-testid="vor-places"]'), null, 'все места привязаны — список свёрнут');
+  el.querySelector('[data-testid="vor-show-places"]').click(); await tick();
   assert.match(el.querySelector('[data-testid="vor-places"]').textContent, /→ Корпус 7 · Секция 2/);
 });
 
@@ -89,4 +93,23 @@ test('дерево есть (генератор: «эт. 2»): привязка 
   assert.equal(el.querySelector('[data-testid="vor-create-missing"]'), null);
   assert.ok(el.querySelector('[data-testid="vor-no-create"]'));
   assert.equal(created.length, 0);
+});
+
+test('блоки без корпуса: выбор корпуса из дерева → строки блока привязаны к секции этого корпуса', async () => {
+  const L = (id: string, parent: string | null, type: LocationNode['node_type'], name: string, path: string): LocationNode =>
+    ({ id, parent_id: parent, node_type: type, name, sort_order: 0, area: null, depth: 1, path, child_count: 0 });
+  const nodes = [L('b7', null, 'building', 'Корпус 7', 'Корпус 7'), L('b8', null, 'building', 'Корпус 8', 'Корпус 8'),
+    L('s72', 'b7', 'section', 'Секция 2', 'Корпус 7 · Секция 2'), L('s82', 'b8', 'section', 'Секция 2', 'Корпус 8 · Секция 2')];
+  const rows = [R(1, 'work', { block: 1, section: '2' }), R(2, 'work', { block: 2, section: '2' })];
+  const { api, projects, resolved } = setup(nodes, rows);
+  const el = mount({ api, projects, canManage: true, canProjects: true });
+  await tick(); await tick();
+  assert.equal(el.querySelectorAll('[data-testid="vor-block-select"]').length, 2);
+  assert.match(el.querySelector('[data-testid="vor-bound"]').textContent, /0 из 2/);
+  for (const [k, id] of [[1, 'b7'], [2, 'b8']] as [number, string][]) {
+    const sel = el.querySelector(`[data-testid="vor-block-select"][data-block="${k}"]`);
+    sel.value = id; sel.dispatchEvent(new win.Event('change', { bubbles: true })); await tick(); await tick();
+  }
+  assert.match(el.querySelector('[data-testid="vor-bound"]').textContent, /2 из 2/);
+  assert.deepEqual(resolved.map((r) => [r.row_no, r.location_id]), [[1, 's72'], [2, 's82']]);
 });
