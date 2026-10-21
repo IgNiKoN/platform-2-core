@@ -144,3 +144,84 @@ test('сведение строк: правки ПТО по source_row_id, ша�
   d.proposal = null;
   assert.deepEqual(actRowsOf(d).map((r) => r.source_row_id), ['x', 'z'], 'выданный акт — снимок как есть');
 });
+
+// --- Этап 4: редакции, скачивание, выдача, аннулирование (сценарий владельца до второго акта) ---
+const { readWorkbook } = await import('../vor/xlsx-reader.ts');
+function mountAct(s: any, saved: { bytes: Uint8Array; name: string }[]) {
+  const el = win.document.createElement('div');
+  win.document.body.appendChild(el);
+  const { Ks2Act } = s;
+  flushSync(() => createRoot(el as unknown as HTMLElement).render(createElement(Ks2Act, { api: s.api, actId: s.actId, canEdit: true, onBack: () => {}, save: (b: Uint8Array, n: string) => saved.push({ bytes: b, name: n }) } as N)));
+  return el as N;
+}
+
+test('сценарий: правка → сохранить → скачать → выдать → второй акт без выданного объёма → аннулировать', async () => {
+  const s = setup();
+  const { Ks2Act } = await import('../ks2/Ks2Act.ts');
+  const saved: { bytes: Uint8Array; name: string }[] = [];
+  const actId = (await s.api.createAct('pr1', '1', '2026-10-31', '2026-10-01', '2026-10-31') as N).value;
+  const el = mountAct({ ...s, Ks2Act, actId }, saved);
+  await tick(); await tick();
+  assert.equal(el.querySelector('[data-testid="k2-download"]'), null, 'до сохранения скачать нельзя');
+  assert.equal(el.querySelector('[data-testid="k2-issue"]'), null, 'до сохранения выдать нельзя');
+  typeIn(row(el, 12).querySelector('[data-testid="k2-qty"]'), '12'); await tick();
+  typeIn(el.querySelector('[data-field="contract_no"]'), 'Д-17/26'); await tick();
+  el.querySelector('[data-testid="k2-save"]').click(); await tick(); await tick();
+  assert.ok(!el.querySelector('[data-testid="k2-download"]').disabled);
+  el.querySelector('[data-testid="k2-download"]').click(); await tick(); await tick(); await tick();
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].name, 'КС-2 № 1 (ред. 1).xlsx');
+  const flat = (await readWorkbook(saved[0].bytes)).sheets[0].rows.flat();
+  assert.ok(flat.includes('Д-17/26') && flat.includes('Штукатурка стен «Альфа»'), 'в файле шапка и строки заказчика');
+  assert.ok(flat.includes(12 * 300 + 135 * 12.5), 'итог в файле = 12 × 300 + 135 × 12,5');
+  // несохранённая правка блокирует выдачу и скачивание
+  typeIn(row(el, 12).querySelector('[data-testid="k2-qty"]'), '11'); await tick();
+  assert.ok(el.querySelector('[data-testid="k2-issue"]').disabled && el.querySelector('[data-testid="k2-download"]').disabled);
+  el.querySelector('[data-testid="k2-save"]').click(); await tick(); await tick();
+  // история: 2 редакции, скачать первую
+  el.querySelector('[data-testid="k2-history-btn"]').click(); await tick(); await tick();
+  assert.equal(el.querySelectorAll('[data-testid="k2-history"] .k2-hrow').length, 2);
+  el.querySelector('[data-revision="1"] [data-testid="k2-rev-download"]').click(); await tick(); await tick(); await tick();
+  assert.equal(saved[1].name, 'КС-2 № 1 (ред. 1).xlsx');
+  // выдать — с подтверждением
+  el.querySelector('[data-testid="k2-issue"]').click(); await tick();
+  assert.match(txt(el, '[data-testid="k2-issue-confirm"]'), /Выдать акт № 1 \(редакция 2\)/);
+  el.querySelector('[data-testid="k2-issue-yes"]').click(); await tick(); await tick();
+  assert.match(txt(el, '[data-testid="k2-notice"]'), /Акт выдан/);
+  assert.equal(el.querySelector('[data-testid="k2-save"]'), null, 'выданный акт не правится');
+  assert.equal(el.querySelector('[data-testid="k2-qty"]'), null);
+  assert.equal(el.querySelector('[data-testid="k2-issue"]'), null, 'повторной выдачи нет');
+  assert.equal(s.acts[0].status, 'issued');
+  // второй акт: выданные 11 не попадают, остаток 15 − 11 = 4
+  const a2 = (await s.api.createAct('pr1', '2', '2026-10-31', '2026-10-01', '2026-10-31') as N).value;
+  const el2 = mountAct({ ...s, Ks2Act, actId: a2 }, saved);
+  await tick(); await tick();
+  assert.equal(txt(row(el2, 12), '.k2-c-prev'), '11');
+  assert.equal(txt(row(el2, 12), '.k2-c-sys'), '4');
+  // аннулировать первый — без причины нельзя, с причиной объём возвращается
+  el.querySelector('[data-testid="k2-annul"]').click(); await tick();
+  el.querySelector('[data-testid="k2-annul-yes"]').click(); await tick();
+  assert.match(txt(el, '[role="alert"]'), /причину/);
+  typeIn(el.querySelector('[data-testid="k2-annul-reason"]'), 'Заказчик не подписал'); await tick();
+  el.querySelector('[data-testid="k2-annul-yes"]').click(); await tick(); await tick();
+  assert.match(txt(el, '[data-testid="k2-notice"]'), /аннулирован/);
+  assert.equal(s.acts[0].status, 'annulled');
+  const el3 = mountAct({ ...s, Ks2Act, actId: a2 }, saved);
+  await tick(); await tick();
+  assert.equal(txt(row(el3, 12), '.k2-c-sys'), '15', 'после аннулирования весь факт снова доступен');
+});
+
+test('выдача без цены — понятный отказ сервера на экране', async () => {
+  const f = makeFakeKs2(SRC, [...FACTS, { src: 's14', date: '2026-10-05', qty: 3 }]);
+  const { Ks2Act } = await import('../ks2/Ks2Act.ts');
+  const actId = (await f.api.createAct('pr1', '1', '2026-10-31', '2026-10-01', '2026-10-31') as N).value;
+  const el = mountAct({ ...f, Ks2Act, actId }, []);
+  await tick(); await tick();
+  assert.ok(row(el, 14).classList.contains('k2-row--unpriced'));
+  assert.match(txt(el, '[data-testid="k2-problems"]'), /Нет цены у 1/);
+  el.querySelector('[data-testid="k2-save"]').click(); await tick(); await tick();
+  el.querySelector('[data-testid="k2-issue"]').click(); await tick();
+  el.querySelector('[data-testid="k2-issue-yes"]').click(); await tick(); await tick();
+  assert.match(txt(el, '[role="alert"]'), /Нет цены/);
+  assert.equal(f.acts[0].status, 'draft');
+});

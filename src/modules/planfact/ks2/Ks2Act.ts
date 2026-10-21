@@ -1,12 +1,14 @@
 /**
  * Акт КС-2 (P2-0008b): шапка-реквизиты и строки заказчика — «с начала работ», «выставлено ранее», «по системе» (с сервера)
  * и итог ПТО («в акт», цена, исключить). «Сохранить» — новая неизменяемая редакция; сервер пересчитывает предложение.
- * Выданный и аннулированный акт — только просмотр своей редакции.
+ * Выданный и аннулированный акт — только просмотр своей редакции. «История» — все редакции, скачать любую;
+ * «Выдать» (с подтверждением) фиксирует последнюю редакцию; «Аннулировать» — с причиной, объём снова доступен следующим актам.
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { Ks2ActData, Ks2Api } from './ks2.service.ts';
-import { actTotal, emptyKs2Header, isEdited, ks2Problems, rowCost, ruDate, type Ks2Header, type Ks2Row } from './form.ts';
+import type { Ks2ActData, Ks2Api, Ks2RevisionItem } from './ks2.service.ts';
+import { actTotal, emptyKs2Header, isEdited, ks2FileName, ks2Problems, rowCost, ruDate, writeUnifiedKs2, type Ks2Header, type Ks2Row, type Ks2Snapshot } from './form.ts';
+import { saveFile } from '../estimate/KpBlock.ts';
 import { actHeader, actRowsOf, snapshotOf, STATUS_LABEL, toEdits } from './model.ts';
 import { money } from '../estimate/prices.ts';
 import { fmtQty, parseQty } from '../fact/fact.ts';
@@ -20,8 +22,9 @@ const FIELDS: { key: keyof Ks2Header; label: string; date?: boolean; wide?: bool
 ];
 const numText = (v: number | null): string => (v === null ? '' : String(v).replace('.', ','));
 
-export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; onBack: () => void }): ReactElement {
+export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; onBack: () => void; save?: (b: Uint8Array, n: string) => void }): ReactElement {
   const { api, actId, canEdit, onBack } = props;
+  const saveBytes = props.save || saveFile;
   const [data, setData] = useState<Ks2ActData | null>(null);
   const [rows, setRows] = useState<Ks2Row[]>([]);
   const [header, setHeader] = useState<Ks2Header>(emptyKs2Header());
@@ -30,6 +33,9 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; on
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [history, setHistory] = useState<Ks2RevisionItem[] | null>(null);
+  const [confirm, setConfirm] = useState<'' | 'issue' | 'annul'>('');
+  const [reason, setReason] = useState('');
 
   async function load(): Promise<void> {
     const r = await api.act(actId);
@@ -71,6 +77,43 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; on
     if (!r.ok) { setError(r.message); return; }
     await load();
     setNotice(`Сохранена редакция ${r.value}`);
+  }
+
+  async function download(snapshot: Ks2Snapshot, revisionNo: number): Promise<void> {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { saveBytes(await writeUnifiedKs2(snapshot), ks2FileName(snapshot.header.act_no || act.act_no, revisionNo)); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось сформировать файл'); }
+    setBusy(false);
+  }
+  async function downloadRevision(id: string): Promise<void> {
+    const r = await api.revision(id);
+    if (!r.ok) { setError(r.message); return; }
+    await download(r.value.snapshot, r.value.revision_no);
+  }
+  async function toggleHistory(): Promise<void> {
+    if (history) { setHistory(null); return; }
+    const r = await api.revisions(actId);
+    if (r.ok) setHistory(r.value); else setError(r.message);
+  }
+  async function issue(): Promise<void> {
+    if (busy) return;
+    setBusy(true); setError('');
+    const r = await api.issue(actId);
+    setBusy(false); setConfirm('');
+    if (!r.ok) { setError(r.message); return; }
+    await load(); setHistory(null);
+    setNotice('Акт выдан. Его объём не попадёт в следующие акты.');
+  }
+  async function annul(): Promise<void> {
+    if (busy) return;
+    if (!reason.trim()) { setError('Укажите причину аннулирования'); return; }
+    setBusy(true); setError('');
+    const r = await api.annul(actId, reason.trim());
+    setBusy(false);
+    if (!r.ok) { setError(r.message); return; }
+    setConfirm(''); setReason(''); await load(); setHistory(null);
+    setNotice('Акт аннулирован. Его объём снова доступен следующим актам.');
   }
 
   const headForm = h('details', { className: 'pf-card k2-head', 'data-testid': 'k2-head' },
@@ -124,8 +167,33 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; on
     editable && problems.length ? h('div', { className: 'ft-warn', 'data-testid': 'k2-problems' }, problems.join(' ')) : null,
     notice ? h('div', { className: 'pj-notice', role: 'status', 'data-testid': 'k2-notice' }, notice) : null,
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
-    editable ? h('div', { className: 'pj-actions k2-actions' },
-      h('button', { type: 'button', className: 'pf-btn', disabled: busy, 'data-testid': 'k2-save', onClick: () => { void save(); } }, 'Сохранить редакцию')) : null);
+    h('div', { className: 'pj-actions k2-actions' },
+      editable ? h('button', { type: 'button', className: 'pf-btn', disabled: busy, 'data-testid': 'k2-save', onClick: () => { void save(); } }, 'Сохранить редакцию') : null,
+      data.last_revision ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', disabled: busy || dirty, 'data-testid': 'k2-download', title: dirty ? 'Сначала сохраните изменения' : '',
+        onClick: () => { void download(data.last_revision!.snapshot, data.last_revision!.revision_no); } }, 'Скачать Excel') : null,
+      data.last_revision ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'k2-history-btn', onClick: () => { void toggleHistory(); } }, history ? 'Скрыть историю' : 'История') : null,
+      editable && data.last_revision ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', disabled: busy || dirty, 'data-testid': 'k2-issue', title: dirty ? 'Сначала сохраните изменения' : '',
+        onClick: () => { setConfirm('issue'); setError(''); } }, 'Выдать') : null,
+      canEdit && act.status === 'issued' ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'k2-annul', onClick: () => { setConfirm('annul'); setError(''); } }, 'Аннулировать') : null),
+    editable && !data.last_revision ? h('div', { className: 'pf-muted' }, 'Сохраните редакцию — после этого акт можно скачать и выдать.') : null,
+    dirty && data.last_revision ? h('div', { className: 'pf-muted' }, 'Скачать и выдать можно сохранённую редакцию — сначала сохраните изменения.') : null,
+    confirm === 'issue' ? h('div', { className: 'pf-card k2-confirm', role: 'dialog', 'data-testid': 'k2-issue-confirm' },
+      h('b', null, `Выдать акт № ${act.act_no} (редакция ${data.last_revision?.revision_no}) на ${money(data.last_revision?.total ?? 0)} ₽?`),
+      h('div', { className: 'pf-muted' }, 'Выданный акт изменить нельзя — только аннулировать с причиной. Его объём не войдёт в следующие акты.'),
+      h('div', { className: 'pj-actions' },
+        h('button', { type: 'button', className: 'pf-btn', disabled: busy, 'data-testid': 'k2-issue-yes', onClick: () => { void issue(); } }, 'Да, выдать'),
+        h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setConfirm('') }, 'Отмена'))) : null,
+    confirm === 'annul' ? h('div', { className: 'pf-card k2-confirm', role: 'dialog', 'data-testid': 'k2-annul-confirm' },
+      h('label', { className: 'pf-field' }, 'Причина аннулирования', h('input', { className: 'pj-input', value: reason, maxLength: 1000, 'data-testid': 'k2-annul-reason', onChange: (e) => setReason((e.target as HTMLInputElement).value) })),
+      h('div', { className: 'pj-actions' },
+        h('button', { type: 'button', className: 'pf-btn', disabled: busy, 'data-testid': 'k2-annul-yes', onClick: () => { void annul(); } }, 'Аннулировать акт'),
+        h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => { setConfirm(''); setReason(''); } }, 'Отмена'))) : null,
+    history ? h('div', { className: 'pf-card k2-history', 'data-testid': 'k2-history' },
+      history.map((v) => h('div', { key: v.id, className: 'k2-hrow', 'data-revision': v.revision_no },
+        h('b', null, `Редакция ${v.revision_no}`, v.issued ? h('span', { className: 'k2-badge k2-badge--issued' }, ' выдана') : null),
+        h('span', { className: 'pf-muted' }, `${new Date(v.created_at).toLocaleString('ru-RU')} · ${v.created_by_email || '—'}`),
+        h('span', { className: 'pf-num' }, `${money(v.total)} ₽`),
+        h('button', { type: 'button', className: 'pf-btn pf-btn--ghost k2-small', disabled: busy, 'data-testid': 'k2-rev-download', onClick: () => { void downloadRevision(v.id); } }, 'Скачать')))) : null);
 }
 
 export const KS2_ACT_CSS = `
@@ -149,6 +217,10 @@ export const KS2_ACT_CSS = `
 .k2-edited{font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 6px;border-radius:6px;border:1px solid var(--primary);color:var(--primary)}
 .k2-in{width:100%;min-height:32px;padding:4px 8px;font-size:14px;box-sizing:border-box}
 .k2-small{min-height:30px;padding:3px 8px;font-size:12px}
+.k2-confirm{display:flex;flex-direction:column;gap:10px;padding:12px 14px;overflow:visible}
+.k2-history{display:flex;flex-direction:column}
+.k2-hrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) 150px auto;gap:6px 12px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--card-border);font-size:13px}
+.k2-hrow:last-child{border-bottom:0}
 .k2-total{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;font-size:15px;position:sticky;bottom:0;background:var(--card-bg);border-top:1px solid var(--card-border)}
 @container k2act (max-width:1180px){
 .k2-row{grid-template-columns:56px repeat(6,minmax(0,1fr)) 128px}
@@ -171,5 +243,7 @@ export const KS2_ACT_CSS = `
 .k2-c-qty::before{content:'В акт';font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted)}
 .k2-c-price::before{content:'Цена, ₽';font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted)}
 .k2-head-grid .k2-wide{grid-column:1/-1}
+.k2-hrow{grid-template-columns:minmax(0,1fr) auto}
+.k2-hrow .pf-muted{grid-column:1/-1;order:3}
 }
 `;
