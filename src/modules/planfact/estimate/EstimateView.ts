@@ -122,10 +122,10 @@ export function EstimateView(props: EstimateViewProps): ReactElement {
       h('div', { className: 'es-trow es-trow--head' }, h('span', null, 'Лист'), h('span', { className: 'pf-num' }, 'Работа'), h('span', { className: 'pf-num' }, 'Материалы'), h('span', { className: 'pf-num' }, 'Всего')),
       estimate.import_ids.map((id) => { const s = totals.byImport.get(id); return h('div', { key: id, className: 'es-trow', 'data-import': id },
         h('span', null, `«${sheet(id)}»`, s && s.unpriced ? h('span', { className: 'es-warn' }, ` без цены: ${s.unpriced}`) : null),
-        h('span', { className: 'pf-num', 'data-testid': 'es-sum-labor' }, money(s?.labor ?? 0)), h('span', { className: 'pf-num', 'data-testid': 'es-sum-material' }, money(s?.material ?? 0)),
-        h('span', { className: 'pf-num' }, money(s?.total ?? 0))); }),
-      h('div', { className: 'es-trow es-trow--all' }, h('span', null, 'Прямые затраты по ВОР'), h('span', { className: 'pf-num' }, money(totals.all.labor)),
-        h('span', { className: 'pf-num' }, money(totals.all.material)), h('span', { className: 'pf-num', 'data-testid': 'es-sum-all' }, money(totals.all.total)))),
+        h('span', { className: 'pf-num es-t-l', 'data-testid': 'es-sum-labor' }, money(s?.labor ?? 0)), h('span', { className: 'pf-num es-t-m', 'data-testid': 'es-sum-material' }, money(s?.material ?? 0)),
+        h('span', { className: 'pf-num es-t-t' }, money(s?.total ?? 0))); }),
+      h('div', { className: 'es-trow es-trow--all' }, h('span', null, 'Прямые затраты по ВОР'), h('span', { className: 'pf-num es-t-l' }, money(totals.all.labor)),
+        h('span', { className: 'pf-num es-t-m' }, money(totals.all.material)), h('span', { className: 'pf-num es-t-t', 'data-testid': 'es-sum-all' }, money(totals.all.total)))),
     h('div', { className: 'pr-tools' },
       h('div', { className: 'pf-seg es-filter', role: 'tablist' },
         ([['all', 'Все строки'], ['unpriced', `Без цены · ${totals.all.unpriced}`], ['manual', `Вручную · ${rows.filter((r) => r.price_source === 'manual').length}`]] as [Filter, string][])
@@ -170,8 +170,8 @@ export function EstimateView(props: EstimateViewProps): ReactElement {
           h('span', { className: 'es-price' }, r.kind === 'work'
             ? h(PriceField, { value: r.price_labor, label: 'Цена работы', disabled: busy, testid: 'es-labor', onSave: (v: number) => savePrice(r, 'labor', v) }) : null),
           h('span', { className: 'es-price' }, h(PriceField, { value: r.price_material, label: r.kind === 'work' ? 'Мат. в составе' : 'Цена материала', disabled: busy, testid: 'es-material', onSave: (v: number) => savePrice(r, 'material', v) })),
-          h('span', { className: 'pf-num es-sum' }, c && c.labor ? money(c.labor) : ''),
-          h('span', { className: 'pf-num es-sum' }, c && c.material ? money(c.material) : ''))];
+          h('span', { className: 'pf-num es-sum es-sum--l' }, c && c.labor ? money(c.labor) : ''),
+          h('span', { className: 'pf-num es-sum es-sum--m' }, c && c.material ? money(c.material) : ''))];
       })),
     extra ? extra(rows, { labor: totals.all.labor, material: totals.all.material }, area !== null && !Number.isNaN(area) && area > 0 ? area : null) : null);
 }
@@ -189,8 +189,8 @@ export const ESTIMATE_CSS = `
 .es-warn{color:var(--color-yellow);font-size:11px;font-weight:700}
 .es-filter{flex:0 1 460px}
 .es-filter .pf-seg-btn{min-width:0;padding:8px 6px;letter-spacing:.02em}
-.es-rows{display:flex;flex-direction:column}
-.es-row{display:grid;grid-template-columns:44px minmax(0,1fr) 56px 110px 130px 130px 120px 120px;gap:6px 8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--card-border);font-size:13px}
+.es-rows{display:flex;flex-direction:column;max-height:70vh;overflow:auto;overscroll-behavior:contain}
+.es-row{display:grid;grid-template-columns:44px minmax(0,1fr) 56px 110px 130px 130px 120px 120px;gap:4px 8px;align-items:center;padding:4px 12px;border-bottom:1px solid var(--card-border);font-size:13px}
 .es-row:last-child{border-bottom:0}
 .es-row--head{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);position:sticky;top:0;background:var(--card-bg);z-index:1}
 .es-row--group,.es-row--context{background:var(--hover-bg);font-weight:700}
@@ -203,9 +203,9 @@ export const ESTIMATE_CSS = `
 .es-badge--none{border-color:var(--color-yellow);color:var(--color-yellow)}
 .es-hint{flex-basis:100%;font-size:11px;color:var(--text-muted)}
 .es-price .pr-field-label{display:none}
-.es-price .pr-input{width:100%}
+.es-price .pr-input{width:100%;min-height:32px;padding:4px 8px}
 .es-sheet{padding:10px 12px 4px;font-size:12px;font-weight:900;text-transform:uppercase;color:var(--text-main);border-bottom:1px solid var(--card-border)}
-@media (max-width:900px){
+@media (max-width:1200px){
 .es-row--head{display:none}
 .es-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:10px 12px}
 .es-no{grid-column:1/-1}
@@ -214,8 +214,14 @@ export const ESTIMATE_CSS = `
 .es-unit::before{content:'ЕИ: '}
 .es-qty{text-align:left}
 .es-sum{text-align:left}
-.es-sum:not(:empty)::before{content:'= '}
-.es-trow{grid-template-columns:minmax(0,1fr) minmax(0,1fr);row-gap:2px}
+.es-sum--l:not(:empty)::before{content:'Работа = '}
+.es-sum--m:not(:empty)::before{content:'Материалы = '}
+.es-qty::before{content:'Объём: '}
+.es-t-l,.es-t-m,.es-t-t{text-align:left}
+.es-t-l::before{content:'Работа: ';color:var(--text-muted)}
+.es-t-m::before{content:'Материалы: ';color:var(--text-muted)}
+.es-t-t::before{content:'Всего: ';color:var(--text-muted)}
+.es-trow{grid-template-columns:minmax(0,1fr);row-gap:2px}
 .es-trow--head{display:none}
 .es-trow>span:first-child{grid-column:1/-1;font-weight:700}
 .es-head .pf-btn{flex:1 1 auto}

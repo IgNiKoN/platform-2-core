@@ -14,6 +14,7 @@ import { UnitsTab } from '../../platform/company/UnitsTab.ts';
 import { VorTab } from './vor/VorTab.ts';
 import { PricesTab } from './estimate/PricesTab.ts';
 import { EstimateTab } from './estimate/EstimateTab.ts';
+import { OverheadTemplateTab } from './estimate/OverheadsEditor.ts';
 import type { EstimateApi } from './estimate/estimate.service.ts';
 import type { CompanyAccess, ProjectsApi } from '../../platform/company/projects.service.ts';
 import type { DataApi } from './data.service.ts';
@@ -25,14 +26,14 @@ const BASE = '#/planfact';
 /** Событие модуля: маршрут #/planfact… показан (его шлёт index.ts при каждом переходе роутера). */
 export const ROUTE_EVENT = 'planfact:route';
 type Page = 'works' | 'directories' | 'vor' | 'estimate';
-type Sub = 'objects' | 'units' | 'prices';
+type Sub = 'objects' | 'units' | 'prices' | 'overheads';
 /** «Цены» — только с правом planfact.estimate.manage (коммерческая тайна; прораб вкладку не видит, сервер тоже не отдаст). */
-const SUBS: { id: Sub; label: string; estimate?: boolean }[] = [{ id: 'objects', label: 'Объекты' }, { id: 'units', label: 'Единицы' }, { id: 'prices', label: 'Цены', estimate: true }];
+const SUBS: { id: Sub; label: string; estimate?: boolean }[] = [{ id: 'objects', label: 'Объекты' }, { id: 'units', label: 'Единицы' }, { id: 'prices', label: 'Цены', estimate: true }, { id: 'overheads', label: 'Надбавки', estimate: true }];
 
-/** Адрес #/planfact[/vor|/estimate|/directories[/objects|/units|/prices]] → страница и вкладка справочников. Пункты верхнего уровня — в боковом меню (манифест модуля). */
+/** Адрес #/planfact[/vor|/estimate|/directories[/objects|/units|/prices|/overheads]] → страница и вкладка справочников. Пункты верхнего уровня — в боковом меню (манифест модуля). */
 export function routeFromHash(hash: string): { page: Page; sub: Sub } {
   const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
-  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'works', sub: parts[1] === 'units' ? 'units' : parts[1] === 'prices' ? 'prices' : 'objects' };
+  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'works', sub: parts[1] === 'units' ? 'units' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
 }
 
 function accessLabel(entries: AccessEntry[]): string {
@@ -115,6 +116,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     : dirs && projects
     ? h(CompanyScope, { api: projects, render: (c) => route.sub === 'units' ? h(UnitsTab, { api: projects, company: c })
         : route.sub === 'prices' && canEstimate && estimate ? h(PricesTab, { api: estimate, vor: vorApi || null, company: c })
+        : route.sub === 'overheads' && canEstimate && estimate ? h(OverheadTemplateTab, { api: estimate, company: c })
         : h(ProjectsTab, { api: projects, company: c }) })
     : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });
   const head = est

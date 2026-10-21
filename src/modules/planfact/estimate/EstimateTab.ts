@@ -8,6 +8,7 @@ import type { VorApi, VorImport, VorProject } from '../vor/vor.service.ts';
 import type { EstimateApi, EstimateItem } from './estimate.service.ts';
 import { ESTIMATE_MANAGE } from './estimate.service.ts';
 import { EstimateView } from './EstimateView.ts';
+import { EstimateOverheads } from './OverheadsEditor.ts';
 import { parsePriceInput } from './prices.ts';
 
 const dateFmt = (iso: string): string => { try { return new Date(iso).toLocaleDateString('ru-RU'); } catch { return iso; } };
@@ -68,7 +69,8 @@ export function EstimateTab(props: { api: EstimateApi; vor: VorApi }): ReactElem
           projects.map((p) => h('option', { key: p.id, value: p.id }, p.name)))
       : h('div', { className: 'pf-muted' }, 'Проект: ', h('b', null, projects[0].name)),
     open
-      ? h(EstimateView, { key: open.id, api, vor, estimate: open, imports, companyId: projects.find((p) => p.id === projectId)?.company_id || '', onBack: () => { setOpenId(''); void loadProject(projectId); } })
+      ? h(EstimateView, { key: open.id, api, vor, estimate: open, imports, companyId: projects.find((p) => p.id === projectId)?.company_id || '',
+          extra: (_rows, totals, area) => h(EstimateOverheads, { api, estimateId: open.id, companyId: projects.find((p) => p.id === projectId)?.company_id || '', base: totals, area }), onBack: () => { setOpenId(''); void loadProject(projectId); } })
       : h('div', { className: 'pj-tab' },
           h('div', { className: 'pj-actions' },
             h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'es-new', onClick: () => setCreating(!creating) }, creating ? 'Отмена' : 'Новая смета')),

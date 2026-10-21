@@ -23,6 +23,7 @@ import { VOR_POSITIONS_CSS } from './vor/VorPositions.ts';
 import { createVorService } from './vor/vor.service.ts';
 import { PRICES_CSS } from './estimate/PricesTab.ts';
 import { ESTIMATE_CSS } from './estimate/EstimateView.ts';
+import { OVERHEADS_CSS } from './estimate/OverheadsEditor.ts';
 import { PRICES_IMPORT_CSS } from './estimate/PricesImport.ts';
 import { createEstimateService } from './estimate/estimate.service.ts';
 import type { EstimateApi } from './estimate/estimate.service.ts';
@@ -93,7 +94,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS;
   doc.head.appendChild(style);
 }
 
