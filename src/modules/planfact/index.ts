@@ -37,6 +37,11 @@ import type { Ks2Api } from './ks2/ks2.service.ts';
 import { KS2_CSS } from './ks2/Ks2Tab.ts';
 import { KS2_ACT_CSS } from './ks2/Ks2Act.ts';
 import { KS2_TPL_CSS } from './ks2/Ks2Template.ts';
+import { createSummaryService } from './summary/summary.service.ts';
+import type { SummaryApi } from './summary/summary.service.ts';
+import { SUMMARY_CSS } from './summary/SummaryTab.ts';
+import { SUMMARY_PROJECT_CSS } from './summary/ProjectView.ts';
+import { SUMMARY_GAP_CSS } from './summary/Ks2Gap.ts';
 import { createDataService } from './data.service.ts';
 import type { DataApi } from './data.service.ts';
 import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
@@ -57,6 +62,7 @@ let vorApi: VorApi | null = null;
 let estimateApi: EstimateApi | null = null;
 let factApi: FactApi | null = null;
 let ks2Api: Ks2Api | null = null;
+let summaryApi: SummaryApi | null = null;
 
 function getAuth(): AuthApi | null {
   if (auth === undefined) {
@@ -68,6 +74,7 @@ function getAuth(): AuthApi | null {
     estimateApi = auth ? createEstimateService() : null;
     factApi = auth ? createFactService() : null;
     ks2Api = auth ? createKs2Service() : null;
+    summaryApi = auth ? createSummaryService() : null;
   }
   return auth;
 }
@@ -109,7 +116,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS + KS2_CSS + KS2_ACT_CSS + KS2_TPL_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS + KS2_CSS + KS2_ACT_CSS + KS2_TPL_CSS + SUMMARY_CSS + SUMMARY_PROJECT_CSS + SUMMARY_GAP_CSS;
   doc.head.appendChild(style);
 }
 
@@ -120,7 +127,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, ks2: ks2Api, onAccess })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, ks2: ks2Api, summary: summaryApi, onAccess })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
