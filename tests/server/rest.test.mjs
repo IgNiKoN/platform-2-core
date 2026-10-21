@@ -237,6 +237,7 @@ else {
     check('подтверждённый: не удалить', !(await rpc('pf_vor_delete_import', { p_import: imp }, tok.alfaPto)).ok);
     check('Бета-ПТО не видит позиции Альфы', !(await rpc('pf_vor_positions', { p_project: pv, p_location: null }, tok.betaPto)).ok);
     // --- P2-0006c: цены, смета, КП (миграция 008) — прораб цены не видит, Бета не видит Альфу, редакции КП неизменяемы. ---
+    let est = null;
     const prProbe = await rpc('pf_price_list', { p_company: cV }, tok.alfaPto);
     if (prProbe.status === 404) { console.log('NOT RUN: миграция 008 не применена — проверки цен и смет пропущены'); fails++; }
     else {
@@ -260,7 +261,7 @@ else {
       check('прораб не создаёт смету', !(await rpc('pf_estimate_create', { p_project: pv, p_name: 'x', p_imports: [imp], p_area: null }, tok.alfaForeman)).ok);
       check('Бета-ПТО не создаёт смету по ВОР Альфы', !(await rpc('pf_estimate_create', { p_project: pv, p_name: 'x', p_imports: [imp], p_area: null }, tok.betaPto)).ok);
       const ce = await rpc('pf_estimate_create', { p_project: pv, p_name: stampV + ' смета', p_imports: [imp], p_area: 100 }, tok.alfaPto);
-      const est = await j(ce);
+      est = await j(ce);
       check('ПТО создал смету по подтверждённому ВОР', ce.ok && typeof est === 'string', `статус ${ce.status}`);
       const er = await j(await rpc('pf_estimate_rows', { p_estimate: est }, tok.alfaPto));
       const w11 = er.find((r) => r.row_no === 11), m12 = er.find((r) => r.row_no === 12);
@@ -331,6 +332,54 @@ else {
       const audF = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
       check('журнал компании: бригады и факт', ['brigades', 'fact_entries'].every((t) => audF.some((r) => r.table_name === t)));
       check('anon: pf_fact_add закрыт', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 1 })).ok);
+      // --- P2-0008b: проект КС-2 (миграция 010) — права, изоляция, предложение по факту, редакции, выдача, аннулирование. ---
+      const kProbe = await rpc('pf_ks2_settings', { p_project: pv }, tok.alfaPto);
+      if (kProbe.status === 404) { console.log('NOT RUN: миграция 010 не применена — проверки КС-2 пропущены'); fails++; }
+      else if (!est) { console.log('NOT RUN: нет сметы (миграция 008) — проверки КС-2 пропущены'); fails++; }
+      else {
+        check('ПТО открывает настройки КС-2', kProbe.ok, `статус ${kProbe.status}`);
+        check('ПТО: право planfact.ks2.edit в проекте', (await perms('alfaPto', pv)).includes('planfact.ks2.edit'));
+        check('прораб не видит КС-2', !(await rpc('pf_ks2_settings', { p_project: pv }, tok.alfaForeman)).ok);
+        check('администратор без ks2.* не видит акты', !(await rpc('pf_ks2_acts', { p_project: pv }, tok.alfaAdmin)).ok);
+        check('Бета-ПТО не видит акты Альфы', !(await rpc('pf_ks2_acts', { p_project: pv }, tok.betaPto)).ok);
+        check('без договорной КП акт не создаётся', !(await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: '1', p_act_date: today, p_from: today, p_to: today }, tok.alfaPto)).ok);
+        const kk = await j(await rpc('pf_kp_create', { p_estimate: est, p_file_sha256: sha, p_snapshot: { version: 1, rows: [
+          { import_id: imp, row_no: 11, kind: 'work', price_labor: 11, price_material: 1.5 }, { import_id: imp, row_no: 12, kind: 'material', price_labor: null, price_material: 2 }] }, p_total: 1, p_note: 'REST-КС-2' }, tok.alfaPto));
+        check('Бета-ПТО не выбирает договорную КП Альфы', !(await rpc('pf_ks2_set_contract', { p_project: pv, p_kp_revision: kk?.id }, tok.betaPto)).ok);
+        check('ПТО выбрал договорную КП', (await rpc('pf_ks2_set_contract', { p_project: pv, p_kp_revision: kk?.id }, tok.alfaPto)).ok);
+        const ac = await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: '1', p_act_date: today, p_from: today, p_to: today }, tok.alfaPto);
+        const act1 = await j(ac);
+        check('ПТО создал акт № 1', ac.ok && typeof act1 === 'string', `статус ${ac.status}`);
+        const a1 = await j(await rpc('pf_ks2_act', { p_act: act1 }, tok.alfaPto));
+        const w = a1?.proposal?.find((r) => r.row_no === 11), m = a1?.proposal?.find((r) => r.row_no === 12);
+        check('предложение: работа = принятый факт 8 (перебор и заменённая запись не идут), цена 11 + 1,5', Number(w?.sys_qty) === 8 && Number(w?.price) === 12.5, JSON.stringify(w));
+        check('предложение: материал = 8 × норма 7,5 = 60, цена 2', Number(m?.sys_qty) === 60 && Number(m?.price) === 2, JSON.stringify(m));
+        check('Бета-ПТО не открывает акт Альфы', !(await rpc('pf_ks2_act', { p_act: act1 }, tok.betaPto)).ok);
+        const sv = await rpc('pf_ks2_save', { p_act: act1, p_header: { customer: 'REST-заказчик', contract_no: 'REST-Д' }, p_rows: [{ source_row_id: w?.source_row_id, qty: 7, price: 12.5, excluded: false }], p_note: null }, tok.alfaPto);
+        check('редакция 1 сохранена (итог ПТО 7 при системе 8)', sv.ok && (await j(sv)) === 1, `статус ${sv.status}`);
+        check('прораб не сохраняет редакцию', !(await rpc('pf_ks2_save', { p_act: act1, p_header: {}, p_rows: [], p_note: null }, tok.alfaForeman)).ok);
+        const revs = await j(await rpc('pf_ks2_revisions', { p_act: act1 }, tok.alfaPto));
+        const directR = await fetch(`${URL_}/rest/v1/ks2_revisions?id=eq.${revs?.[0]?.id}`, { method: 'PATCH', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaPto}`, 'Content-Type': 'application/json', 'Accept-Profile': 'planfact', 'Content-Profile': 'planfact' }, body: '{"total": 1}' });
+        check('редакцию акта не изменить через REST', !directR.ok, `статус ${directR.status}`);
+        const r1 = await j(await rpc('pf_ks2_revision', { p_revision: revs?.[0]?.id }, tok.alfaPto));
+        check('итог редакции = 7 × 12,5 + 60 × 2 = 207,50', Number(r1?.total) === 207.5, String(r1?.total));
+        check('ПТО выдал акт № 1', (await rpc('pf_ks2_issue', { p_act: act1 }, tok.alfaPto)).ok);
+        check('повторная выдача отклонена', !(await rpc('pf_ks2_issue', { p_act: act1 }, tok.alfaPto)).ok);
+        check('выданный акт не правится', !(await rpc('pf_ks2_save', { p_act: act1, p_header: {}, p_rows: [], p_note: null }, tok.alfaPto)).ok);
+        const act2 = await j(await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: '2', p_act_date: today, p_from: today, p_to: today }, tok.alfaPto));
+        const a2 = await j(await rpc('pf_ks2_act', { p_act: act2 }, tok.alfaPto));
+        const w2 = a2?.proposal?.find((r) => r.row_no === 11);
+        check('акт № 2: выставлено ранее 7, по системе 1', Number(w2?.prev_qty) === 7 && Number(w2?.sys_qty) === 1, JSON.stringify(w2));
+        check('аннулирование без причины отклонено', !(await rpc('pf_ks2_annul', { p_act: act1, p_reason: ' ' }, tok.alfaPto)).ok);
+        check('ПТО аннулировал акт № 1 с причиной', (await rpc('pf_ks2_annul', { p_act: act1, p_reason: 'REST-тест' }, tok.alfaPto)).ok);
+        const w3 = (await j(await rpc('pf_ks2_act', { p_act: act2 }, tok.alfaPto)))?.proposal?.find((r) => r.row_no === 11);
+        check('после аннулирования объём снова доступен (по системе 8)', Number(w3?.sys_qty) === 8, JSON.stringify(w3));
+        const lst = await j(await rpc('pf_ks2_acts', { p_project: pv }, tok.alfaPto));
+        check('список актов: № 1 аннулирован, № 2 черновик', lst.some((a) => a.act_no === '1' && a.status === 'annulled') && lst.some((a) => a.act_no === '2' && a.status === 'draft'));
+        const audK = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
+        check('журнал компании: КС-2', ['ks2_acts', 'ks2_settings'].every((t) => audK.some((r) => r.table_name === t)));
+        check('anon: pf_ks2_acts закрыт', !(await rpc('pf_ks2_acts', { p_project: pv })).ok);
+      }
       // бригаду REST-теста отправляем в архив — активные имена не накапливаются
       check('бригада REST-теста отправлена в архив', (await rpc('pf_brigade_archive', { p_brigade: brigId, p_archived: true }, tok.alfaPto)).ok);
     }
