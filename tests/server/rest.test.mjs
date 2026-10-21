@@ -379,6 +379,28 @@ else {
         const audK = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
         check('журнал компании: КС-2', ['ks2_acts', 'ks2_settings'].every((t) => audK.some((r) => r.table_name === t)));
         check('anon: pf_ks2_acts закрыт', !(await rpc('pf_ks2_acts', { p_project: pv })).ok);
+        // --- P2-0008: сводка руководителю (миграция 011) — ₽ только с money.view, изоляция, даты проекта. ---
+        const sProbe = await rpc('pf_summary_portfolio', {}, tok.alfaPto);
+        if (sProbe.status === 404) { console.log('NOT RUN: миграция 011 не применена — проверки сводки пропущены'); fails++; }
+        else {
+          const sp = (await j(sProbe))?.find((r) => r.project_id === pv);
+          check('сводка ПТО: проект с договорной КП, сделано 8 × 12,5 + 60 × 2 = 220 ₽', sp?.has_kp && Number(sp?.done_money) === 220, JSON.stringify(sp));
+          check('сводка ПТО: выставлено 0 (акт аннулирован), разрыв 220 ₽', Number(sp?.issued_money) === 0 && Number(sp?.gap_money) === 220);
+          const sf = (await j(await rpc('pf_summary_portfolio', {}, tok.alfaForeman)))?.find((r) => r.project_id === pv);
+          check('сводка прораба: проект виден, ₽ / % / прогноз не приходят', !!sf && sf.plan_money === null && sf.done_money === null && sf.pct_money === null && sf.forecast_finish === null, JSON.stringify(sf));
+          const gf = (await j(await rpc('pf_summary_ks2_gap', { p_project: pv }, tok.alfaForeman)))?.find((r) => r.row_no === 11);
+          check('разрыв КС-2 у прораба: объём 8, ₽ нет', Number(gf?.gap_qty) === 8 && gf?.gap_money === null && gf?.price === null, JSON.stringify(gf));
+          const gp = (await j(await rpc('pf_summary_ks2_gap', { p_project: pv }, tok.alfaPto)))?.find((r) => r.row_no === 11);
+          check('разрыв КС-2 у ПТО: 8 × 12,5 = 100 ₽', Number(gp?.gap_money) === 100, JSON.stringify(gp));
+          const wtf = await j(await rpc('pf_summary_worktypes', { p_project: pv }, tok.alfaForeman));
+          check('виды работ у прораба: объёмы в своих ЕИ, ₽ нет', Array.isArray(wtf) && wtf.length > 0 && wtf.every((r) => r.plan_money === null && Array.isArray(r.units)));
+          check('Бета-ПТО не видит виды работ Альфы', !(await rpc('pf_summary_worktypes', { p_project: pv }, tok.betaPto)).ok);
+          check('Бета-ПТО не видит проект Альфы в портфеле', !(await j(await rpc('pf_summary_portfolio', {}, tok.betaPto)))?.some((r) => r.project_id === pv));
+          check('прораб не меняет даты проекта', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: today }, tok.alfaForeman)).ok);
+          check('начало позже окончания — отказ', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: '2030-01-02', p_finish: '2030-01-01' }, tok.alfaPto)).ok);
+          check('ПТО задал даты проекта', (await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: '2030-01-01' }, tok.alfaPto)).ok);
+          check('anon: pf_summary_portfolio закрыт', !(await rpc('pf_summary_portfolio', {})).ok);
+        }
       }
       // бригаду REST-теста отправляем в архив — активные имена не накапливаются
       check('бригада REST-теста отправлена в архив', (await rpc('pf_brigade_archive', { p_brigade: brigId, p_archived: true }, tok.alfaPto)).ok);
