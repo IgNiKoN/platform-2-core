@@ -31,7 +31,9 @@
   function getPlatformMenuItems() {
     var loader = window.RBI && window.RBI.moduleLoader;
     if (!loader || typeof loader.getMenuItems !== 'function') return [];
+    var access = (window.RBI && window.RBI.platformMenuAccess) || {};
     return loader.getMenuItems().filter(function (item) {
+      if (item.requiresAccess && access[item.id] !== true) return false;  // право подтверждает сервер (раздел ставит флаг)
       return item.section === 'platform' && item.path;
     });
   }

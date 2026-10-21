@@ -22,7 +22,8 @@ var MODULE_BASE_URLS = {
     'construction-v2': './js/modules/construction-v2/',
     'game':            './js/modules/quality/features/gamification/',
     'ai':              './js/modules/quality/features/ai/',
-    'planfact':        './js/modules/planfact/'
+    'planfact':        './js/modules/planfact/',
+    'company':         './js/modules/company/'
 };
 
 window.RBI.moduleLoader = {
@@ -53,7 +54,8 @@ window.RBI.moduleLoader = {
                     section: m.menu.section || null,
                     order:   m.menu.order  != null ? m.menu.order : 999,
                     icon:    m.icon        || null,
-                    path:    m.menu.path   || null
+                    path:    m.menu.path   || null,
+                    requiresAccess: m.menu.requiresAccess === true
                 };
             })
             .sort(function (a, b) { return a.order - b.order; });

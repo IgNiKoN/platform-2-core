@@ -19,6 +19,7 @@ import { ConstructionV2Manifest } from './construction-v2/construction-v2.manife
 import { GameManifest }         from './quality/features/gamification/game.manifest.js';
 import { AIManifest }           from './quality/features/ai/ai.manifest.js';
 import { PlanfactManifest }     from './planfact/planfact.manifest.js';
+import { CompanyManifest }      from './company/company.manifest.js';
 
 export const ModulesManifest = [
     QualityManifest,
@@ -29,7 +30,8 @@ export const ModulesManifest = [
     ConstructionV2Manifest,
     GameManifest,
     AIManifest,
-    PlanfactManifest
+    PlanfactManifest,
+    CompanyManifest
 ];
 
 /** Модуль выключен флагом manifest.enabled === false (по умолчанию включён). */

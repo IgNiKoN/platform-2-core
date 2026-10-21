@@ -1,10 +1,11 @@
 /**
- * Оболочка экрана «План/Факт»: вход по почте и паролю, шапка «кто · компания · роль», выход.
+ * Оболочка экрана «План/Факт»: вход (общая форма платформы LoginForm), шапка «кто · компания · роль», выход.
  * Нет настроек сервера → локальный демо-режим (как в P2-0002). «Работать локально» остаётся всегда.
  */
 import { createElement as h, useEffect, useState } from 'react';
-import type { FormEvent, ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import type { AccessEntry, AuthApi } from '../../platform/auth/auth.service.ts';
+import { LoginForm, PLATFORM_AUTH_CSS } from '../../platform/auth/LoginForm.ts';
 import { PlanfactTable } from './PlanfactTable.ts';
 import { PlanfactWorks } from './PlanfactWorks.ts';
 import type { DataApi } from './data.service.ts';
@@ -21,8 +22,6 @@ function accessLabel(entries: AccessEntry[]): string {
 export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null }): ReactElement {
   const { auth, data, api } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
   const [who, setWho] = useState('');
   const [access, setAccess] = useState<AccessEntry[]>([]);
 
@@ -38,21 +37,6 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     if (auth) void enter(auth);
   }, []);
 
-  async function submit(ev: FormEvent): Promise<void> {
-    ev.preventDefault();
-    if (!auth || busy) return;
-    const form = ev.currentTarget as HTMLFormElement;
-    const email = (form.elements.namedItem('email') as HTMLInputElement).value;
-    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
-    if (!email.trim() || !password) { setError('Введите почту и пароль'); return; }
-    setBusy(true); setError('');
-    const res = await auth.signIn(email, password);
-    setBusy(false);
-    if (!res.ok) { setError(res.message); return; }
-    form.reset();
-    await enter(auth);
-  }
-
   async function logout(): Promise<void> {
     if (auth) await auth.signOut();
     setWho(''); setAccess([]); setMode('login');
@@ -60,19 +44,9 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 
   if (mode === 'loading') return h('div', { className: 'pf-root pf-muted' }, 'Загрузка…');
 
-  if (mode === 'login') {
-    return h('div', { className: 'pf-root' },
-      h('form', { className: 'pf-login pf-card', onSubmit: submit, 'data-testid': 'pf-login' },
-        h('h2', { className: 'pf-title' }, 'Вход в План/Факт'),
-        h('label', { className: 'pf-field' }, 'Почта',
-          h('input', { type: 'email', name: 'email', autoComplete: 'username' })),
-        h('label', { className: 'pf-field' }, 'Пароль',
-          h('input', { type: 'password', name: 'password', autoComplete: 'current-password' })),
-        error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
-        h('button', { type: 'submit', className: 'pf-btn', disabled: busy }, busy ? 'Входим…' : 'Войти'),
-        h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setMode('demo') }, 'Работать локально (демо)')
-      )
-    );
+  if (mode === 'login' && auth) {
+    return h(LoginForm, { auth, title: 'Вход в План/Факт', onDone: () => { void enter(auth); },
+      extra: h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setMode('demo') }, 'Работать локально (демо)') });
   }
 
   const bar = mode === 'authed'
@@ -87,15 +61,5 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   return h('div', null, bar, mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data }));
 }
 
-export const PLANFACT_AUTH_CSS = `
-.pf-login{max-width:380px;margin:24px auto;padding:20px;display:flex;flex-direction:column;gap:12px}
-.pf-field{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted)}
-.pf-field input{font-size:14px;padding:9px 12px;border:1px solid var(--card-border);border-radius:10px;background:var(--card-bg);color:var(--text-main)}
-.pf-btn{font-size:13px;font-weight:700;padding:10px 14px;border-radius:10px;border:1px solid var(--primary);background:var(--primary);color:var(--card-bg);cursor:pointer}
-.pf-btn:disabled{opacity:.6;cursor:default}
-.pf-btn--ghost{background:transparent;color:var(--text-main);border-color:var(--card-border)}
-.pf-error{font-size:12px;color:var(--color-red)}
-.pf-bar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 24px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--card-border)}
-.pf-bar b{color:var(--text-main)}
-.pf-muted{color:var(--text-muted);font-size:13px}
-`;
+/** Стили входа перенесены в платформенный слой (LoginForm); имя сохранено для index.ts. */
+export const PLANFACT_AUTH_CSS = PLATFORM_AUTH_CSS;

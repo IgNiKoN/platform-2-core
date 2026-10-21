@@ -8,3 +8,10 @@
 - Снимок RBI до/после (`tests/server/005_rbi_snapshot.sql`): public 74 таблицы, 43 функции RBI, md5 функций/колонок/политик — **совпадают**; `pf_*` 8 → 17.
 - `npm run test:server` (настоящий REST/Auth): **54/54 PASS** (31 прежних + 23 конструктора ролей). Тестовая роль создана и удалена тестом; добавлены 2 тестовые работы («REST-тест …», «REST-прораб …»).
 - `005_role_builder.sql` на сервере — NOT RUN Исполнителем (вставка в SQL Editor заблокирована автоматической защитой сеанса); эквивалент проверен локально (48/48) и через REST.
+
+## Этап 2 — раздел «Компания» → «Роли» (21.10.2026)
+
+- Форма входа вынесена в платформу: `src/platform/auth/LoginForm.ts` (+ общие стили), «План/Факт» использует её (кнопка «Работать локально» — без изменений). Один клиент Auth на страницу (`globalThis`), `onAuthChange`.
+- Новый раздел `src/platform/company/**` → бандл `js/dist/company/company.js`; регистрация по образцу planfact: `js/modules/company/*`, `modules.manifest.js`, `module-loader.js` (путь + `requiresAccess`), `app.entry.js` (`PLATFORM2_MODULES`), `app-shell.js` (фильтр пункта по флагу `RBI.platformMenuAccess`, флаг ставит раздел по ответу `pf_my_admin_companies`).
+- `npm test` 64/64 PASS (+11 тестов раздела); `npm run check:ts` 0 ошибок; `build:company`, `build:planfact`, `build:modules` — собраны (побочные пересборки чужих бандлов откатаны).
+- Браузер (localhost:8781, без входа): пункта «Компания» нет (`platformMenuAccess.company=false`), `#/company` → «Вход: Компания»; «План/Факт» → «Работать локально» — 6 строк демо; ошибок консоли нет. Вход живыми паролями — показ владельцу.

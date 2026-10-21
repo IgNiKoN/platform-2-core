@@ -30,6 +30,7 @@
         'module.game',
         'module.ai',
         'module.planfact',
+        'module.company',
     ];
 
     /** Feature-of / сквозные бандлы: бизнес-id → дополнительные ключи init. */
@@ -45,7 +46,7 @@
      * Platform 2.0 модули (вне каталога компании Quality): init, если manifest.enabled !== false.
      * Выключатель — только флаг enabled в манифесте модуля.
      */
-    var PLATFORM2_MODULES = ['planfact'];
+    var PLATFORM2_MODULES = ['planfact', 'company'];
 
     /**
      * Orphan feature-of / construction-v2 / settings — не peer business-id.
