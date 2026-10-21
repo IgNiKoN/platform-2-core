@@ -12,6 +12,8 @@ import { CompanyScope } from '../../platform/company/CompanyScope.ts';
 import { ProjectsTab } from '../../platform/company/ProjectsTab.ts';
 import { UnitsTab } from '../../platform/company/UnitsTab.ts';
 import { VorTab } from './vor/VorTab.ts';
+import { PricesTab } from './estimate/PricesTab.ts';
+import type { EstimateApi } from './estimate/estimate.service.ts';
 import type { CompanyAccess, ProjectsApi } from '../../platform/company/projects.service.ts';
 import type { DataApi } from './data.service.ts';
 import type { VorApi } from './vor/vor.service.ts';
@@ -22,13 +24,14 @@ const BASE = '#/planfact';
 /** Событие модуля: маршрут #/planfact… показан (его шлёт index.ts при каждом переходе роутера). */
 export const ROUTE_EVENT = 'planfact:route';
 type Page = 'works' | 'directories' | 'vor';
-type Sub = 'objects' | 'units';
-const SUBS: { id: Sub; label: string }[] = [{ id: 'objects', label: 'Объекты' }, { id: 'units', label: 'Единицы' }];
+type Sub = 'objects' | 'units' | 'prices';
+/** «Цены» — только с правом planfact.estimate.manage (коммерческая тайна; прораб вкладку не видит, сервер тоже не отдаст). */
+const SUBS: { id: Sub; label: string; estimate?: boolean }[] = [{ id: 'objects', label: 'Объекты' }, { id: 'units', label: 'Единицы' }, { id: 'prices', label: 'Цены', estimate: true }];
 
 /** Адрес #/planfact[/vor|/directories[/objects]] → страница и вкладка справочников. Пункты верхнего уровня — в боковом меню (манифест модуля). */
 export function routeFromHash(hash: string): { page: Page; sub: Sub } {
   const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
-  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'vor' ? 'vor' : 'works', sub: parts[1] === 'units' ? 'units' : 'objects' };
+  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'vor' ? 'vor' : 'works', sub: parts[1] === 'units' ? 'units' : parts[1] === 'prices' ? 'prices' : 'objects' };
 }
 
 function accessLabel(entries: AccessEntry[]): string {
@@ -37,13 +40,14 @@ function accessLabel(entries: AccessEntry[]): string {
   return Array.from(new Set(parts)).join('; ');
 }
 
-export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; onAccess?: (hasDirectories: boolean) => void }): ReactElement {
-  const { auth, data, api, projects, vor: vorApi, onAccess } = props;
+export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; estimate?: EstimateApi | null; onAccess?: (hasDirectories: boolean) => void }): ReactElement {
+  const { auth, data, api, projects, vor: vorApi, estimate, onAccess } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [who, setWho] = useState('');
   const [access, setAccess] = useState<AccessEntry[]>([]);
   const [route, setRoute] = useState(routeFromHash(window.location.hash));
   const [companies, setCompanies] = useState<CompanyAccess[]>([]);
+  const [canEstimate, setCanEstimate] = useState(false);
 
   useEffect(() => {
     const onHash = (): void => setRoute(routeFromHash(window.location.hash));
@@ -60,6 +64,9 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     setAccess(await a.getAccess());
     const comp = projects ? await projects.myAccess() : [];
     setCompanies(comp);
+    let est = false;
+    if (estimate) for (const c of comp) if (await estimate.canUse(c.company_id)) { est = true; break; }
+    setCanEstimate(est);
     if (onAccess) onAccess(comp.length > 0);
     setMode('authed');
   }
@@ -70,7 +77,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 
   async function logout(): Promise<void> {
     if (auth) await auth.signOut();
-    setWho(''); setAccess([]); setCompanies([]); if (onAccess) onAccess(false); setMode('login');
+    setWho(''); setAccess([]); setCompanies([]); setCanEstimate(false); if (onAccess) onAccess(false); setMode('login');
   }
 
   if (mode === 'loading') return h('div', { className: 'pf-root pf-muted' }, 'Загрузка…');
@@ -101,7 +108,9 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const body = vor
     ? h('div', { className: 'pf-root' }, h(VorTab, { api: mode === 'authed' ? vorApi || null : null, projects: mode === 'authed' ? projects || null : null }))
     : dirs && projects
-    ? h(CompanyScope, { api: projects, render: (c) => route.sub === 'units' ? h(UnitsTab, { api: projects, company: c }) : h(ProjectsTab, { api: projects, company: c }) })
+    ? h(CompanyScope, { api: projects, render: (c) => route.sub === 'units' ? h(UnitsTab, { api: projects, company: c })
+        : route.sub === 'prices' && canEstimate && estimate ? h(PricesTab, { api: estimate, vor: vorApi || null, company: c })
+        : h(ProjectsTab, { api: projects, company: c }) })
     : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });
   const head = vor
     ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'ВОР — загрузка ведомости объёмов работ'))
@@ -109,7 +118,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     ? h('div', { className: 'pf-root pf-dirhead' },
         h('h2', { className: 'pf-title' }, 'Справочники'),
         h('div', { className: 'pf-seg', role: 'tablist', 'data-testid': 'pf-dirtabs' },
-          SUBS.map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': route.sub === t.id, 'data-sub': t.id,
+          SUBS.filter((t) => !t.estimate || canEstimate).map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': route.sub === t.id, 'data-sub': t.id,
             className: 'pf-seg-btn' + (route.sub === t.id ? ' pf-seg-btn--active' : ''), onClick: () => go(t.id) }, t.label))))
     : null;
   return h('div', null, bar, head, body);
