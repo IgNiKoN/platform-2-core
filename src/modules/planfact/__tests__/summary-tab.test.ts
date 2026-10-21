@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 import { settle } from '../../../test-utils/settle.ts';
 import type { SummaryProject } from '../summary/summary.service.ts';
-import { makeFakeSummary, PTO_PROJECT } from './summary-fake.ts';
+import { GAP, makeFakeSummary, PTO_PROJECT } from './summary-fake.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -144,4 +144,40 @@ test('вид работ в двух ЕИ — две строки, без сум�
   assert.deepEqual([...wt.querySelectorAll('[data-testid="sm-unit-fact"]')].map((x: N) => x.textContent), ['факт 10 из 100 м²', 'факт 0 из 5 шт.']);
   assert.equal(wt.querySelector('[data-testid="sm-wt-money"]'), null);
   assert.ok(!/₽/.test(el.querySelector('[data-testid="sm-worktypes"]').textContent));
+});
+
+async function openGap(el: N): Promise<void> {
+  el.querySelector('[data-testid="sm-open"]').click(); await tick(); await tick();
+  el.querySelector('[data-view="ks2"]').click(); await tick(); await tick();
+}
+
+test('«Сделано ↔ КС-2»: сделано 10, выставлено 9 → разрыв 1 (300 ₽); фильтр «только с разрывом»; итог объекта — из сводки', async () => {
+  const f = makeFakeSummary([PTO_PROJECT]);
+  const el = mount(f.api);
+  await tick();
+  await openGap(el);
+  assert.ok(f.calls.includes('ks2Gap:pr1'));
+  assert.match(el.querySelector('[data-testid="sm-gap-total"]').textContent, /не выставлено в КС-2: 300,00 ₽.*сделано 7\s725,00 ₽ · выставлено 7\s425,00 ₽/);
+  assert.deepEqual([...el.querySelectorAll('[data-row]')].map((r: N) => r.getAttribute('data-row')), ['12']);
+  const r12 = el.querySelector('[data-row="12"]');
+  assert.equal(r12.querySelector('[data-testid="sm-gap-qty"]').textContent, '1');
+  assert.equal(r12.querySelector('[data-testid="sm-gap-money"]').textContent, '300,00');
+  el.querySelector('[data-testid="sm-gap-only"]').click(); await tick();
+  assert.equal(el.querySelectorAll('[data-row]').length, 3);
+});
+
+test('«Сделано ↔ КС-2» у прораба: объёмы есть, колонок ₽ нет; без договорной КП — сообщение сервера', async () => {
+  const fore: SummaryProject = { ...PTO_PROJECT, can_money: false, plan_money: null, done_money: null, issued_money: null, gap_money: null, pct_money: null };
+  const rows = GAP.map((r) => ({ ...r, price: null, done_money: null, issued_money: null, gap_money: null }));
+  const el = mount(makeFakeSummary([fore], { gap: rows }).api);
+  await tick();
+  await openGap(el);
+  assert.equal(el.querySelector('[data-testid="sm-gap-total"]'), null);
+  assert.equal(el.querySelector('[data-row="12"] [data-testid="sm-gap-qty"]').textContent, '1');
+  assert.equal(el.querySelector('[data-testid="sm-gap-money"]'), null);
+  assert.ok(!/₽/.test(el.querySelector('[data-testid="sm-gap"]').textContent));
+  const el2 = mount(makeFakeSummary([PTO_PROJECT], { gap: 'Выберите договорную редакцию КП проекта' }).api);
+  await tick();
+  await openGap(el2);
+  assert.match(el2.querySelector('[data-testid="sm-gap"] [role="alert"]').textContent, /договорную редакцию КП/);
 });
