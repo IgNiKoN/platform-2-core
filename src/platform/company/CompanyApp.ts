@@ -7,13 +7,15 @@ import type { ReactElement } from 'react';
 import type { AuthApi } from '../auth/auth.service.ts';
 import { LoginForm } from '../auth/LoginForm.ts';
 import { CompanyRoles } from './CompanyRoles.ts';
+import { CompanyMembers, COMPANY_MEMBERS_CSS } from './CompanyMembers.ts';
 import type { CompanyApi, CompanyRef } from './company.service.ts';
 
 type Mode = 'loading' | 'login' | 'noaccess' | 'ready';
-type Tab = 'roles';
+type Tab = 'roles' | 'members';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'roles', label: 'Роли' }
+  { id: 'roles', label: 'Роли' },
+  { id: 'members', label: 'Сотрудники' }
 ];
 
 export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null }): ReactElement {
@@ -68,10 +70,11 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
         h('div', { className: 'co-tabs', role: 'tablist' },
           TABS.map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': tab === t.id, 'data-tab': t.id,
             className: 'co-tab' + (tab === t.id ? ' co-tab--active' : ''), onClick: () => setTab(t.id) }, t.label)))),
-      tab === 'roles' ? h(CompanyRoles, { api, companyId, key: companyId }) : null));
+      tab === 'roles' ? h(CompanyRoles, { api, companyId, key: companyId }) : null,
+      tab === 'members' ? h(CompanyMembers, { api, companyId, me: who, key: companyId }) : null));
 }
 
-export const COMPANY_CSS = `
+export const COMPANY_CSS = COMPANY_MEMBERS_CSS + `
 .co-root{max-width:1200px}
 .co-head{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:16px}
 .co-tabs{display:flex;gap:4px;flex-wrap:wrap}
