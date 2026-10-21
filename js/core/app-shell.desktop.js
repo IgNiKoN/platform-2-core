@@ -30,6 +30,11 @@
   }
 
   function modeLabel(modeId) {
+    // Модуль платформы (window.RBI.platformNav): название задаёт сам модуль
+    if (modeId === 'platform') {
+      var pn = window.RBI && window.RBI.platformNav;
+      return (pn && pn.title) || '';
+    }
     var key = MODE_LABEL_KEYS[modeId];
     if (!key) return modeId || '';
     return _t(key, MODE_LABEL_FALLBACKS[modeId] || modeId || '');

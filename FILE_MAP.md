@@ -33,6 +33,18 @@
 
 **Коррекции к снимку ZIP (20.10.2026):** `.gitignore` нового репозитория не игнорирует `docs/` и `README.md` (правило `/dist/` корневое); `npm ci --offline` не нужен, обычный `npm ci` проходит; `tsc --noEmit` даёт 0 ошибок (старые 6 ошибок в `plan-viewer.ts`/`object-bridge.ts` устарели).
 
+## Изменения P2-0005 (ветка `task/P2-0005-projects-locations`, не в `main` до приёмки)
+
+| Что | Где |
+|---|---|
+| Миграции | `supabase/migrations/006_up.sql` / `006_down.sql` / `006a_fix_encoding.sql` |
+| Серверные тесты | `tests/server/006_projects_locations.sql` (91), блок P2-0005 в `rest.test.mjs` |
+| Проекты, дерево, единицы | `src/platform/company/` — `ProjectsTab.ts`, `LocationsTree.ts`, `UnitsTab.ts`, `CompanyScope.ts`, `projects.service.ts` (+ `__tests__/projects.test.ts`, `locations.test.ts`) |
+| Словарь уровней | `src/services/locations/types.ts` (`PlanNodeType`, `PLAN_NODE_LABELS`, `SUGGESTED_CHILD` — добавлено рядом, Quality не менялось) |
+| Страница План/Факт, меню | `src/modules/planfact/PlanfactApp.ts`, `index.ts` (`platformNav`, `planfact:route`), `js/modules/planfact/planfact.manifest.js` (`nav`), `js/modules/planfact/index.js` |
+| Меню оболочки (общий механизм) | `js/modules/settings/features/app-mode-utils.js` (`renderBottomNav`: `window.RBI.platformNav`), `js/core/app-shell.desktop.js` (`modeLabel('platform')`) |
+| «Компания» в Настройках | `js/modules/settings/settings.render.js`, `settings.desktop.render.js`, `js/core/router.js` (`#/settings/company`), `src/platform/company/index.ts` (`RBI.platformPanels.company`), `company.manifest.js` (без пункта меню) |
+
 ## Изменения P2-0004b (ветка `task/P2-0004b-role-builder`, не в `main` до приёмки)
 
 | Что | Где |

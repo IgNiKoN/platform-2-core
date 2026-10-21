@@ -1,7 +1,7 @@
 /**
  * Platform entry: раздел платформы «Компания» (Vite-бандл → js/dist/company/company.js).
- * Контракт: init(ctx) / mount(el) / unmount(). Пункт меню виден только при праве security.roles.assign
- * (флаг RBI.platformMenuAccess.company ставится по ответу сервера; сервер всё равно проверяет каждый вызов).
+ * Контракт: init(ctx) / mount(el) / unmount(). Экран монтируется в подраздел Настроек «Компания» (RBI.platformPanels.company);
+ * подраздел виден при праве security.roles.assign (флаг RBI.platformMenuAccess.company по ответу сервера; сервер проверяет каждый вызов).
  */
 import { createElement } from 'react';
 import { flushSync } from 'react-dom';
@@ -15,7 +15,6 @@ import type { AuthApi } from '../auth/auth.service.ts';
 import { PLATFORM_AUTH_CSS } from '../auth/LoginForm.ts';
 
 const ROUTE = '#/company';
-const VIEW_ID = 'tab-company';
 const STYLE_ID = 'company-style';
 
 let root: Root | null = null;
@@ -65,26 +64,10 @@ export function isMounted(): boolean {
   return root !== null;
 }
 
-function ensureView(): HTMLElement {
-  let el = document.getElementById(VIEW_ID);
-  if (el) return el;
-  el = document.createElement('div');
-  el.id = VIEW_ID;
-  el.className = 'view-section hidden';
-  const anchor = document.getElementById('tab-mode-placeholder');
-  if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(el, anchor.nextSibling);
-  else document.body.appendChild(el);
-  return el;
-}
-
-/** Маршрут #/company: показать вкладку и смонтировать экран (каждый заход — свежие данные с сервера). */
+/** Старый адрес #/company → подраздел Настроек «Компания» (решение владельца 21.10.2026). */
 function showView(): void {
-  const el = ensureView();
-  document.querySelectorAll('.view-section').forEach((n) => n.classList.remove('active'));
-  el.classList.add('active');
-  const header = document.getElementById('main-header');
-  if (header) header.style.display = 'none';
-  mount(el);
+  const router = (window as unknown as { AppRouter?: { navigate?: (p: string, replace?: boolean) => void } }).AppRouter;
+  if (router && typeof router.navigate === 'function') router.navigate('#/settings/company', true);
 }
 
 /** Видимость пункта меню: спросить сервер, есть ли у вошедшего право управлять ролями хоть в одной компании. */
@@ -98,10 +81,12 @@ async function refreshMenu(ctx?: ShellCtx): Promise<void> {
   const prev = access.company === true;
   access.company = allowed;
   w.RBI.platformMenuAccess = access;
-  if (prev !== allowed && ctx && ctx.shell && typeof ctx.shell.renderSidebar === 'function') ctx.shell.renderSidebar();
+  if (prev !== allowed) window.dispatchEvent(new Event('rbi:platform-access'));   // Настройки показывают/прячут подраздел «Компания»
 }
 
 export async function init(ctx?: ShellCtx): Promise<void> {
+  const rbi = ((window as unknown as { RBI?: Record<string, unknown> }).RBI = (window as unknown as { RBI?: Record<string, unknown> }).RBI || {});
+  rbi.platformPanels = Object.assign((rbi.platformPanels as object) || {}, { company: { mount, unmount } });
   const router = (window as unknown as { AppRouter?: { addRoute?: (p: string, fn: () => void) => void } }).AppRouter;
   if (router && typeof router.addRoute === 'function') {
     router.addRoute(ROUTE, showView);

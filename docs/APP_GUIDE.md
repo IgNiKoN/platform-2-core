@@ -45,6 +45,8 @@ index.html → bootstrap / app.entry → Core → Services → Modules
 | **sk** | `quality/features/sk/` | Импорт/анализ Excel «строительного контроля» (внешняя выгрузка) — не путать с production-стройконтролем |
 | **knowledge** | `js/modules/knowledge/` | Библиотека: TWI, эталоны, документы, узлы, практики, чек-листы (top-level module) |
 | **construction** | `js/modules/construction/` | Производственный стройконтроль: дефекты, приёмка, планы — целевой второй production-модуль |
+| **planfact** | `js/modules/planfact/`, `src/modules/planfact/` | Platform 2.0: План/Факт — «Работы» и «Справочники» (проекты и структура, единицы измерения); подвкладки — в боковом меню (`manifest.nav`) |
+| **company** | `js/modules/company/`, `src/platform/company/` | Platform 2.0: роли, сотрудники, журнал компании — подраздел «Настройки → Компания» |
 | **construction-v2** | `js/modules/construction-v2/` | Параллельный/новый контур (Vite/TS), рядом со strangler fig |
 | **settings** | `js/modules/settings/` | Chrome платформы: `#/settings/:section` (platform / admin / quality / construction) |
 | **gamification** | `quality/features/gamification/` | Рейтинги / игра |

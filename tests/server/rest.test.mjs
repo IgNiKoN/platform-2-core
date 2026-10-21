@@ -111,5 +111,66 @@ else {
   check('журнал проекта «План/Факт» — только работы (без назначений)', (await aud('alfaAdmin', pA)).every((r) => ['INSERT', 'UPDATE', 'DELETE'].includes(r.action)));
   check('ПТО не читает журнал компании', !(await rpc('pf_list_company_audit', { p_company: cA }, tok.alfaPto)).ok);
 }
+// --- P2-0005: проекты, локации, единицы (миграция 006) ---
+const acc = await rpc('pf_my_company_access', {}, tok.alfaAdmin);
+if (acc.status === 404) { console.log('NOT RUN: миграция 006 не применена — проверки проектов/локаций/единиц пропущены'); fails++; }
+else {
+  const accA = await j(acc);
+  check('админ Альфы: доступ к проектам, единицам и ролям', accA.length === 1 && accA[0].can_manage_projects && accA[0].can_manage_units && accA[0].can_manage_roles);
+  const cA5 = accA[0]?.company_id;
+  const accF = await j(await rpc('pf_my_company_access', {}, tok.alfaForeman));
+  check('прораб: доступ есть, права править нет', accF.length === 1 && !accF[0].can_manage_projects && !accF[0].can_manage_units);
+  const accB = await j(await rpc('pf_my_company_access', {}, tok.betaPto));
+  check('Бета-ПТО видит только свою компанию', accB.length === 1 && accB[0].company_name === 'Бета');
+  check('anon: pf_my_company_access закрыт', !(await rpc('pf_my_company_access', {})).ok);
+  const stamp5 = 'REST-проект ' + new Date().toISOString();
+  let pid = null, bld5 = null, unitId = null;
+  try {
+    check('прораб: создать проект нельзя', !(await rpc('pf_create_project', { p_company: cA5, p_name: 'ВЗЛОМ-прораб' }, tok.alfaForeman)).ok);
+    check('Бета-ПТО: создать проект в Альфе нельзя', !(await rpc('pf_create_project', { p_company: cA5, p_name: 'ВЗЛОМ-бета' }, tok.betaPto)).ok);
+    const cp5 = await rpc('pf_create_project', { p_company: cA5, p_name: stamp5, p_code: 'REST' }, tok.alfaAdmin);
+    pid = await j(cp5);
+    check('админ создал проект', cp5.ok && typeof pid === 'string', `статус ${cp5.status}`);
+    const pl = await j(await rpc('pf_company_projects', { p_company: cA5 }, tok.alfaAdmin));
+    check('проект в списке, can_manage = true', pl.some((x) => x.id === pid && x.name === stamp5 && x.can_manage));
+    check('Бета-ПТО не видит проектов Альфы', (await j(await rpc('pf_company_projects', { p_company: cA5 }, tok.betaPto))).length === 0);
+    const gb = await rpc('pf_generate_building', { p_project: pid, p_parent: null, p_name: 'Корпус REST', p_sections: 2, p_floors: 5, p_apartments_per_floor: 4, p_first_floor: 1 }, tok.alfaAdmin);
+    bld5 = await j(gb);
+    check('генератор 2×5×4 выполнен', gb.ok && typeof bld5 === 'string', `статус ${gb.status}`);
+    const lst = async (k, parent) => j(await rpc('pf_list_locations', { p_project: pid, p_parent: parent }, tok[k]));
+    const secs = await lst('alfaAdmin', bld5);
+    check('в корпусе 2 секции', Array.isArray(secs) && secs.length === 2);
+    const fls = await lst('alfaAdmin', secs[1].id);
+    check('в секции 5 этажей', fls.length === 5);
+    const aps = await lst('alfaAdmin', fls[0].id);
+    check('на этаже 4 квартиры, сквозная нумерация: секция 2, эт. 1 → кв. 21', aps.length === 4 && aps[0].name === 'кв. 21');
+    check('путь квартиры строкой', aps[0].path === 'Корпус REST · Секция 2 · эт. 1 · кв. 21', aps[0].path);
+    check('Бета-ПТО не читает дерево проекта Альфы', !(await rpc('pf_list_locations', { p_project: pid, p_parent: null }, tok.betaPto)).ok);
+    check('Бета-ПТО не добавляет узел в Альфу', !(await rpc('pf_add_location', { p_project: pid, p_parent: null, p_type: 'other', p_name: 'ВЗЛОМ' }, tok.betaPto)).ok);
+    check('прораб не добавляет узел', !(await rpc('pf_add_location', { p_project: pid, p_parent: null, p_type: 'other', p_name: 'ВЗЛОМ' }, tok.alfaForeman)).ok);
+    check('дубль имени на уровне отклонён', !(await rpc('pf_add_location', { p_project: pid, p_parent: null, p_type: 'building', p_name: 'корпус  rest' }, tok.alfaAdmin)).ok);
+    check('> 5000 узлов отклонено', !(await rpc('pf_generate_building', { p_project: pid, p_parent: null, p_name: 'Огромный', p_sections: 10, p_floors: 100, p_apartments_per_floor: 10, p_first_floor: 1 }, tok.alfaAdmin)).ok);
+    const un = await j(await rpc('pf_list_units', { p_company: cA5 }, tok.alfaAdmin));
+    check('общих единиц ≥ 9 (м², м³, м.п., шт. …)', un.filter((u) => u.is_common).length >= 9 && ['м²', 'м.п.', 'шт.'].every((c) => un.some((u) => u.code === c)));
+    const common = un.find((u) => u.is_common);
+    check('общую единицу удалить нельзя', !(await rpc('pf_delete_unit', { p_unit: common.id }, tok.alfaAdmin)).ok);
+    const unitCode = 'rest' + Date.now();
+    const au = await rpc('pf_add_unit', { p_company: cA5, p_code: unitCode, p_name: 'REST единица' }, tok.alfaAdmin);
+    unitId = await j(au);
+    check('админ добавил свою единицу', au.ok && typeof unitId === 'string', `статус ${au.status}`);
+    check('дубль единицы отклонён', !(await rpc('pf_add_unit', { p_company: cA5, p_code: unitCode.toUpperCase(), p_name: 'дубль' }, tok.alfaAdmin)).ok);
+    check('прораб не добавляет единицу', !(await rpc('pf_add_unit', { p_company: cA5, p_code: 'взлом', p_name: 'взлом' }, tok.alfaForeman)).ok);
+    check('прораб видит свою единицу компании (только чтение)', (await j(await rpc('pf_list_units', { p_company: cA5 }, tok.alfaForeman))).some((u) => u.code === unitCode));
+    check('Бета не читает единицы Альфы', !(await rpc('pf_list_units', { p_company: cA5 }, tok.betaPto)).ok);
+    const cbId = accB[0]?.company_id;
+    check('Бета не видит своих единиц Альфы в своём списке', !(await j(await rpc('pf_list_units', { p_company: cbId }, tok.betaPto))).some((u) => u.code === unitCode));
+    const aud5 = await j(await rpc('pf_list_company_audit', { p_company: cA5, p_limit: 50 }, tok.alfaAdmin));
+    check('журнал компании: проект, локации, единицы', ['projects', 'locations', 'units'].every((t) => aud5.some((r) => r.table_name === t)));
+  } finally {
+    if (bld5) check('ветка корпуса удалена (53 узла)', (await j(await rpc('pf_delete_location', { p_location: bld5, p_cascade: true }, tok.alfaAdmin))) === 53);
+    if (unitId) check('своя единица удалена', (await rpc('pf_delete_unit', { p_unit: unitId }, tok.alfaAdmin)).ok);
+    if (pid) check('проект отправлен в архив', (await rpc('pf_update_project', { p_project: pid, p_name: stamp5, p_code: 'REST', p_archived: true }, tok.alfaAdmin)).ok);
+  }
+}
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');
 process.exit(fails ? 1 : 0);

@@ -61,7 +61,7 @@ export const PLANFACT_CSS = `
 .pf-table td{padding:10px 14px;border-bottom:1px solid var(--card-border)}
 .pf-table tbody tr:last-child td{border-bottom:0}
 .pf-table tbody tr:hover{background:var(--hover-bg)}
-.pf-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pf-num,.pf-table th.pf-num,.pf-table td.pf-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pf-unit{color:var(--text-muted);white-space:nowrap}
 .pf-pct{font-weight:700}
 .pf-pct--done{color:var(--color-green)}

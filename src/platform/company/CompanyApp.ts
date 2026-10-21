@@ -68,8 +68,7 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
   return h('div', null, bar,
     h('div', { className: 'pf-root co-root' },
       h('div', { className: 'co-head' },
-        h('h2', { className: 'pf-title' }, 'Компания'),
-        h('div', { className: 'co-tabs', role: 'tablist' },
+        h('div', { className: 'co-tabs', role: 'tablist', 'data-testid': 'co-tabs' },
           TABS.map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': tab === t.id, 'data-tab': t.id,
             className: 'co-tab' + (tab === t.id ? ' co-tab--active' : ''), onClick: () => setTab(t.id) }, t.label)))),
       tab === 'roles' ? h(CompanyRoles, { api, companyId, key: companyId }) : null,
@@ -79,10 +78,10 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
 
 export const COMPANY_CSS = COMPANY_MEMBERS_CSS + `
 .co-root{max-width:1200px}
-.co-head{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-bottom:16px}
-.co-tabs{display:flex;gap:4px;flex-wrap:wrap}
-.co-tab{font-size:12px;font-weight:700;padding:8px 14px;border-radius:10px;border:1px solid var(--card-border);background:transparent;color:var(--text-muted);cursor:pointer}
-.co-tab--active{background:var(--primary);border-color:var(--primary);color:var(--card-bg)}
+.co-head{margin-bottom:16px}
+.co-tabs{display:flex;flex-wrap:nowrap;gap:var(--rbi-subtab-gap,6px);padding:4px;border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg);overflow-x:auto;-webkit-overflow-scrolling:touch}
+.co-tab{flex:1 1 0;min-width:5rem;min-height:40px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;padding:8px 12px;border-radius:8px;border:0;background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;text-align:center}
+.co-tab--active{background:var(--accent,var(--primary));color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .co-select{margin-left:8px;font-size:12px;padding:6px 8px;border:1px solid var(--card-border);border-radius:8px;background:var(--card-bg);color:var(--text-main)}
 .co-split{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:16px;align-items:start}
 @media (max-width:760px){.co-split{grid-template-columns:1fr}}
@@ -94,7 +93,7 @@ export const COMPANY_CSS = COMPANY_MEMBERS_CSS + `
 .co-list-meta{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-muted)}
 .co-badge{font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 6px;border-radius:6px;border:1px solid var(--card-border);color:var(--text-muted)}
 .co-panel{padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
-.co-row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.co-row{display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;align-items:flex-end}
 .co-grow{flex:1 1 200px}
 .co-hint{font-size:12px;color:var(--text-muted)}
 .co-notice{font-size:12px;color:var(--color-green)}
