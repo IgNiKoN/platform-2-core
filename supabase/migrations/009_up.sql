@@ -22,12 +22,16 @@ on conflict do nothing;
 insert into planfact.role_template_permissions(template_code, action) values ('pto', 'planfact.brigades.manage')
 on conflict do nothing;
 
+-- Администратор подтверждает перебор и исправляет чужие записи, поэтому должен и видеть факт (в 002 у него planfact.fact.view не было).
+insert into planfact.role_template_permissions(template_code, action) values ('company_admin', 'planfact.fact.view')
+on conflict do nothing;
+
 -- Дозаполнение ролей, уже созданных из этих шаблонов (свои роли с template_code is null не трогаем).
 insert into planfact.company_role_permissions(role_id, company_id, action)
 select r.id, r.company_id, p.action
 from planfact.company_roles r
 join planfact.role_template_permissions p on p.template_code = r.template_code
-where r.template_code in ('company_admin', 'project_manager', 'pto') and p.action in ('planfact.fact.approve', 'planfact.brigades.manage')
+where r.template_code in ('company_admin', 'project_manager', 'pto') and p.action in ('planfact.fact.approve', 'planfact.brigades.manage', 'planfact.fact.view')
 on conflict do nothing;
 
 -- 3. Бригады компании

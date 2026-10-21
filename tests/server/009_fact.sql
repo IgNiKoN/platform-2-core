@@ -47,6 +47,10 @@ begin
     join planfact.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.brigades.manage';
   res := res || pg_temp.t(t = 'company_admin,project_manager,pto', 'brigades.manage: админ, РП, ПТО (получено: ' || coalesce(t, '-') || ')');
 
+  select string_agg(r.template_code, ',' order by r.template_code) into t from planfact.company_role_permissions rp
+    join planfact.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.fact.view';
+  res := res || pg_temp.t(t like 'company_admin%', 'fact.view есть и у администратора (получено: ' || coalesce(t, '-') || ')');
+
   -- 1. Подготовка: проект Альфы с местами и тремя позициями (план 100 / 20 / 50), проект Беты
   reset role; perform pg_temp.as_user(uadm);
   pa := public.pf_create_project(ca, 'ЖК Факт');
@@ -196,6 +200,16 @@ begin
   reset role; perform pg_temp.as_user(ufor);
   select last_rejected_note into t from public.pf_fact_positions(pa) where position_id = pos6;
   res := res || pg_temp.t(t = 'лишний объём', 'прораб видит причину отказа (' || coalesce(t, '-') || ')');
+
+  reset role; perform pg_temp.as_user(uadm);
+  select count(*) into n from public.pf_fact_pending(pa);
+  res := res || pg_temp.t(n = 0, 'администратор видит пустую очередь без ошибок');
+  reset role; perform pg_temp.as_user(ufor);
+  j := public.pf_fact_add(pos6, b1, today, 5);
+  reset role; perform pg_temp.as_user(uadm);
+  perform public.pf_fact_decide((public.pf_fact_pending(pa)).id, true, 'админ подтвердил');
+  res := res || pg_temp.t(not exists (select 1 from public.pf_fact_pending(pa)), 'администратор подтверждает перебор (право fact.approve + fact.view)');
+  reset role; perform pg_temp.as_user(ufor);
 
   -- 5. Исправление с историей (итог позиции 103 при плане 100; предел 102)
   j := public.pf_fact_correct(e1, 8, 'ошиблись при замере');

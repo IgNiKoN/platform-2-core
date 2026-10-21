@@ -28,3 +28,7 @@
 
 ## Файлы
 Миграция `009_up/_down.sql`, `tests/server/009_fact.sql`, `rest.test.mjs` (блок 009); `src/modules/planfact/fact/*`, `PlanfactApp.ts`, `index.ts`, манифест; тесты `__tests__/fact*.test.ts`, `projects.test.ts` (+вкладка «Бригады»); `js/dist/planfact`; документы (CHANGELOG, APP_GUIDE, AUTH_AND_ACCESS, FILE_MAP, TECH_DEBT №46–52, SERVERS).
+
+## Дополнение (после применения 009 на сервер)
+- 009 применена 21.10.2026. `test:server`: 174 PASS, 2 FAIL — администратор не мог подтвердить перебор (в шаблоне `company_admin` нет `planfact.fact.view`; в PGlite проверяли РП, у которого он есть). Исправление: `009_up.sql` выдаёт `fact.view` администратору (шаблон + дозаполнение ролей), `009_down.sql` убирает; тест `009_fact.sql` дополнен (админ подтверждает перебор) — PGlite FAIL 0, 002/005 FAIL 0.
+- **Исправленную 009 нужно применить на сервер повторно** (файл идемпотентен) и снова прогнать `test:server`; до этого — 2 FAIL на сервере.

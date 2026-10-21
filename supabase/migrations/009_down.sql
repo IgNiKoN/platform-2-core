@@ -27,6 +27,9 @@ drop function if exists planfact.fact_guard();
 
 alter table planfact.projects drop column if exists fact_tolerance_pct;
 
+delete from planfact.company_role_permissions rp using planfact.company_roles r
+  where rp.role_id = r.id and r.template_code = 'company_admin' and rp.action = 'planfact.fact.view';
+delete from planfact.role_template_permissions where template_code = 'company_admin' and action = 'planfact.fact.view';
 delete from planfact.company_role_permissions where action in ('planfact.fact.approve', 'planfact.brigades.manage');
 delete from planfact.role_template_permissions where action in ('planfact.fact.approve', 'planfact.brigades.manage');
 delete from planfact.permission_catalog where action in ('planfact.fact.approve', 'planfact.brigades.manage');
