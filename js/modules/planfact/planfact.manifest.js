@@ -20,6 +20,8 @@ export const PlanfactManifest = {
         { id: 'works', label: 'Работы', path: '#/planfact', icon: 'M3 10h18M3 14h18M10 3v18M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z' },
         { id: 'vor', label: 'ВОР', path: '#/planfact/vor', requiresAccess: true,
           icon: 'M9 17v-2m3 2v-4m3 4v-6M5 21h14a2 2 0 002-2V7.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0015.586 2H5a2 2 0 00-2 2v15a2 2 0 002 2z' },
+        { id: 'fact', label: 'Факт', path: '#/planfact/fact', requiresAccess: true,
+          icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
         { id: 'estimate', label: 'Смета', path: '#/planfact/estimate', requiresAccess: 'estimate',
           icon: 'M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z' },
         { id: 'directories', label: 'Справочники', path: '#/planfact/directories', requiresAccess: true,

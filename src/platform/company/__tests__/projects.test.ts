@@ -241,12 +241,12 @@ test('единицы: без права — только чтение', async ()
   assert.ok(!el.querySelector('[data-testid="un-add"]') && !el.querySelector('[data-testid="un-delete"]'));
 });
 
-test('справочники: вкладки «Объекты» / «Единицы», переключение идёт через роутер оболочки', async () => {
+test('справочники: вкладки «Объекты» / «Единицы» / «Бригады», переключение идёт через роутер оболочки', async () => {
   win.location.hash = '#/planfact/directories';
   const nav: string[] = [];
   (win as N).AppRouter = { navigate: (p: string) => { nav.push(p); win.history.pushState(null, '', p); win.dispatchEvent(new win.Event(ROUTE_EVENT)); } };
   const el = mountApp(fakeApi().api); await tick();
-  assert.deepEqual([...el.querySelectorAll('[data-testid="pf-dirtabs"] [role="tab"]')].map((t: N) => t.textContent), ['Объекты', 'Единицы']);
+  assert.deepEqual([...el.querySelectorAll('[data-testid="pf-dirtabs"] [role="tab"]')].map((t: N) => t.textContent), ['Объекты', 'Единицы', 'Бригады']);
   assert.ok(el.querySelector('[data-testid="pj-projects"]'));
   click(el.querySelector('[data-sub="units"]')); await tick();
   assert.deepEqual(nav, ['#/planfact/directories/units']);

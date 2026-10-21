@@ -283,6 +283,57 @@ else {
       check('журнал компании: цены, смета, КП', ['price_items', 'estimates', 'kp_revisions'].every((t) => audE.some((r) => r.table_name === t)));
       check('anon: pf_price_list закрыт', !(await rpc('pf_price_list', { p_company: cV })).ok);
     }
+    // --- P2-0007: бригады и факт прораба (миграция 009) — права, допуск перебора, подтверждение РП, изоляция компаний. ---
+    const fProbe = await rpc('pf_brigade_list', { p_company: cV }, tok.alfaPto);
+    let brigId = null;
+    if (fProbe.status === 404) { console.log('NOT RUN: миграция 009 не применена — проверки бригад и факта пропущены'); fails++; }
+    else {
+      const stampB = 'REST-бригада ' + new Date().toISOString();
+      check('прораб не ведёт справочник бригад', !(await rpc('pf_brigade_save', { p_company: cV, p_id: null, p_name: stampB }, tok.alfaForeman)).ok);
+      const bs = await rpc('pf_brigade_save', { p_company: cV, p_id: null, p_name: stampB, p_leader: 'Тест', p_phone: null }, tok.alfaPto);
+      brigId = await j(bs);
+      check('ПТО добавил бригаду', bs.ok && typeof brigId === 'string', `статус ${bs.status}`);
+      check('повтор имени бригады отклонён', !(await rpc('pf_brigade_save', { p_company: cV, p_id: null, p_name: stampB.toUpperCase() }, tok.alfaPto)).ok);
+      check('прораб видит бригады компании', (await j(await rpc('pf_brigade_list', { p_company: cV }, tok.alfaForeman))).some((b) => b.id === brigId));
+      check('Бета-ПТО не видит бригады Альфы', !(await rpc('pf_brigade_list', { p_company: cV }, tok.betaPto)).ok);
+      const today = new Date().toISOString().slice(0, 10);
+      const posId = pos[0]?.id;
+      check('факт: без бригады — отказ', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: null, p_date: today, p_qty: 1 }, tok.alfaForeman)).ok);
+      check('факт: объём 0 — отказ', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 0 }, tok.alfaForeman)).ok);
+      check('факт: будущая дата — отказ', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: '2099-01-01', p_qty: 1 }, tok.alfaForeman)).ok);
+      check('ПТО без fact.create не вносит факт', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 1 }, tok.alfaPto)).ok);
+      check('Бета-ПТО не вносит факт в позицию Альфы', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 1 }, tok.betaPto)).ok);
+      const fa = await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 10, p_workers: 2, p_man_hours: 16, p_note: 'REST-тест' }, tok.alfaForeman);
+      const faJ = await j(fa);
+      check('прораб внёс 10 — принято', fa.ok && faJ.status === 'accepted', `статус ${fa.status}`);
+      const tt = async (k) => (await j(await rpc('pf_fact_position_totals', { p_project: pv }, tok[k]))).find((t) => t.position_id === posId);
+      check('итог позиции: факт 10', Number((await tt('alfaForeman'))?.fact_qty) === 10);
+      const over = await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 1000 }, tok.alfaForeman);
+      const overJ = await j(over);
+      check('перебор плана > допуска — ждёт подтверждения РП', over.ok && overJ.status === 'pending_approval', `статус ${over.status}`);
+      check('неподтверждённый перебор в итог не входит', Number((await tt('alfaForeman'))?.fact_qty) === 10 && Number((await tt('alfaForeman'))?.pending_qty) === 1000);
+      check('прораб не подтверждает перебор', !(await rpc('pf_fact_decide', { p_entry: overJ.id, p_approve: true }, tok.alfaForeman)).ok);
+      check('прораб не видит очередь подтверждения', !(await rpc('pf_fact_pending', { p_project: pv }, tok.alfaForeman)).ok);
+      check('администратор видит очередь: 1 запись', (await j(await rpc('pf_fact_pending', { p_project: pv }, tok.alfaAdmin))).some((r) => r.id === overJ.id));
+      check('отказ без причины не проходит', !(await rpc('pf_fact_decide', { p_entry: overJ.id, p_approve: false }, tok.alfaAdmin)).ok);
+      check('администратор отклонил перебор с причиной', (await rpc('pf_fact_decide', { p_entry: overJ.id, p_approve: false, p_note: 'REST-тест: лишнее' }, tok.alfaAdmin)).ok);
+      const fc = await rpc('pf_fact_correct', { p_entry: faJ.id, p_qty: 8, p_reason: 'REST-тест: уточнение' }, tok.alfaForeman);
+      check('прораб исправил свою запись 10 → 8', fc.ok, `статус ${fc.status}`);
+      check('исправление без причины отклонено', !(await rpc('pf_fact_correct', { p_entry: faJ.id, p_qty: 5, p_reason: ' ' }, tok.alfaForeman)).ok);
+      const hist = await j(await rpc('pf_fact_history', { p_position: posId }, tok.alfaForeman));
+      check('история: заменённая, новая и отклонённая записи на месте', hist.some((h) => h.status === 'superseded') && hist.some((h) => h.status === 'accepted' && Number(h.qty) === 8) && hist.some((h) => h.status === 'rejected'));
+      check('Бета-ПТО не читает историю и итоги Альфы', !(await rpc('pf_fact_history', { p_position: posId }, tok.betaPto)).ok && !(await rpc('pf_fact_position_totals', { p_project: pv }, tok.betaPto)).ok);
+      const directF = await fetch(`${URL_}/rest/v1/fact_entries?id=eq.${faJ.id}`, { method: 'PATCH', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaForeman}`, 'Content-Type': 'application/json', 'Accept-Profile': 'planfact', 'Content-Profile': 'planfact' }, body: JSON.stringify({ qty: 999 }) });
+      check('запись факта не изменить через REST', !directF.ok, `статус ${directF.status}`);
+      const directD = await fetch(`${URL_}/rest/v1/fact_entries?id=eq.${faJ.id}`, { method: 'DELETE', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaForeman}`, 'Accept-Profile': 'planfact', 'Content-Profile': 'planfact' } });
+      check('запись факта не удалить через REST', !directD.ok, `статус ${directD.status}`);
+      check('итог после исправления: факт 8', Number((await tt('alfaForeman'))?.fact_qty) === 8);
+      const audF = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
+      check('журнал компании: бригады и факт', ['brigades', 'fact_entries'].every((t) => audF.some((r) => r.table_name === t)));
+      check('anon: pf_fact_add закрыт', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 1 })).ok);
+      // бригаду REST-теста отправляем в архив — активные имена не накапливаются
+      check('бригада REST-теста отправлена в архив', (await rpc('pf_brigade_archive', { p_brigade: brigId, p_archived: true }, tok.alfaPto)).ok);
+    }
     const audV = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 100 }, tok.alfaAdmin));
     check('журнал компании: загрузка и подтверждение ВОР', audV.some((r) => r.table_name === 'vor_imports' && r.action === 'INSERT') && audV.some((r) => r.table_name === 'vor_imports' && r.new_data?.status === 'confirmed'));
     const directV = await fetch(`${URL_}/rest/v1/vor_imports`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaPto}`, 'Accept-Profile': 'planfact' } });
