@@ -70,3 +70,10 @@ test('разные предметы работы при общем хвосте 
   const corpus = ['Монтаж ревизионных лючков в с/у', 'Монтаж подоконных досок из ПВХ', 'Устройство натяжных потолков', 'Окраска стен в 2 слоя'];
   assert.equal(classify('Монтаж ревизионных пластиковых лючков в с/у', 'шт', UNITS, [{ id: 'wl', name: corpus[0], unit_id: 'sht' }], [], buildIdf(corpus)).light, 'yellow');
 });
+
+test('пустая ЕИ в файле: 🔴 «unit»; после решения ПТО (словарь «без ЕИ») — 🟢 с ЕИ вида работ', () => {
+  assert.equal(classify('Монтаж межкомнатных дверей', null, UNITS, WT, []).reason, 'unit');
+  const types = [...WT, { id: 'w9', name: 'Монтаж межкомнатных дверей', unit_id: 'sht' }];
+  const v = classify('Монтаж межкомнатных  дверей', '', UNITS, types, [{ canon_name: 'монтаж межкомнатных дверей', unit_text: '', work_type_id: 'w9' }]);
+  assert.deepEqual([v.light, v.workTypeId, v.unitId], ['green', 'w9', 'sht']);
+});

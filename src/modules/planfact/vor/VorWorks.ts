@@ -6,7 +6,7 @@
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import type { ProjectsApi, UnitItem } from '../../../platform/company/projects.service.ts';
-import { classify, canonName, unitKey, workTypeName, buildIdf } from './matching.ts';
+import { classify, canonName, unitKey, workTypeName, buildIdf, findUnit } from './matching.ts';
 import type { Light, Verdict } from './matching.ts';
 import type { DictEntry, Resolution, VorApi, VorRow, WorkType } from './vor.service.ts';
 
@@ -22,7 +22,10 @@ export function verdicts(rows: VorRow[], units: { id: string; code: string }[], 
   const idf = buildIdf([...workTypes.map((w) => w.name), ...dict.map((d) => d.canon_name), ...works.map((r) => r.name)]);
   return works.map((r) => {
     if (r.match === 'green' && r.work_type_id && r.unit_id) return { row: r, v: { light: 'green', workTypeId: r.work_type_id, unitId: r.unit_id, score: 1, reason: 'dictionary' } };
-    return { row: r, v: classify(r.name, r.unit_text, units, workTypes, dict, idf) };
+    // ЕИ строки не распознана, но ПТО выбрал её в черновике — разбираем строку с этой ЕИ.
+    const chosen = r.unit_id && !findUnit(r.unit_text, units) ? units.find((u) => u.id === r.unit_id) : undefined;
+    const v = classify(r.name, chosen ? chosen.code : r.unit_text, units, workTypes, dict, idf);
+    return { row: r, v };
   });
 }
 
@@ -100,6 +103,14 @@ export function VorWorks(props: {
     setBusy('');
   }
 
+  /** Пустая ЕИ в файле: ПТО выбирает ЕИ строки (сохраняется в черновик; словарь запомнит решение «без ЕИ»). */
+  async function chooseUnit(x: RowVerdict, unitId: string): Promise<void> {
+    if (busy || !unitId) return;
+    setBusy('Сохраняю ЕИ…');
+    await save([{ row_no: x.row.row_no, location_id: x.row.location_id, work_type_id: x.row.work_type_id, unit_id: unitId, match: null }]);
+    setBusy('');
+  }
+
   async function addUnit(text: string): Promise<void> {
     if (!projects || busy) return;
     setBusy('Добавляю ЕИ…'); setError('');
@@ -138,7 +149,8 @@ export function VorWorks(props: {
           editable && canUnits
             ? h('div', { className: 'pj-actions' }, unknownUnits.filter(Boolean).map((u) => h('button', { key: u, type: 'button', className: 'pf-btn pf-btn--ghost', disabled: !!busy,
                 'data-testid': 'vor-add-unit', onClick: () => { void addUnit(u); } }, `Добавить ЕИ «${u}»`)))
-            : h('div', { className: 'pf-muted' }, 'Добавить ЕИ может ПТО, РП или администратор — «Справочники → Единицы». Строки без ЕИ нужно исправить в файле.'))
+            : h('div', { className: 'pf-muted' }, 'Добавить ЕИ может ПТО, РП или администратор — «Справочники → Единицы».'),
+          unknownUnits.includes('') ? h('div', { className: 'pf-muted' }, 'У строк с пустой ЕИ выберите ЕИ в списке у строки — решение запомнится в словаре.') : null)
       : null,
     h('div', { className: 'pf-card vor-list', 'data-testid': 'vor-work-rows' },
       shown.slice(0, limit).map((x) => h('div', { key: x.row.row_no, className: `vor-wrow vor-wrow--${x.v.light}`, 'data-light': x.v.light, 'data-row': x.row.row_no },
@@ -156,7 +168,13 @@ export function VorWorks(props: {
                 onClick: () => { void applyChoice(x); } }, 'Подтвердить'),
               x.v.light === 'red' ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', disabled: !!busy, 'data-testid': 'vor-wt-create',
                 onClick: () => { void createRed(x); } }, 'Создать вид работ') : null)
-          : null)),
+          : editable && x.v.reason === 'unit' && !(x.row.unit_text || '').trim() && units
+            ? h('span', { className: 'vor-wrow-act' },
+                h('select', { className: 'pj-input', value: '', 'data-testid': 'vor-unit-select',
+                  onChange: (e: ChangeEvent<HTMLSelectElement>) => { void chooseUnit(x, e.currentTarget.value); } },
+                  h('option', { value: '' }, '— ЕИ в файле пустая: выбрать —'),
+                  units.map((u) => h('option', { key: u.id, value: u.id }, u.code))))
+            : null)),
       shown.length > limit ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost vor-more', onClick: () => setLimit(limit + PAGE) }, `Показать ещё (${shown.length - limit})`) : null,
       shown.length ? null : h('div', { className: 'pj-empty pf-muted' }, 'Нет строк этого цвета.')));
 }

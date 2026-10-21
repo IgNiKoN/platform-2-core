@@ -116,3 +116,19 @@ test('неизвестная ЕИ: 🔴 с подсказкой и «Добав�
   assert.equal(m3.el.querySelector('[data-testid="vor-create-red"]'), null);
   assert.equal(m3.el.querySelector('[data-testid="vor-wt-select"]'), null);
 });
+
+test('пустая ЕИ: ПТО выбирает ЕИ у строки → сохраняется; дальше строка разбирается как обычная 🔴 с этой ЕИ', async () => {
+  const rows = [W(1, 'Монтаж межкомнатных дверей', null)];
+  const s = setup(rows, [], []);
+  const { el, render } = mount({ api: s.api, projects: s.projects, rows, save: s.save });
+  await tick();
+  assert.match(el.querySelector('[data-testid="vor-unknown-units"]').textContent, /«пусто»/);
+  const sel = el.querySelector('[data-testid="vor-unit-select"]');
+  sel.value = 'sht'; sel.dispatchEvent(new win.Event('change', { bubbles: true })); await tick();
+  assert.deepEqual(s.resolved.map((r) => [r.row_no, r.unit_id, r.match]), [[1, 'sht', null]]);
+  render({ api: s.api, projects: s.projects, rows: s.rows(), save: s.save }); await tick();
+  assert.equal(el.querySelector('[data-testid="vor-unknown-units"]'), null);
+  el.querySelector('[data-testid="vor-create-red"]').click(); await tick(); await tick();
+  assert.deepEqual(s.createdTypes, [{ name: 'Монтаж межкомнатных дверей', unit_id: 'sht' }]);
+  assert.equal(s.learned[0].unit_text, '', 'словарь запоминает строку «без ЕИ»');
+});

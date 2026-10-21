@@ -105,8 +105,16 @@ export interface Verdict { light: Light; workTypeId: string | null; unitId: stri
 /** Светофор строки-работы. Словарь — по canon_name + ключу ЕИ; похожие — по видам работ и записям словаря с той же ЕИ. */
 export function classify(name: string, unitText: string | null, units: UnitRef[], workTypes: WorkTypeRef[], dict: DictRef[], idf?: Idf): Verdict {
   const unit = findUnit(unitText, units);
-  if (!unit) return { light: 'red', workTypeId: null, unitId: null, score: 0, reason: 'unit' };
   const c = canonName(name);
+  if (!unit) {
+    // ЕИ в файле пустая, но ПТО уже решал эту строку раньше (словарь «без ЕИ») — ЕИ берётся из вида работ.
+    if (!unitKey(unitText)) {
+      const d = dict.find((x) => x.canon_name === c && x.unit_text === '');
+      const wt = d ? workTypes.find((w) => w.id === d.work_type_id && w.unit_id) : undefined;
+      if (wt) return { light: 'green', workTypeId: wt.id, unitId: wt.unit_id, score: 1, reason: 'dictionary' };
+    }
+    return { light: 'red', workTypeId: null, unitId: null, score: 0, reason: 'unit' };
+  }
   const uk = unitKey(unitText);
   const exact = dict.find((d) => d.canon_name === c && d.unit_text === uk && workTypes.some((w) => w.id === d.work_type_id));
   if (exact) return { light: 'green', workTypeId: exact.work_type_id, unitId: unit.id, score: 1, reason: 'dictionary' };
