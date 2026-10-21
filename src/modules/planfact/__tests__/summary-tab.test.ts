@@ -105,3 +105,43 @@ test('ошибка сервера и пустой портфель — поня�
   await tick();
   assert.match(el2.querySelector('[role="alert"]').textContent, /Нет связи/);
 });
+
+test('объект → виды работ: 10 из 100 м² = 10 %, 3 из 10 шт. = 30 %, общий % — по деньгам, ЕИ не смешаны', async () => {
+  const f = makeFakeSummary([PTO_PROJECT]);
+  const el = mount(f.api);
+  await tick();
+  el.querySelector('[data-testid="sm-open"]').click(); await tick(); await tick();
+  assert.ok(el.querySelector('[data-testid="sm-project"]'));
+  assert.equal(el.querySelector('[data-testid="sm-pct"]').textContent, '14,5 %', 'общий % объекта — по деньгам КП');
+  const plas = el.querySelector('[data-wt="wt1"]');
+  assert.equal(plas.querySelector('[data-testid="sm-unit-fact"]').textContent, 'факт 10 из 100 м²');
+  assert.equal(plas.querySelector('[data-testid="sm-unit-pct"]').textContent, '10 %');
+  assert.match(plas.querySelector('[data-testid="sm-unit-pace"]').textContent, /за 7 дн\. 3 · за 14 дн\. 6/);
+  assert.match(plas.querySelector('[data-testid="sm-wt-money"]').textContent, /4\s125,00 ₽ из 41\s250,00 ₽ · 10 %/);
+  const door = el.querySelector('[data-wt="wt3"]');
+  assert.equal(door.querySelector('[data-testid="sm-unit-fact"]').textContent, 'факт 3 из 10 шт.');
+  assert.equal(door.querySelector('[data-testid="sm-unit-pct"]').textContent, '30 %');
+  assert.ok(el.querySelector('[data-wt="wt4"] [data-testid="sm-wt-unpriced"]'), 'вид без цены — предупреждение');
+  door.querySelector('[data-testid="sm-wt-toggle"]').click(); await tick(); await tick();
+  assert.ok(f.calls.includes('positions:pr1:wt3'));
+  const pos = door.querySelector('[data-position-id="p14"]');
+  assert.match(pos.textContent, /5 этаж · Кв\. 1/);
+  assert.equal(pos.querySelector('[data-testid="sm-pos-pct"]').textContent, '30 %');
+  el.querySelector('[data-testid="sm-back"]').click(); await tick();
+  assert.equal(el.querySelector('[data-testid="sm-project"]'), null);
+  assert.ok(el.querySelector('[data-testid="sm-open"]'));
+});
+
+test('вид работ в двух ЕИ — две строки, без суммы; без права — ₽ вида работ не показаны', async () => {
+  const two = [{ work_type_id: 'wt1', work_name: 'Штукатурка стен', positions: 2, plan_money: null, done_money: null, pct_money: null, unpriced_rows: 0,
+    units: [{ unit: 'м²', plan: 100, fact: 10, pct: 10, rest: 90, fact7: 3, fact14: 6, pending: 0 }, { unit: 'шт.', plan: 5, fact: 0, pct: 0, rest: 5, fact7: 0, fact14: 0, pending: 0 }] }];
+  const fore: SummaryProject = { ...PTO_PROJECT, can_money: false, plan_money: null, done_money: null, pct_money: null };
+  const el = mount(makeFakeSummary([fore], { workTypes: two }).api);
+  await tick();
+  el.querySelector('[data-testid="sm-open"]').click(); await tick(); await tick();
+  const wt = el.querySelector('[data-wt="wt1"]');
+  assert.equal(wt.querySelectorAll('[data-unit]').length, 2);
+  assert.deepEqual([...wt.querySelectorAll('[data-testid="sm-unit-fact"]')].map((x: N) => x.textContent), ['факт 10 из 100 м²', 'факт 0 из 5 шт.']);
+  assert.equal(wt.querySelector('[data-testid="sm-wt-money"]'), null);
+  assert.ok(!/₽/.test(el.querySelector('[data-testid="sm-worktypes"]').textContent));
+});

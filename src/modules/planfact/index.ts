@@ -40,6 +40,7 @@ import { KS2_TPL_CSS } from './ks2/Ks2Template.ts';
 import { createSummaryService } from './summary/summary.service.ts';
 import type { SummaryApi } from './summary/summary.service.ts';
 import { SUMMARY_CSS } from './summary/SummaryTab.ts';
+import { SUMMARY_PROJECT_CSS } from './summary/ProjectView.ts';
 import { createDataService } from './data.service.ts';
 import type { DataApi } from './data.service.ts';
 import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
@@ -114,7 +115,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS + KS2_CSS + KS2_ACT_CSS + KS2_TPL_CSS + SUMMARY_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS + KS2_CSS + KS2_ACT_CSS + KS2_TPL_CSS + SUMMARY_CSS + SUMMARY_PROJECT_CSS;
   doc.head.appendChild(style);
 }
 

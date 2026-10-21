@@ -7,12 +7,14 @@ import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import type { SummaryApi, SummaryProject } from './summary.service.ts';
 import { LIGHT_LABEL, dateOr, lightText, pctText, rub, rubDay } from './model.ts';
+import { ProjectView } from './ProjectView.ts';
 
 export function SummaryTab(props: { api: SummaryApi }): ReactElement {
   const { api } = props;
   const [list, setList] = useState<SummaryProject[] | null>(null);
   const [error, setError] = useState('');
   const [datesId, setDatesId] = useState('');
+  const [openId, setOpenId] = useState('');
 
   async function load(): Promise<void> {
     setError('');
@@ -23,17 +25,24 @@ export function SummaryTab(props: { api: SummaryApi }): ReactElement {
   useEffect(() => { void load(); }, []);
 
   if (list === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
+  const cardOf = (p: SummaryProject, inside: boolean): ReactElement => h(ProjectCard, { key: p.project_id, p, api, editing: datesId === p.project_id, inside,
+    onEdit: () => setDatesId(datesId === p.project_id ? '' : p.project_id), onSaved: () => { setDatesId(''); void load(); }, onOpen: () => { setDatesId(''); setOpenId(p.project_id); } });
+  const opened = list.find((p) => p.project_id === openId);
+  if (opened) {
+    return h('div', { className: 'pj-tab sm-tab', 'data-testid': 'sm-tab' },
+      error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
+      h(ProjectView, { api, p: opened, card: cardOf(opened, true), onBack: () => { setDatesId(''); setOpenId(''); } }));
+  }
   const anyMoney = list.some((p) => p.can_money);
   return h('div', { className: 'pj-tab sm-tab', 'data-testid': 'sm-tab' },
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
     !error && !list.length ? h('div', { className: 'pf-card pj-empty pf-muted', 'data-testid': 'sm-empty' }, 'Нет объектов: сводка видна по проектам, где у вас есть право просмотра факта.') : null,
-    list.length && !anyMoney ? h('div', { className: 'pf-muted sm-note', 'data-testid': 'sm-nomoney' }, 'Суммы в рублях и общий % готовности видят РП, ПТО, экономист и руководство. Объёмы — в разделе «Факт».') : null,
-    list.map((p) => h(ProjectCard, { key: p.project_id, p, api, editing: datesId === p.project_id,
-      onEdit: () => setDatesId(datesId === p.project_id ? '' : p.project_id), onSaved: () => { setDatesId(''); void load(); } })));
+    list.length && !anyMoney ? h('div', { className: 'pf-muted sm-note', 'data-testid': 'sm-nomoney' }, 'Суммы в рублях и общий % готовности видят РП, ПТО, экономист и руководство. Объёмы по видам работ — кнопка «Открыть» у объекта.') : null,
+    list.map((p) => cardOf(p, false)));
 }
 
-function ProjectCard(props: { p: SummaryProject; api: SummaryApi; editing: boolean; onEdit: () => void; onSaved: () => void }): ReactElement {
-  const { p, api, editing, onEdit, onSaved } = props;
+function ProjectCard(props: { p: SummaryProject; api: SummaryApi; editing: boolean; inside: boolean; onEdit: () => void; onSaved: () => void; onOpen: () => void }): ReactElement {
+  const { p, api, editing, inside, onEdit, onSaved, onOpen } = props;
   const pct = p.pct_money;
   const metric = (label: string, value: string, id: string, hint?: string) =>
     h('div', { className: 'sm-metric', 'data-metric': id }, h('span', { className: 'sm-mlabel' }, label), h('b', { className: 'sm-mvalue' }, value), hint ? h('span', { className: 'pf-muted sm-mhint' }, hint) : null);
@@ -58,7 +67,9 @@ function ProjectCard(props: { p: SummaryProject; api: SummaryApi; editing: boole
       p.can_money ? metric('Сделано, не выставлено в КС-2', rub(p.gap_money), 'gap', p.issued_money !== null ? `выставлено ${rub(p.issued_money)}` : undefined) : null,
       metric('Позиций ВОР', String(p.positions), 'positions', p.pending ? `ждут подтверждения: ${p.pending}` : undefined)),
     p.can_money && p.unpriced_rows ? h('div', { className: 'ft-warn', 'data-testid': 'sm-unpriced' }, `Строк ВОР без цены в договорной КП: ${p.unpriced_rows} — в готовность по деньгам не входят.`) : null,
-    p.can_manage ? h('div', { className: 'pj-actions' }, h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-dates-btn', onClick: onEdit }, editing ? 'Закрыть' : 'Даты проекта')) : null,
+    h('div', { className: 'pj-actions' },
+      inside ? null : h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'sm-open', onClick: onOpen }, 'Открыть'),
+      p.can_manage ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-dates-btn', onClick: onEdit }, editing ? 'Закрыть' : 'Даты проекта') : null),
     editing ? h(DatesForm, { api, p, onSaved }) : null);
 }
 
