@@ -17,7 +17,8 @@
     "test:unit": "node --test js/shared/__tests__/*.test.js js/modules/knowledge/__tests__/*.test.js js/modules/quality/features/analytics/__tests__/*.test.js src/modules/planfact/__tests__/*.test.ts",
     "smoke:knowledge": "node _ai/scripts/smoke-knowledge.mjs --reload",
     "smoke:construction-knowledge": "node _ai/scripts/smoke-construction-knowledge.mjs --reload",
-    "test": "npm run test:unit"
+    "test": "npm run test:unit",
+    "test:server": "node tests/server/rest.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
@@ -28,6 +29,7 @@
     "vite": "^6.3.5"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.118.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   }

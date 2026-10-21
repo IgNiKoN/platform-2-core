@@ -21,6 +21,8 @@
 
 **Риск:** старый loader и меню содержат статические списки; исходный `init(ctx)` ещё не гарантирует независимые `mount/unmount` или откат новой React-сборки. Контракт проверять на отдельном эксперименте, не редактировать production.
 
+**P2-0004:** вход и права — `src/platform/auth/auth.service.ts`; серверная модель — `supabase/migrations/`; данные модуля — только `public.pf_*` (`src/modules/planfact/data.service.ts`). Подробно — `FILE_MAP.md`, «Изменения P2-0004».
+
 **P2-0002:** модуль Platform 2.0 подключается manifest'ом с `menu.section:'platform'` + `MODULE_BASE_URLS` + `PLATFORM2_MODULES` (`app.entry.js`); пункт меню рисует `getPlatformMenuItems()` в `app-shell.js`, маршрут регистрирует модуль. Контракт `init/mount/unmount` есть у `planfact` (`src/modules/planfact/index.ts`); у старых модулей — только `init(ctx)`. Подробно — `FILE_MAP.md`, раздел «Изменения P2-0002».
 
 ## 2. Пользователи, права, компания, настройки

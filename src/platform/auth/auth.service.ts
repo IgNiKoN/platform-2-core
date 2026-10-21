@@ -1,0 +1,81 @@
+/**
+ * Вход Platform 2.0 (почта + пароль, Supabase Auth). Отдельно от старого облачного входа Quality:
+ * свои ключи конфигурации (P2_*), своё хранилище сессии, старый sync не трогаем.
+ * Права проверяет сервер; здесь только вход и «кто вошёл».
+ */
+import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+export interface AccessEntry {
+  company: string;
+  role: string;
+  projectId: string | null;
+}
+
+export type SignInResult = { ok: true } | { ok: false; message: string };
+
+export interface AuthApi {
+  signIn(email: string, password: string): Promise<SignInResult>;
+  signOut(): Promise<void>;
+  getEmail(): Promise<string | null>;
+  getAccess(): Promise<AccessEntry[]>;
+}
+
+export interface AuthConfig {
+  url: string;
+  anonKey: string;
+}
+
+/** Единственное место настройки — js/services/config.service.js (ключи P2_*). Нет ключей → null (локальный демо-режим). */
+export function readAuthConfig(): AuthConfig | null {
+  const cfg = (globalThis as unknown as { APP_CONFIG?: Record<string, string> }).APP_CONFIG
+    || (typeof window !== 'undefined' ? (window as unknown as { APP_CONFIG?: Record<string, string> }).APP_CONFIG : undefined);
+  const url = cfg && cfg.P2_SUPABASE_URL;
+  const anonKey = cfg && cfg.P2_SUPABASE_ANON_KEY;
+  return url && anonKey ? { url, anonKey } : null;
+}
+
+export function mapAuthError(message: string): string {
+  if (/invalid login credentials/i.test(message)) return 'Неверная почта или пароль';
+  if (/email not confirmed/i.test(message)) return 'Почта не подтверждена';
+  if (/failed to fetch|network|load failed/i.test(message)) return 'Нет связи с сервером. Попробуйте позже';
+  return 'Не удалось войти. Попробуйте ещё раз';
+}
+
+let client: SupabaseClient | null = null;
+
+export function createAuthService(cfg: AuthConfig): AuthApi {
+  client = createClient(cfg.url, cfg.anonKey, {
+    auth: { storageKey: 'platform2-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+  });
+  const c = client;
+  return {
+    async signIn(email, password) {
+      try {
+        const { error } = await c.auth.signInWithPassword({ email: email.trim(), password });
+        return error ? { ok: false, message: mapAuthError(error.message) } : { ok: true };
+      } catch (e) {
+        return { ok: false, message: mapAuthError(e instanceof Error ? e.message : '') };
+      }
+    },
+    async signOut() {
+      await c.auth.signOut();
+    },
+    async getEmail() {
+      const { data } = await c.auth.getSession();
+      return data.session ? data.session.user.email || null : null;
+    },
+    async getAccess() {
+      const { data, error } = await c.rpc('pf_my_context');
+      if (error || !Array.isArray(data)) return [];
+      return (data as { company_name: string; role_name: string; project_id: string | null }[]).map((r) => ({
+        company: r.company_name, role: r.role_name, projectId: r.project_id
+      }));
+    }
+  };
+}
+
+/** Клиент для данных модуля (этап 4). Только после createAuthService. */
+export function getClient(): SupabaseClient | null {
+  return client;
+}
