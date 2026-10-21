@@ -204,7 +204,7 @@ else {
     const rowsV = [
       { row_no: 10, kind: 'context', name: 'Секция 1', context: { section: '1' } },
       { row_no: 11, kind: 'work', name: stampV + ' устройство пола', unit_text: 'м2', qty: 399.89, context: { section: '1', apartments: 'кв. 3, 16' } },
-      { row_no: 12, kind: 'material', name: 'Смесь', unit_text: 'кг', qty: 75, norm: 7.5, parent_row_no: 11, context: { section: '1' } }];
+      { row_no: 12, kind: 'material', name: stampV + ' смесь', unit_text: 'кг', qty: 75, norm: 7.5, parent_row_no: 11, context: { section: '1' } }];
     const big = Array.from({ length: 900 }, (_, i) => ({ row_no: 100 + i, kind: i % 2 ? 'material' : 'work', name: 'Строка ' + i, unit_text: 'м2', qty: i, parent_row_no: i % 2 ? 99 + i : null, context: {} }));
     const ar = await rpc('pf_vor_add_rows', { p_import: imp, p_rows: rowsV }, tok.alfaPto);
     check('строки сохранены', ar.ok && (await j(ar)) === 3, `статус ${ar.status}`);
@@ -252,7 +252,10 @@ else {
       check('прораб не пишет цены', !(await rpc('pf_price_upsert', { p_company: cV, p_items: [], p_source: 'manual' }, tok.alfaForeman)).ok);
       check('Бета-ПТО не читает цены Альфы', !(await rpc('pf_price_list', { p_company: cV }, tok.betaPto)).ok);
       check('Бета-ПТО не пишет цены Альфы', !(await rpc('pf_price_upsert', { p_company: cV, p_items: [], p_source: 'manual' }, tok.betaPto)).ok);
-      check('шаблон надбавок компании открывается', (await j(await rpc('pf_overhead_template', { p_company: cV }, tok.alfaPto))).length > 0);
+      const tplE = await j(await rpc('pf_overhead_template', { p_company: cV }, tok.alfaPto));
+      check('шаблон надбавок компании открывается, русские названия целы', tplE.length > 0 && tplE.some((l) => l.name === 'НДС минимально необходимый'));
+      const catE = await j(await rpc('pf_permission_catalog', {}, tok.alfaAdmin));
+      check('каталог прав: planfact.estimate.manage с русским описанием', catE.some((c) => c.action === 'planfact.estimate.manage' && String(c.description).startsWith('Цены, шаблон надбавок')));
       check('прораб не читает шаблон надбавок', !(await rpc('pf_overhead_template', { p_company: cV }, tok.alfaForeman)).ok);
       check('прораб не создаёт смету', !(await rpc('pf_estimate_create', { p_project: pv, p_name: 'x', p_imports: [imp], p_area: null }, tok.alfaForeman)).ok);
       check('Бета-ПТО не создаёт смету по ВОР Альфы', !(await rpc('pf_estimate_create', { p_project: pv, p_name: 'x', p_imports: [imp], p_area: null }, tok.betaPto)).ok);
