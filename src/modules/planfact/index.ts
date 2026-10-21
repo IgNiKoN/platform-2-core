@@ -11,6 +11,7 @@ import { PlanfactApp, PLANFACT_AUTH_CSS, PLANFACT_TABS_CSS, ROUTE_EVENT } from '
 import { SCOPE_CSS } from '../../platform/company/CompanyScope.ts';
 import { PROJECTS_CSS } from '../../platform/company/ProjectsTab.ts';
 import { LOCATIONS_CSS } from '../../platform/company/LocationsTree.ts';
+import { UNITS_CSS } from '../../platform/company/UnitsTab.ts';
 import { createProjectsService } from '../../platform/company/projects.service.ts';
 import type { ProjectsApi } from '../../platform/company/projects.service.ts';
 import { PLANFACT_WORKS_CSS } from './PlanfactWorks.ts';
@@ -73,7 +74,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS;
   doc.head.appendChild(style);
 }
 

@@ -9,7 +9,8 @@ import { createRoot } from 'react-dom/client';
 import { CompanyScope } from '../CompanyScope.ts';
 import { ProjectsTab } from '../ProjectsTab.ts';
 import { PlanfactApp, routeFromHash, ROUTE_EVENT } from '../../../modules/planfact/PlanfactApp.ts';
-import type { CompanyAccess, ProjectItem, ProjectsApi } from '../projects.service.ts';
+import { UnitsTab } from '../UnitsTab.ts';
+import type { CompanyAccess, ProjectItem, ProjectsApi, UnitItem } from '../projects.service.ts';
 import type { Result } from '../company.service.ts';
 import type { AuthApi } from '../../auth/auth.service.ts';
 import type { PlanfactDemo } from '../../../modules/planfact/model.ts';
@@ -33,8 +34,11 @@ export const ACCESS_READ: CompanyAccess = { company_id: 'c1', company_name: 'А�
 const P = (id: string, name: string, over: Partial<ProjectItem> = {}): ProjectItem =>
   ({ id, name, code: null, archived_at: null, created_at: '2026-10-21T00:00:00Z', can_manage: true, ...over });
 
-export function fakeApi(opts: { fail?: string; access?: CompanyAccess[]; projects?: ProjectItem[] } = {}) {
+export function fakeApi(opts: { fail?: string; access?: CompanyAccess[]; projects?: ProjectItem[]; units?: UnitItem[] } = {}) {
   const calls: string[] = [];
+  let units: UnitItem[] = opts.units || [
+    { id: 'u1', company_id: null, code: 'м²', name: 'Квадратный метр', is_common: true },
+    { id: 'u2', company_id: null, code: 'шт.', name: 'Штука', is_common: true }];
   let projects = opts.projects || [P('p1', 'ЖК Тест', { code: 'T-1' })];
   const res = <T = null>(value: T): Result<T> => opts.fail ? { ok: false, message: opts.fail } : { ok: true, value };
   const api: ProjectsApi = {
@@ -48,7 +52,9 @@ export function fakeApi(opts: { fail?: string; access?: CompanyAccess[]; project
     },
     async listLocations() { return []; }, async addLocation() { return res(''); }, async renameLocation() { return res(null); },
     async deleteLocation() { return res(0); }, async generateBuilding() { return res(''); },
-    async listUnits() { return []; }, async addUnit() { return res(''); }, async deleteUnit() { return res(null); }
+    async listUnits() { return units; },
+    async addUnit(_c, code, name) { calls.push(`addUnit:${code}:${name}`); if (!opts.fail) units = [...units, { id: 'u-new', company_id: 'c1', code, name, is_common: false }]; return res('u-new'); },
+    async deleteUnit(id) { calls.push(`deleteUnit:${id}`); if (!opts.fail) units = units.filter((u) => u.id !== id); return res(null); }
   };
   return { api, calls };
 }
@@ -129,6 +135,7 @@ test('нет доступа ни к одной компании — сообще
 
 test('адрес → страница модуля', () => {
   assert.deepEqual(routeFromHash('#/planfact'), { page: 'works', sub: 'objects' });
+  assert.equal(routeFromHash('#/planfact/directories/units').sub, 'units');
   assert.equal(routeFromHash('#/planfact/directories').page, 'directories');
   assert.equal(routeFromHash('#/planfact/directories/objects').page, 'directories');
   assert.equal(routeFromHash('#/planfact/что-то').page, 'works');
@@ -179,4 +186,71 @@ test('переход через роутер оболочки (history.pushState
   assert.ok(el.querySelector('[data-testid="pj-projects"]'));
   win.history.pushState(null, '', '#/planfact'); win.dispatchEvent(new win.Event(ROUTE_EVENT)); await tick();
   assert.ok(!el.querySelector('[data-testid="pj-projects"]'));
+});
+
+function mountUnits(api: ProjectsApi, company: CompanyAccess) {
+  const el: N = win.document.createElement('div'); win.document.body.appendChild(el);
+  flushSync(() => createRoot(el).render(createElement(UnitsTab, { api, company })));
+  return el;
+}
+
+test('единицы: общие отдельно от своих, у общих нет кнопки удаления', async () => {
+  const el: N = mountUnits(fakeApi().api, ACCESS_ADMIN); await tick();
+  assert.equal(el.querySelectorAll('[data-testid="un-common"] [data-unit-id]').length, 2);
+  assert.ok(el.querySelector('[data-testid="un-own-empty"]'));
+  assert.ok(!el.querySelector('[data-testid="un-common"] [data-testid="un-delete"]'));
+  assert.ok(el.textContent.includes('м²') && el.textContent.includes('Квадратный метр'));
+});
+
+test('единицы: добавить свою — появляется в «своих», на сервер уходят обозначение и название', async () => {
+  const { api, calls } = fakeApi(); const el: N = mountUnits(api, ACCESS_ADMIN); await tick();
+  const form: N = el.querySelector('[data-testid="un-add"]');
+  form.elements.namedItem('code').value = ' м² пола '; form.elements.namedItem('name').value = 'Площадь пола';
+  submit(form); await tick();
+  assert.deepEqual(calls, ['addUnit:м² пола:Площадь пола']);
+  assert.equal(el.querySelectorAll('[data-testid="un-own"] [data-unit-id]').length, 1);
+});
+
+test('единицы: пустые поля — ошибка без вызова сервера; отказ сервера (дубль) показан', async () => {
+  const t = fakeApi(); const el: N = mountUnits(t.api, ACCESS_ADMIN); await tick();
+  submit(el.querySelector('[data-testid="un-add"]')); await tick();
+  assert.deepEqual(t.calls, []);
+  assert.ok(el.querySelector('[role="alert"]'));
+  const f = fakeApi({ fail: 'Единица с таким обозначением уже есть' }); const el2: N = mountUnits(f.api, ACCESS_ADMIN); await tick();
+  const form: N = el2.querySelector('[data-testid="un-add"]'); form.elements.namedItem('code').value = 'кг'; form.elements.namedItem('name').value = 'x';
+  submit(form); await tick();
+  assert.equal(el2.querySelector('[role="alert"]').textContent, 'Единица с таким обозначением уже есть');
+});
+
+test('единицы: удаление своей — только с подтверждением', async () => {
+  const { api, calls } = fakeApi({ units: [{ id: 'u1', company_id: null, code: 'м²', name: 'Квадратный метр', is_common: true },
+    { id: 'u9', company_id: 'c1', code: 'пог.м', name: 'Свой', is_common: false }] });
+  const el: N = mountUnits(api, ACCESS_ADMIN); await tick();
+  click(el.querySelector('[data-testid="un-delete"]')); await tick();
+  assert.deepEqual(calls, []);
+  click(el.querySelector('[data-testid="un-delete-yes"]')); await tick();
+  assert.deepEqual(calls, ['deleteUnit:u9']);
+  assert.ok(el.querySelector('[data-testid="un-own-empty"]'));
+});
+
+test('единицы: без права — только чтение', async () => {
+  const { api } = fakeApi({ units: [{ id: 'u9', company_id: 'c1', code: 'пог.м', name: 'Свой', is_common: false }] });
+  const el: N = mountUnits(api, ACCESS_READ); await tick();
+  assert.ok(el.querySelector('[data-unit-id]'));
+  assert.ok(!el.querySelector('[data-testid="un-add"]') && !el.querySelector('[data-testid="un-delete"]'));
+});
+
+test('справочники: вкладки «Объекты» / «Единицы», переключение идёт через роутер оболочки', async () => {
+  win.location.hash = '#/planfact/directories';
+  const nav: string[] = [];
+  (win as N).AppRouter = { navigate: (p: string) => { nav.push(p); win.history.pushState(null, '', p); win.dispatchEvent(new win.Event(ROUTE_EVENT)); } };
+  const el = mountApp(fakeApi().api); await tick();
+  assert.deepEqual([...el.querySelectorAll('[data-testid="pf-dirtabs"] [role="tab"]')].map((t: N) => t.textContent), ['Объекты', 'Единицы']);
+  assert.ok(el.querySelector('[data-testid="pj-projects"]'));
+  click(el.querySelector('[data-sub="units"]')); await tick();
+  assert.deepEqual(nav, ['#/planfact/directories/units']);
+  assert.ok(el.querySelector('[data-testid="un-units"]') && !el.querySelector('[data-testid="pj-projects"]'));
+  click(el.querySelector('[data-sub="objects"]')); await tick();
+  assert.ok(el.querySelector('[data-testid="pj-projects"]'));
+  delete (win as N).AppRouter;
 });
