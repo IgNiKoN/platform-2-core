@@ -33,6 +33,16 @@
 
 **Коррекции к снимку ZIP (20.10.2026):** `.gitignore` нового репозитория не игнорирует `docs/` и `README.md` (правило `/dist/` корневое); `npm ci --offline` не нужен, обычный `npm ci` проходит; `tsc --noEmit` даёт 0 ошибок (старые 6 ошибок в `plan-viewer.ts`/`object-bridge.ts` устарели).
 
+## Изменения P2-0004b (ветка `task/P2-0004b-role-builder`, не в `main` до приёмки)
+
+| Что | Где |
+|---|---|
+| Миграция конструктора ролей | `supabase/migrations/005_up.sql` / `005_down.sql` |
+| Серверные тесты | `tests/server/005_role_builder.sql` (48), `005_rbi_snapshot.sql` (снимок RBI), блок P2-0004b в `rest.test.mjs` |
+| Общая форма входа | `src/platform/auth/LoginForm.ts` (+ `PLATFORM_AUTH_CSS`); `auth.service.ts` — один клиент на страницу, `onAuthChange` |
+| Раздел «Компания» | `src/platform/company/` (`index.ts` init/mount, `CompanyApp.ts`, `CompanyRoles.ts`, `CompanyMembers.ts`, `CompanyAudit.ts`, `company.service.ts` — только `pf_*`, `action-groups.ts` — русские группы действий); manifest `js/modules/company/company.manifest.js`, вход `js/modules/company/index.js` → `js/dist/company/company.js`; `vite.company.config.ts`; тесты `src/platform/company/__tests__/` |
+| Регистрация раздела | `js/modules/modules.manifest.js`, `js/core/module-loader.js` (путь, `requiresAccess`), `js/core/app.entry.js` (`PLATFORM2_MODULES`), `js/core/app-shell.js` (`getPlatformMenuItems` — фильтр по `RBI.platformMenuAccess`) |
+
 ## Изменения P2-0004 (ветка `task/P2-0004-access-rls`, не в `main` до приёмки)
 
 | Что | Где |
