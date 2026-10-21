@@ -181,3 +181,19 @@ test('«Сделано ↔ КС-2» у прораба: объёмы есть, к
   await openGap(el2);
   assert.match(el2.querySelector('[data-testid="sm-gap"] [role="alert"]').textContent, /договорную редакцию КП/);
 });
+
+test('«Скачать Excel»: берёт с сервера виды работ, все позиции и разрыв КС-2 и отдаёт файл', async () => {
+  const f = makeFakeSummary([PTO_PROJECT]);
+  const saved: { n: string; size: number }[] = [];
+  const el = win.document.createElement('div');
+  win.document.body.appendChild(el);
+  flushSync(() => createRoot(el as unknown as HTMLElement).render(createElement(SummaryTab, { api: f.api, save: (b: Uint8Array, n: string) => saved.push({ n, size: b.length }) } as N)));
+  await tick();
+  (el as N).querySelector('[data-testid="sm-open"]').click(); await tick(); await tick();
+  (el as N).querySelector('[data-testid="sm-xlsx"]').click();
+  for (let i = 0; i < 20 && !saved.length; i++) await tick();
+  assert.equal(saved.length, 1);
+  assert.match(saved[0].n, /^Сводка ЖК Сводка \d\d\.\d\d\.\d{4}\.xlsx$/);
+  assert.ok(saved[0].size > 1000);
+  assert.ok(f.calls.includes('positions:pr1:null'));
+});

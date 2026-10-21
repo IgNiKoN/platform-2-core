@@ -10,8 +10,8 @@ import { LIGHT_LABEL, dateOr, lightText, pctText, rub, rubDay } from './model.ts
 import { ProjectView } from './ProjectView.ts';
 import { Ks2Gap } from './Ks2Gap.ts';
 
-export function SummaryTab(props: { api: SummaryApi }): ReactElement {
-  const { api } = props;
+export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: string) => void }): ReactElement {
+  const { api, save } = props;
   const [list, setList] = useState<SummaryProject[] | null>(null);
   const [error, setError] = useState('');
   const [datesId, setDatesId] = useState('');
@@ -32,7 +32,7 @@ export function SummaryTab(props: { api: SummaryApi }): ReactElement {
   if (opened) {
     return h('div', { className: 'pj-tab sm-tab', 'data-testid': 'sm-tab' },
       error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
-      h(ProjectView, { api, p: opened, card: cardOf(opened, true), onBack: () => { setDatesId(''); setOpenId(''); }, ks2: (x) => h(Ks2Gap, { api, p: x }) }));
+      h(ProjectView, { api, p: opened, card: cardOf(opened, true), onBack: () => { setDatesId(''); setOpenId(''); }, ks2: (x) => h(Ks2Gap, { api, p: x }), save }));
   }
   const anyMoney = list.some((p) => p.can_money);
   return h('div', { className: 'pj-tab sm-tab', 'data-testid': 'sm-tab' },

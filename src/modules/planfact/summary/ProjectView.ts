@@ -6,15 +6,43 @@ import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { SummaryApi, SummaryPosition, SummaryProject, SummaryWorkType } from './summary.service.ts';
 import { pctText, rub } from './model.ts';
-import { fmtQty } from '../fact/fact.ts';
+import { fmtQty, todayMoscow } from '../fact/fact.ts';
+import { saveFile } from '../estimate/KpBlock.ts';
+import { buildSummaryXlsx, summaryFileName } from './xlsx.ts';
 
 type View = 'works' | 'ks2';
 
-export function ProjectView(props: { api: SummaryApi; p: SummaryProject; card: ReactElement; onBack: () => void; ks2?: (p: SummaryProject) => ReactElement }): ReactElement {
+export function ProjectView(props: { api: SummaryApi; p: SummaryProject; card: ReactElement; onBack: () => void; ks2?: (p: SummaryProject) => ReactElement;
+  save?: (b: Uint8Array, n: string) => void }): ReactElement {
   const { api, p, card, onBack, ks2 } = props;
+  const saveBytes = props.save || saveFile;
   const [view, setView] = useState<View>('works');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  // Excel: все строки объекта заново с сервера (виды работ, все позиции, разрыв КС-2) — числа те же, что на экране.
+  async function download(): Promise<void> {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const [w, pos, gap] = await Promise.all([api.workTypes(p.project_id), api.positions(p.project_id, null), api.ks2Gap(p.project_id)]);
+      if (!w.ok) { setError(w.message); return; }
+      if (!pos.ok) { setError(pos.message); return; }
+      const today = todayMoscow();
+      const bytes = await buildSummaryXlsx({ project: p, workTypes: w.value, positions: pos.value, gap: gap.ok ? gap.value : null, gapError: gap.ok ? '' : gap.message, today });
+      saveBytes(bytes, summaryFileName(p, today));
+    } catch {
+      setError('Не удалось сформировать файл Excel');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return h('div', { className: 'sm-project', 'data-testid': 'sm-project' },
-    h('div', { className: 'pj-actions' }, h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-back', onClick: onBack }, '← Все объекты')),
+    h('div', { className: 'pj-actions' },
+      h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-back', onClick: onBack }, '← Все объекты'),
+      h('button', { type: 'button', className: 'pf-btn', disabled: busy, 'data-testid': 'sm-xlsx', onClick: () => { void download(); } }, busy ? 'Готовлю файл…' : 'Скачать Excel')),
+    error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
     card,
     ks2
       ? h('div', { className: 'pf-seg', role: 'tablist', 'data-testid': 'sm-views' },
