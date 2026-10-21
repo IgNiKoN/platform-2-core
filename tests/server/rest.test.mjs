@@ -61,5 +61,55 @@ check('прораб не видит журнал', (await aud('alfaForeman', pA)
 check('ПТО Беты не видит журнал Альфы', (await aud('betaPto', pA)).length === 0);
 const tamper = await fetch(`${URL_}/rest/v1/audit_log`, { method: 'DELETE', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaAdmin}`, 'Content-Profile': 'planfact' } });
 check('журнал не удалить через REST', !tamper.ok, `статус ${tamper.status}`);
+// --- P2-0004b: конструктор ролей (миграция 005) ---
+const j = async (r) => { const t = await r.text(); try { return JSON.parse(t); } catch { return t; } };
+const probe = await rpc('pf_my_admin_companies', {}, tok.alfaAdmin);
+if (probe.status === 404) { console.log('NOT RUN: миграция 005 не применена — проверки конструктора ролей пропущены'); fails++; }
+else {
+  const adm = await j(probe);
+  check('админ Альфы управляет 1 компанией (Альфа)', Array.isArray(adm) && adm.length === 1 && adm[0].company_name === 'Альфа');
+  const cA = adm[0]?.company_id;
+  check('ПТО: раздел «Компания» недоступен', (await j(await rpc('pf_my_admin_companies', {}, tok.alfaPto))).length === 0);
+  check('ПТО: список ролей отклонён', !(await rpc('pf_list_company_roles', { p_company: cA }, tok.alfaPto)).ok);
+  check('anon: каталог действий закрыт', !(await rpc('pf_permission_catalog', {})).ok);
+  const roles = await j(await rpc('pf_list_company_roles', { p_company: cA }, tok.alfaAdmin));
+  const tplFor = roles.find((r) => r.template_code === 'foreman');
+  check('админ видит 9+ ролей, есть шаблон «Прораб / мастер»', roles.length >= 9 && !!tplFor);
+  check('шаблон не переименовать', !(await rpc('pf_rename_role', { p_role: tplFor.id, p_name: 'взлом' }, tok.alfaAdmin)).ok);
+  const roleName = 'REST-роль ' + new Date().toISOString();
+  const cr = await rpc('pf_create_role', { p_source_role: tplFor.id, p_name: roleName }, tok.alfaAdmin);
+  const newRole = await j(cr);
+  check('копия шаблона создана', cr.ok && typeof newRole === 'string', `статус ${cr.status}`);
+  let asg = null;
+  try {
+    const sa = await rpc('pf_set_role_actions', { p_role: newRole, p_actions: [...tplFor.actions, 'planfact.works.edit'] }, tok.alfaAdmin);
+    check('админ отметил «Добавление и правка работ»', sa.ok, `статус ${sa.status}`);
+    check('неизвестное действие отклонено', !(await rpc('pf_set_role_actions', { p_role: newRole, p_actions: ['planfact.no.such'] }, tok.alfaAdmin)).ok);
+    check('ПТО Беты не меняет роль Альфы', !(await rpc('pf_rename_role', { p_role: newRole, p_name: 'взлом' }, tok.betaPto)).ok);
+    const members = await j(await rpc('pf_list_company_members', { p_company: cA }, tok.alfaAdmin));
+    const fUser = members.find((m) => m.email === 'alfa-foreman@test.invalid')?.user_id;
+    const aUser = members.find((m) => m.email === 'alfa-admin@test.invalid')?.user_id;
+    check('в «Сотрудниках» есть alfa-foreman', !!fUser);
+    check('самоназначение отклонено', !(await rpc('pf_assign_role', { p_user: aUser, p_role: newRole, p_project: pA }, tok.alfaAdmin)).ok);
+    const ar = await rpc('pf_assign_role', { p_user: fUser, p_role: newRole, p_project: pA }, tok.alfaAdmin);
+    asg = await j(ar);
+    check('роль назначена прорабу на проект', ar.ok, `статус ${ar.status}`);
+    check('прораб сразу получил works.edit (без повторного входа)', (await perms('alfaForeman', pA)).includes('planfact.works.edit'));
+    check('прораб добавил работу', (await rpc('pf_add_work', { p_project: pA, p_name: 'REST-прораб ' + roleName }, tok.alfaForeman)).ok);
+    check('роль с назначением не удалить', !(await rpc('pf_delete_role', { p_role: newRole }, tok.alfaAdmin)).ok);
+    const rv = await rpc('pf_revoke_assignment', { p_assignment: asg }, tok.alfaAdmin); asg = rv.ok ? null : asg;
+    check('назначение отозвано', rv.ok, `статус ${rv.status}`);
+    check('после отзыва works.edit нет', !(await perms('alfaForeman', pA)).includes('planfact.works.edit'));
+    check('после отзыва добавление отклонено сервером', !(await rpc('pf_add_work', { p_project: pA, p_name: 'ВЗЛОМ-после-отзыва' }, tok.alfaForeman)).ok);
+  } finally {
+    if (asg) await rpc('pf_revoke_assignment', { p_assignment: asg }, tok.alfaAdmin);
+    check('роль удалена', (await rpc('pf_delete_role', { p_role: newRole }, tok.alfaAdmin)).ok);
+  }
+  const ca = await j(await rpc('pf_list_company_audit', { p_company: cA, p_limit: 20 }, tok.alfaAdmin));
+  check('журнал: создание роли — автор alfa-admin', ca.some((r) => r.action === 'ROLE_CREATE' && r.actor_email === 'alfa-admin@test.invalid' && r.new_data?.name === roleName));
+  check('журнал: назначение и отзыв для alfa-foreman', ['ASSIGN', 'REVOKE'].every((a) => ca.some((r) => r.action === a && r.subject_email === 'alfa-foreman@test.invalid')));
+  check('журнал проекта «План/Факт» — только работы (без назначений)', (await aud('alfaAdmin', pA)).every((r) => ['INSERT', 'UPDATE', 'DELETE'].includes(r.action)));
+  check('ПТО не читает журнал компании', !(await rpc('pf_list_company_audit', { p_company: cA }, tok.alfaPto)).ok);
+}
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');
 process.exit(fails ? 1 : 0);

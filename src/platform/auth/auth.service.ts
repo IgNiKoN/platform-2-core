@@ -19,6 +19,8 @@ export interface AuthApi {
   signOut(): Promise<void>;
   getEmail(): Promise<string | null>;
   getAccess(): Promise<AccessEntry[]>;
+  /** Вход/выход в любом разделе Platform 2.0 (сессия общая). Возвращает отписку. */
+  onAuthChange?(cb: () => void): () => void;
 }
 
 export interface AuthConfig {
@@ -42,13 +44,14 @@ export function mapAuthError(message: string): string {
   return 'Не удалось войти. Попробуйте ещё раз';
 }
 
-let client: SupabaseClient | null = null;
+/** Один клиент на страницу: разделы Platform 2.0 (отдельные бандлы) делят сессию и не плодят клиентов Auth. */
+const GLOBAL_KEY = '__platform2SupabaseClient';
+const holder = globalThis as unknown as Record<string, SupabaseClient | undefined>;
 
 export function createAuthService(cfg: AuthConfig): AuthApi {
-  client = createClient(cfg.url, cfg.anonKey, {
+  const c = holder[GLOBAL_KEY] || (holder[GLOBAL_KEY] = createClient(cfg.url, cfg.anonKey, {
     auth: { storageKey: 'platform2-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-  });
-  const c = client;
+  }));
   return {
     async signIn(email, password) {
       try {
@@ -71,11 +74,17 @@ export function createAuthService(cfg: AuthConfig): AuthApi {
       return (data as { company_name: string; role_name: string; project_id: string | null }[]).map((r) => ({
         company: r.company_name, role: r.role_name, projectId: r.project_id
       }));
+    },
+    onAuthChange(cb) {
+      const { data } = c.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') setTimeout(cb, 0);
+      });
+      return () => data.subscription.unsubscribe();
     }
   };
 }
 
-/** Клиент для данных модуля (этап 4). Только после createAuthService. */
+/** Клиент для данных разделов. Только после createAuthService. */
 export function getClient(): SupabaseClient | null {
-  return client;
+  return holder[GLOBAL_KEY] || null;
 }
