@@ -93,7 +93,7 @@ export const COMPANY_CSS = COMPANY_MEMBERS_CSS + `
 .co-list-meta{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-muted)}
 .co-badge{font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 6px;border-radius:6px;border:1px solid var(--card-border);color:var(--text-muted)}
 .co-panel{padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
-.co-row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.co-row{display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;align-items:flex-end}
 .co-grow{flex:1 1 200px}
 .co-hint{font-size:12px;color:var(--text-muted)}
 .co-notice{font-size:12px;color:var(--color-green)}
