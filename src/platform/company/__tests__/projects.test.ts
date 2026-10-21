@@ -15,6 +15,7 @@ import type { Result } from '../company.service.ts';
 import type { AuthApi } from '../../auth/auth.service.ts';
 import type { PlanfactDemo } from '../../../modules/planfact/model.ts';
 import demo from '../../../modules/planfact/demo-data.json' with { type: 'json' };
+import { settle } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -22,7 +23,7 @@ before(() => {
   g.window = win; g.document = win.document; g.HTMLElement = win.HTMLElement; g.Node = win.Node;
   g.HTMLInputElement = win.HTMLInputElement; g.HTMLSelectElement = win.HTMLSelectElement; g.Event = win.Event; g.IS_REACT_ACT_ENVIRONMENT = false;
 });
-const tick = () => new Promise((r) => setTimeout(r, 30));
+const tick = (): Promise<void> => settle();
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 const click = (b: N) => b.dispatchEvent(new win.Event('click', { bubbles: true }));

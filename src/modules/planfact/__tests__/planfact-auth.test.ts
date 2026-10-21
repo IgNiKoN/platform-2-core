@@ -11,6 +11,7 @@ import { mapAuthError } from '../../../platform/auth/auth.service.ts';
 import type { AuthApi } from '../../../platform/auth/auth.service.ts';
 import type { PlanfactDemo } from '../model.ts';
 import demo from '../demo-data.json' with { type: 'json' };
+import { settle } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -18,7 +19,7 @@ before(() => {
   g.window = win; g.document = win.document; g.HTMLElement = win.HTMLElement; g.Node = win.Node;
   g.HTMLInputElement = win.HTMLInputElement; g.Event = win.Event; g.IS_REACT_ACT_ENVIRONMENT = false;
 });
-const tick = () => new Promise((r) => setTimeout(r, 20));
+const tick = (): Promise<void> => settle();
 
 function fakeAuth(opts: { password: string; signedIn?: boolean }): AuthApi & { calls: string[] } {
   let signed = !!opts.signedIn;
