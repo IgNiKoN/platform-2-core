@@ -236,6 +236,20 @@ begin
                                'project_id', a.project_id, 'valid_to', a.valid_to), null);
 end $$;
 
+-- Журнал проекта «План/Факт» — только работы (события ролей/назначений теперь тоже пишутся с project_id, их показывает
+-- журнал компании). Тело как в 004, добавлен фильтр table_name = 'works'.
+create or replace function public.pf_list_audit(p_project uuid, p_limit int default 50)
+returns table(at timestamptz, actor_email text, action text, record_id uuid, old_data jsonb, new_data jsonb)
+language sql stable security definer set search_path = pg_catalog, planfact as $$
+  select a.at, u.email::text, a.action, a.record_id,
+         case when planfact.has_permission(p_project, 'planfact.money.view') then a.old_data else a.old_data - 'plan_amount' end,
+         case when planfact.has_permission(p_project, 'planfact.money.view') then a.new_data else a.new_data - 'plan_amount' end
+  from planfact.audit_log a left join auth.users u on u.id = a.actor
+  where a.project_id = p_project and a.table_name = 'works' and planfact.has_permission(p_project, 'planfact.audit.view')
+  order by a.at desc, a.id desc
+  limit least(greatest(coalesce(p_limit, 50), 1), 200);
+$$;
+
 -- Журнал изменений ролей и назначений компании (кто, что, когда).
 create or replace function public.pf_list_company_audit(p_company uuid, p_limit int default 50)
 returns table(at timestamptz, actor_email text, action text, record_id uuid, subject_email text, old_data jsonb, new_data jsonb)

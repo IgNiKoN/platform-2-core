@@ -137,7 +137,7 @@ begin
   res := res || format(E'44 виды событий (ASSIGN,REVOKE,ROLE_ACTIONS,ROLE_CREATE,ROLE_DELETE,ROLE_RENAME): %s\n', t);
   select count(*) into n from public.pf_list_company_audit(ca, 200) where actor_email = uadm||'@test.invalid' and action='ASSIGN' and subject_email = ufor||'@test.invalid';
   res := res || format(E'45 журнал: кто назначил и кому (1): %s\n', n);
-  select count(*) into n from public.pf_list_audit(pa, 200); res := res || format(E'46 журнал проекта работает у админа (≥1): %s\n', n);
+  select count(*) into n from public.pf_list_audit(pa, 200); res := res || format(E'46 журнал проекта: только работы (1 — «Работа старшего прораба»): %s\n', n);
 
   -- anon
   reset role; perform set_config('request.jwt.claims','',true); execute 'set local role anon';

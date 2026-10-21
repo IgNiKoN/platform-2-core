@@ -1,5 +1,5 @@
 /// <reference types="node" />
-/** «Компания → Сотрудники»: список назначений, назначить (проект/все, срок), отозвать, ошибки сервера. Подставной API, DOM — happy-dom. */
+/** «Компания → Сотрудники» и «Журнал»: список назначений, назначить (проект/все, срок), отозвать, ошибки сервера. Подставной API, DOM — happy-dom. */
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
@@ -7,6 +7,7 @@ import { createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { CompanyMembers, endOfDayIso } from '../CompanyMembers.ts';
+import { CompanyAudit, auditText } from '../CompanyAudit.ts';
 import type { CompanyApi, MemberRow, Result } from '../company.service.ts';
 
 const win = new Window({ url: 'http://localhost/' });
@@ -145,4 +146,25 @@ test('последнего админа сервер не даёт отозва�
   click(el.querySelector('[data-assignment-id=a-adm] [data-testid=co-revoke-yes]'));
   await tick();
   assert.match(el.querySelector('[role=alert]').textContent, /не останется ни одного администратора/);
+});
+const AR = (action: string, old_data: Record<string, unknown> | null, new_data: Record<string, unknown> | null, subject: string | null = null) =>
+  ({ at: '2026-10-21T10:00:00Z', actor_email: 'alfa-admin@test.invalid', action, record_id: 'x', subject_email: subject, old_data, new_data });
+
+test('журнал компании: понятные фразы по ролям и назначениям', () => {
+  assert.equal(auditText(AR('ROLE_CREATE', null, { name: 'Старший прораб' })), 'Создана роль «Старший прораб»');
+  assert.match(auditText(AR('ROLE_ACTIONS', { name: 'С', actions: ['planfact.works.view'] }, { name: 'С', actions: ['planfact.works.edit', 'planfact.works.view'] })), /добавлено: planfact\.works\.edit/);
+  assert.match(auditText(AR('ASSIGN', null, { role_name: 'Старший прораб', project_id: 'p1' }, 'alfa-foreman@test.invalid')), /Назначена роль «Старший прораб» → alfa-foreman@test\.invalid \(проект\)/);
+  assert.equal(auditText(AR('REVOKE', { role_name: 'Старший прораб' }, null, 'alfa-foreman@test.invalid')), 'Отозвана роль «Старший прораб» у alfa-foreman@test.invalid');
+  assert.equal(auditText(AR('ROLE_DELETE', { name: 'Старший прораб' }, null)), 'Удалена роль «Старший прораб»');
+});
+
+test('журнал компании: таблица «когда — кто — что»', async () => {
+  const { api } = fakeApi();
+  const el = win.document.createElement('div'); win.document.body.appendChild(el);
+  const withAudit: CompanyApi = { ...api, async listAudit() { return [AR('ROLE_CREATE', null, { name: 'Старший прораб' })]; } };
+  flushSync(() => createRoot(el as N).render(createElement(CompanyAudit, { api: withAudit, companyId: 'c1' })));
+  await tick();
+  const t = (el as N).querySelector('[data-testid=co-audit]').textContent;
+  assert.match(t, /alfa-admin@test\.invalid/);
+  assert.match(t, /Создана роль «Старший прораб»/);
 });

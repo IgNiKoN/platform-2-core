@@ -1,5 +1,5 @@
 /**
- * Раздел платформы «Компания» (администратор компании): вход — общая форма платформы, вкладки «Роли» / «Сотрудники».
+ * Раздел платформы «Компания» (администратор компании): вход — общая форма платформы, вкладки «Роли» / «Сотрудники» / «Журнал».
  * Доступ решает сервер (pf_my_admin_companies → security.roles.assign); без права — понятное сообщение.
  */
 import { createElement as h, useEffect, useState } from 'react';
@@ -8,14 +8,16 @@ import type { AuthApi } from '../auth/auth.service.ts';
 import { LoginForm } from '../auth/LoginForm.ts';
 import { CompanyRoles } from './CompanyRoles.ts';
 import { CompanyMembers, COMPANY_MEMBERS_CSS } from './CompanyMembers.ts';
+import { CompanyAudit } from './CompanyAudit.ts';
 import type { CompanyApi, CompanyRef } from './company.service.ts';
 
 type Mode = 'loading' | 'login' | 'noaccess' | 'ready';
-type Tab = 'roles' | 'members';
+type Tab = 'roles' | 'members' | 'audit';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'roles', label: 'Роли' },
-  { id: 'members', label: 'Сотрудники' }
+  { id: 'members', label: 'Сотрудники' },
+  { id: 'audit', label: 'Журнал' }
 ];
 
 export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null }): ReactElement {
@@ -71,7 +73,8 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
           TABS.map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': tab === t.id, 'data-tab': t.id,
             className: 'co-tab' + (tab === t.id ? ' co-tab--active' : ''), onClick: () => setTab(t.id) }, t.label)))),
       tab === 'roles' ? h(CompanyRoles, { api, companyId, key: companyId }) : null,
-      tab === 'members' ? h(CompanyMembers, { api, companyId, me: who, key: companyId }) : null));
+      tab === 'members' ? h(CompanyMembers, { api, companyId, me: who, key: companyId }) : null,
+      tab === 'audit' ? h(CompanyAudit, { api, companyId, key: companyId }) : null));
 }
 
 export const COMPANY_CSS = COMPANY_MEMBERS_CSS + `
