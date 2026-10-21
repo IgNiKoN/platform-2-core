@@ -12,6 +12,9 @@ import { CompanyScope } from '../../platform/company/CompanyScope.ts';
 import { ProjectsTab } from '../../platform/company/ProjectsTab.ts';
 import { UnitsTab } from '../../platform/company/UnitsTab.ts';
 import { VorTab } from './vor/VorTab.ts';
+import { BrigadesTab } from './fact/BrigadesTab.ts';
+import { FactTab } from './fact/FactTab.ts';
+import type { FactApi } from './fact/fact.service.ts';
 import { PricesTab } from './estimate/PricesTab.ts';
 import { EstimateTab } from './estimate/EstimateTab.ts';
 import { OverheadTemplateTab } from './estimate/OverheadsEditor.ts';
@@ -25,15 +28,15 @@ type Mode = 'loading' | 'login' | 'authed' | 'demo';
 const BASE = '#/planfact';
 /** Событие модуля: маршрут #/planfact… показан (его шлёт index.ts при каждом переходе роутера). */
 export const ROUTE_EVENT = 'planfact:route';
-type Page = 'works' | 'directories' | 'vor' | 'estimate';
-type Sub = 'objects' | 'units' | 'prices' | 'overheads';
+type Page = 'works' | 'directories' | 'vor' | 'estimate' | 'fact';
+type Sub = 'objects' | 'units' | 'brigades' | 'prices' | 'overheads';
 /** «Цены» — только с правом planfact.estimate.manage (коммерческая тайна; прораб вкладку не видит, сервер тоже не отдаст). */
-const SUBS: { id: Sub; label: string; estimate?: boolean }[] = [{ id: 'objects', label: 'Объекты' }, { id: 'units', label: 'Единицы' }, { id: 'prices', label: 'Цены', estimate: true }, { id: 'overheads', label: 'Надбавки', estimate: true }];
+const SUBS: { id: Sub; label: string; estimate?: boolean }[] = [{ id: 'objects', label: 'Объекты' }, { id: 'units', label: 'Единицы' }, { id: 'brigades', label: 'Бригады' }, { id: 'prices', label: 'Цены', estimate: true }, { id: 'overheads', label: 'Надбавки', estimate: true }];
 
 /** Адрес #/planfact[/vor|/estimate|/directories[/objects|/units|/prices|/overheads]] → страница и вкладка справочников. Пункты верхнего уровня — в боковом меню (манифест модуля). */
 export function routeFromHash(hash: string): { page: Page; sub: Sub } {
   const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
-  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'works', sub: parts[1] === 'units' ? 'units' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
+  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'fact' ? 'fact' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'works', sub: parts[1] === 'units' ? 'units' : parts[1] === 'brigades' ? 'brigades' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
 }
 
 function accessLabel(entries: AccessEntry[]): string {
@@ -42,8 +45,8 @@ function accessLabel(entries: AccessEntry[]): string {
   return Array.from(new Set(parts)).join('; ');
 }
 
-export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; estimate?: EstimateApi | null; onAccess?: (hasDirectories: boolean, hasEstimate: boolean) => void }): ReactElement {
-  const { auth, data, api, projects, vor: vorApi, estimate, onAccess } = props;
+export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; estimate?: EstimateApi | null; fact?: FactApi | null; onAccess?: (hasDirectories: boolean, hasEstimate: boolean) => void }): ReactElement {
+  const { auth, data, api, projects, vor: vorApi, estimate, fact: factApi, onAccess } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [who, setWho] = useState('');
   const [access, setAccess] = useState<AccessEntry[]>([]);
@@ -109,17 +112,24 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const vor = route.page === 'vor' && ((mode === 'authed' && companies.length > 0) || mode === 'demo');
   // «Смета»: только с правом planfact.estimate.manage (сервер проверяет каждый вызов).
   const est = route.page === 'estimate' && mode === 'authed' && canEstimate && estimate && vorApi;
-  const body = est
+  // «Факт»: при доступе к компании (права на просмотр/ввод/подтверждение сервер проверяет каждым вызовом).
+  const fct = route.page === 'fact' && mode === 'authed' && companies.length > 0 && factApi && vorApi && projects;
+  const body = fct
+    ? h('div', { className: 'pf-root' }, h(FactTab, { api: factApi!, vor: vorApi!, projects: projects!, me: who }))
+    : est
     ? h('div', { className: 'pf-root' }, h(EstimateTab, { api: estimate!, vor: vorApi! }))
     : vor
     ? h('div', { className: 'pf-root' }, h(VorTab, { api: mode === 'authed' ? vorApi || null : null, projects: mode === 'authed' ? projects || null : null }))
     : dirs && projects
     ? h(CompanyScope, { api: projects, render: (c) => route.sub === 'units' ? h(UnitsTab, { api: projects, company: c })
+        : route.sub === 'brigades' && factApi ? h(BrigadesTab, { api: factApi, company: c })
         : route.sub === 'prices' && canEstimate && estimate ? h(PricesTab, { api: estimate, vor: vorApi || null, company: c })
         : route.sub === 'overheads' && canEstimate && estimate ? h(OverheadTemplateTab, { api: estimate, company: c })
         : h(ProjectsTab, { api: projects, company: c }) })
     : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });
-  const head = est
+  const head = fct
+    ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'Факт — выполненные объёмы'))
+    : est
     ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'Смета — тендерная стоимость по ВОР заказчика'))
     : vor
     ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'ВОР — загрузка ведомости объёмов работ'))

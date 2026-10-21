@@ -239,14 +239,14 @@ end $$;
 
 -- 8. Бригады: RPC
 create or replace function public.pf_brigade_list(p_company uuid, p_archived boolean default false)
-returns table(id uuid, name text, leader_name text, phone text, archived_at timestamptz)
+returns table(id uuid, name text, leader_name text, phone text, archived_at timestamptz, can_manage boolean)
 language plpgsql stable security definer set search_path = pg_catalog, planfact as $$
 begin
   if p_company is null or auth.uid() is null or not planfact.is_company_member(p_company) then
     raise exception 'Нет доступа к компании' using errcode = '42501';
   end if;
   return query
-  select b.id, b.name, b.leader_name, b.phone, b.archived_at from planfact.brigades b
+  select b.id, b.name, b.leader_name, b.phone, b.archived_at, planfact.can_brigades_company(p_company) from planfact.brigades b
   where b.company_id = p_company and (coalesce(p_archived, false) or b.archived_at is null)
   order by (b.archived_at is not null), lower(b.name), b.id;
 end $$;

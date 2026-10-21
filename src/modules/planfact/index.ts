@@ -29,6 +29,9 @@ import { PRICES_IMPORT_CSS } from './estimate/PricesImport.ts';
 import { createEstimateService } from './estimate/estimate.service.ts';
 import type { EstimateApi } from './estimate/estimate.service.ts';
 import type { VorApi } from './vor/vor.service.ts';
+import { createFactService } from './fact/fact.service.ts';
+import { FACT_CSS } from './fact/FactTab.ts';
+import type { FactApi } from './fact/fact.service.ts';
 import { createDataService } from './data.service.ts';
 import type { DataApi } from './data.service.ts';
 import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
@@ -47,6 +50,7 @@ let dataApi: DataApi | null = null;
 let projectsApi: ProjectsApi | null = null;
 let vorApi: VorApi | null = null;
 let estimateApi: EstimateApi | null = null;
+let factApi: FactApi | null = null;
 
 function getAuth(): AuthApi | null {
   if (auth === undefined) {
@@ -56,6 +60,7 @@ function getAuth(): AuthApi | null {
     projectsApi = auth ? createProjectsService() : null;
     vorApi = auth ? createVorService() : null;
     estimateApi = auth ? createEstimateService() : null;
+    factApi = auth ? createFactService() : null;
   }
   return auth;
 }
@@ -95,7 +100,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS;
   doc.head.appendChild(style);
 }
 
@@ -106,7 +111,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, onAccess })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, onAccess })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
