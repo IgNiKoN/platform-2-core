@@ -3,6 +3,7 @@
  * теряет части файла (внешние ссылки формул, настройки печати, номера листов), поэтому файл не пересобирается.
  * .xlsx — zip-архив: меняется только XML нужного листа (ячейки цен) и флаг «пересчитать при открытии» в workbook.xml;
  * все прочие части копируются байт-в-байт. Ячейки с формулой не перезаписываются (возвращаются в skippedFormula).
+ * Лист с ценами делается видимым и открывается первым (заказчики скрывают листы ФКП); прочие листы — как были.
  * Без библиотек: CompressionStream/DecompressionStream ('deflate-raw') есть в браузерах и Node ≥ 18.
  */
 import { sha256Hex } from './xlsx-reader.ts';
@@ -266,36 +267,75 @@ export function setFullCalcOnLoad(wbXml: string): string {
   return wbXml.slice(0, next.index) + '<calcPr fullCalcOnLoad="1"/>' + wbXml.slice(next.index);
 }
 
-/** Путь части листа по имени (как в Excel) или null. */
-async function sheetPart(read: (name: string) => Promise<string | null>, sheetName: string): Promise<{ wbPath: string; sheetPath: string | null }> {
+/** Лист с ценами — видимый и открывается первым (решение владельца 21.10.2026: заказчик скрывает листы ФКП).
+ *  Прочие скрытые листы остаются скрытыми; содержимое не меняется, только настройки вида книги. */
+export function showAndActivate(wbXml: string, sheetName: string): string {
+  const tags = [...wbXml.matchAll(/<sheet\b[^>]*>/g)];
+  const idx = tags.findIndex((m) => attr(m[0], 'name') === sheetName);
+  if (idx < 0) throw new Error(BAD);
+  const t = tags[idx];
+  const shown = t[0].replace(/\sstate="[^"]*"/, '');
+  let out = wbXml.slice(0, t.index) + shown + wbXml.slice(t.index! + t[0].length);
+  const v = /<workbookView\b[^>]*?\/?>/.exec(out);
+  if (v) {
+    let tag = /\sactiveTab="[^"]*"/.test(v[0]) ? v[0].replace(/\sactiveTab="[^"]*"/, ` activeTab="${idx}"`) : v[0].replace(/\s*(\/?>)$/, ` activeTab="${idx}"$1`);
+    const first = Number(attr(tag, 'firstSheet') ?? 0);
+    if (first > idx) tag = tag.replace(/\sfirstSheet="[^"]*"/, ` firstSheet="${idx}"`);
+    out = out.slice(0, v.index) + tag + out.slice(v.index + v[0].length);
+  }
+  return out;
+}
+
+/** Признак «выбранная вкладка» у листа: ровно один выбранный лист, иначе Excel откроет группу листов. */
+export function setTabSelected(sheetXml: string, on: boolean): string {
+  const v = /<sheetView\b[^>]*?\/?>/.exec(sheetXml);
+  if (!v) {
+    if (!on || /<sheetViews\b/.test(sheetXml)) return sheetXml;
+    const at = /<(sheetFormatPr|cols|sheetData)\b/.exec(sheetXml); // порядок элементов листа: sheetViews — перед ними
+    if (!at) return sheetXml;
+    return sheetXml.slice(0, at.index) + '<sheetViews><sheetView tabSelected="1" workbookViewId="0"/></sheetViews>' + sheetXml.slice(at.index);
+  }
+  let tag = v[0].replace(/\stabSelected="[^"]*"/, '');
+  if (on) tag = tag.replace(/^<sheetView\b/, '<sheetView tabSelected="1"');
+  return sheetXml.slice(0, v.index) + tag + sheetXml.slice(v.index + v[0].length);
+}
+
+/** Листы книги (имя → путь части) и путь workbook.xml. */
+async function sheetParts(read: (name: string) => Promise<string | null>): Promise<{ wbPath: string; wb: string; sheets: { name: string; path: string | null }[] }> {
   const root = await read('_rels/.rels');
   const wbPath = (root && relTarget(root, (r) => /\/officeDocument"/.test(r)))?.replace(/^\//, '') ?? 'xl/workbook.xml';
   const wb = await read(wbPath);
   const rels = await read(relsPath(wbPath));
   if (!wb || !rels) throw new Error(BAD);
-  for (const m of wb.matchAll(/<sheet\b[^>]*>/g)) {
-    if (attr(m[0], 'name') !== sheetName) continue;
+  const sheets = [...wb.matchAll(/<sheet\b[^>]*>/g)].map((m) => {
     const id = /\s[\w.-]+:id="([^"]*)"/.exec(m[0])?.[1];
     const target = id ? relTarget(rels, (r) => attr(r, 'Id') === id) : null;
-    return { wbPath, sheetPath: target ? resolve(wbPath, target) : null };
-  }
-  return { wbPath, sheetPath: null };
+    return { name: attr(m[0], 'name') ?? '', path: target ? resolve(wbPath, target) : null };
+  });
+  return { wbPath, wb, sheets };
 }
 
-/** Вписать числа в лист файла заказчика. Остальные части файла не меняются. */
+/** Вписать числа в лист файла заказчика. Остальные части файла не меняются
+ *  (кроме настроек вида: лист с ценами показывается и открывается первым). */
 export async function patchXlsx(file: ArrayBuffer | Uint8Array, sheetName: string, writes: CellWrite[]): Promise<PatchResult> {
   const buf = file instanceof Uint8Array ? file : new Uint8Array(file);
   const z = readZip(buf);
   const byName = new Map(z.entries.map((e) => [e.name, e]));
   const read = async (name: string) => { const en = byName.get(name); return en ? dec.decode(await entryData(z, en)) : null; };
-  const { wbPath, sheetPath } = await sheetPart(read, sheetName);
+  const { wbPath, wb, sheets } = await sheetParts(read);
+  const sheetPath = sheets.find((s) => s.name === sheetName)?.path ?? null;
   if (!sheetPath || !byName.has(sheetPath)) throw new Error(`В файле нет листа «${sheetName}» — выберите исходный файл заказчика.`);
   const sheet = await read(sheetPath);
   const res = patchSheetXml(sheet!, writes);
   const changed = new Map<string, Uint8Array>();
   if (res.written.length) {
-    changed.set(sheetPath, enc.encode(res.xml));
-    changed.set(wbPath, enc.encode(setFullCalcOnLoad((await read(wbPath))!)));
+    changed.set(sheetPath, enc.encode(setTabSelected(res.xml, true)));
+    changed.set(wbPath, enc.encode(showAndActivate(setFullCalcOnLoad(wb), sheetName)));
+    for (const s of sheets) {
+      if (!s.path || s.path === sheetPath || !byName.has(s.path)) continue;
+      const x = await read(s.path);
+      if (x && /<sheetView\b[^>]*\stabSelected="1"/.test(x)) changed.set(s.path, enc.encode(setTabSelected(x, false)));
+    }
   }
   const bytes = changed.size ? await writeZip(z, changed) : buf.slice();
   return { bytes, written: res.written, skippedFormula: res.skippedFormula };

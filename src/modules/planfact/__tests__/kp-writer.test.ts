@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { patchXlsx, patchSheetXml, setFullCalcOnLoad, assertSameFile, listParts, colLetters, crc32 } from '../vor/xlsx-writer.ts';
+import { patchXlsx, patchSheetXml, setFullCalcOnLoad, showAndActivate, setTabSelected, assertSameFile, listParts, colLetters, crc32 } from '../vor/xlsx-writer.ts';
 import { readWorkbook, sha256Hex } from '../vor/xlsx-reader.ts';
 
 async function sample(): Promise<Uint8Array> {
@@ -101,4 +101,36 @@ test('assertSameFile: тот же файл — ок, другой — отказ
   const src = await sample();
   await assertSameFile(src, await sha256Hex(src));
   await assert.rejects(assertSameFile(src, 'ab'.repeat(32)), /другой файл/);
+});
+
+test('скрытый лист с ценами: становится видимым и открывается первым, прочие скрытые — скрыты', async () => {
+  const wb = new ExcelJS.Workbook();
+  const g = wb.addWorksheet('График', { views: [{ state: 'normal', tabSelected: true } as unknown as ExcelJS.WorksheetView] });
+  g.getCell('A1').value = 'ГПР';
+  const h1 = wb.addWorksheet('ФКП, 1', { state: 'hidden' });
+  h1.getCell('A1').value = 'x';
+  const h2 = wb.addWorksheet('ФКП, 2', { state: 'hidden' });
+  h2.addRow(['Работа', 'Цена']); h2.addRow(['Окраска «Гамма»', null]);
+  wb.views = [{ x: 0, y: 0, width: 100, height: 100, firstSheet: 0, activeTab: 0, visibility: 'visible' }];
+  const src = new Uint8Array(await wb.xlsx.writeBuffer());
+  const res = await patchXlsx(src, 'ФКП, 2', [{ rowNo: 2, col: 1, value: 5 }]);
+  const parts = await listParts(res.bytes);
+  const d = (k: string) => new TextDecoder().decode(parts.get(k));
+  const wbx = d('xl/workbook.xml');
+  assert.match(wbx, /<sheet [^>]*name="ФКП, 1"[^>]*state="hidden"/);
+  assert.doesNotMatch(wbx, /<sheet [^>]*name="ФКП, 2"[^>]*state=/);
+  assert.match(wbx, /activeTab="2"/);
+  assert.match(d('xl/worksheets/sheet3.xml'), /<sheetView tabSelected="1"/);
+  assert.doesNotMatch(d('xl/worksheets/sheet1.xml'), /tabSelected="1"/);
+  const after = await readWorkbook(res.bytes);
+  assert.deepEqual(after.sheets.map((s) => s.hidden), [false, true, false]);
+  assert.equal(after.sheets[2].rows[1][1], 5);
+});
+
+test('showAndActivate / setTabSelected: чистые функции', () => {
+  const wb = '<workbook><bookViews><workbookView firstSheet="3" activeTab="3"/></bookViews><sheets><sheet name="А" r:id="1"/><sheet name="Б" state="veryHidden" r:id="2"/></sheets></workbook>';
+  assert.equal(showAndActivate(wb, 'Б'), '<workbook><bookViews><workbookView firstSheet="1" activeTab="1"/></bookViews><sheets><sheet name="А" r:id="1"/><sheet name="Б" r:id="2"/></sheets></workbook>');
+  assert.equal(showAndActivate('<workbook><bookViews><workbookView/></bookViews><sheets><sheet name="А"/></sheets></workbook>', 'А'), '<workbook><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="А"/></sheets></workbook>');
+  assert.equal(setTabSelected('<worksheet><sheetViews><sheetView tabSelected="1" workbookViewId="0"/></sheetViews></worksheet>', false), '<worksheet><sheetViews><sheetView workbookViewId="0"/></sheetViews></worksheet>');
+  assert.equal(setTabSelected('<worksheet><dimension ref="A1"/><cols/><sheetData/></worksheet>', true), '<worksheet><dimension ref="A1"/><sheetViews><sheetView tabSelected="1" workbookViewId="0"/></sheetViews><cols/><sheetData/></worksheet>');
 });

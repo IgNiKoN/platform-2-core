@@ -1,7 +1,7 @@
 // Локальная проверка записи цен КП (P2-0006c, этап 1) на реальных файлах — файлы в репозиторий НЕ кладутся.
 // Запуск: node scripts/kp-probe.mjs "<путь к .xlsx>" [--out "<путь для файла КП>"] [--value 111.11] [--sheet "<лист>"] [--cols F,G]
 // По каждому листу-ВОР вписывает тестовое число во все колонки цен у строк работ/материалов (ячейки с формулой не трогаются),
-// затем сверяет: части архива те же, все ячейки всех листов те же, кроме вписанных; объединения, ширины, скрытые строки — те же.
+// лист с ценами делается видимым и открывается первым; затем сверяет: части архива те же, все ячейки всех листов те же, кроме вписанных; объединения, ширины, скрытые строки — те же.
 import { readFile, writeFile } from 'node:fs/promises';
 import { readWorkbook } from '../src/modules/planfact/vor/xlsx-reader.ts';
 import { parseSheet } from '../src/modules/planfact/vor/parse.ts';
@@ -19,6 +19,7 @@ let bytes = new Uint8Array(await readFile(file));
 const before = await readWorkbook(bytes);
 const expected = new Map(); // "лист!A1" → число
 let total = 0, skipped = 0;
+const writtenSheets = new Set();
 for (const sh of before.sheets) {
   const r = parseSheet(sh);
   if (!r.isVor || !r.columns.prices.length || (onlySheet && sh.name !== onlySheet)) continue;
@@ -30,6 +31,7 @@ for (const sh of before.sheets) {
   const res = await patchXlsx(bytes, sh.name, writes);
   bytes = res.bytes;
   for (const ref of res.written) expected.set(`${sh.name}!${ref}`, value);
+  if (res.written.length) writtenSheets.add(sh.name);
   total += res.written.length; skipped += res.skippedFormula.length;
   console.log(`[${sh.name}] колонки цен: ${r.columns.prices.map((p) => `${colLetters(p.col)} «${p.label}»`).join(', ')}; вписано ${res.written.length}, формул заказчика не тронуто ${res.skippedFormula.length}`);
 }
@@ -41,7 +43,8 @@ if (after.sheets.map((s) => s.name).join('|') !== before.sheets.map((s) => s.nam
 let changedCells = 0;
 for (let i = 0; i < before.sheets.length; i++) {
   const b = before.sheets[i].rows, a = after.sheets[i]?.rows ?? [];
-  if (before.sheets[i].hidden !== after.sheets[i]?.hidden) problems.push(`[${before.sheets[i].name}] изменилась видимость`);
+  const shown = writtenSheets.has(before.sheets[i].name); // лист с ценами показывается (решение владельца 21.10.2026)
+  if ((shown ? false : before.sheets[i].hidden) !== after.sheets[i]?.hidden) problems.push(`[${before.sheets[i].name}] изменилась видимость`);
   for (let r = 0; r < Math.max(b.length, a.length); r++) {
     for (let k = 0; k < Math.max(b[r]?.length ?? 0, a[r]?.length ?? 0); k++) {
       const key = `${before.sheets[i].name}!${colLetters(k)}${r + 1}`;
