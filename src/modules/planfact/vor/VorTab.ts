@@ -9,6 +9,7 @@ import { parseSheet, contextLabel, columnMapFrom, editColumn } from './parse.ts'
 import type { ColumnMap, EditableRole, ParseResult, ParsedRow, RowKind, SheetData } from './parse.ts';
 import { VorColumns } from './VorColumns.ts';
 import { VorDraft } from './VorDraft.ts';
+import { VorPositions } from './VorPositions.ts';
 import type { ProjectsApi } from '../../../platform/company/projects.service.ts';
 import { VOR_MANAGE } from './vor.service.ts';
 import type { VorApi, VorImport, VorProfile, VorProject } from './vor.service.ts';
@@ -198,7 +199,7 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
     const company = (projects || []).find((p) => p.id === projectId)?.company_id || '';
     return h(VorDraft, { key: opened.id, api, projects: props.projects || null, projectId, companyId: company, imp: opened, canManage, canProjects,
       canUnits: perms.includes('planfact.units.manage'),
-      onBack: () => { setOpenId(''); void reloadImports(projectId); }, onChanged: () => undefined });
+      onBack: () => { setOpenId(''); void reloadImports(projectId); }, onChanged: () => { void api.listImports(projectId).then(setImports); } });
   }
 
   return h('div', { className: 'pj-tab vor-tab', 'data-testid': 'vor-tab' },
@@ -211,6 +212,7 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
       : null,
     api ? h('h3', { className: 'pf-title un-title' }, 'Загрузки проекта') : null,
     api ? h(ImportsList, { items: imports, canManage, busy: !!saving, onDelete: (i) => { void removeImport(i); }, onOpen: (i) => setOpenId(i.id) }) : null,
+    api && imports && imports.some((i) => i.status === 'confirmed') ? h(VorPositions, { key: projectId, api, projectId }) : null,
     api && !canManage ? null : h('div', { className: 'pf-card pj-form' },
       h('label', { className: 'pf-btn vor-file' + (busy ? ' vor-file--busy' : '') },
         busy ? 'Читаю файл…' : 'Загрузить Excel (.xlsx)',

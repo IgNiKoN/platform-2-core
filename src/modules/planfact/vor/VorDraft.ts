@@ -11,6 +11,7 @@ import { placeOf, placeNote, bindPlaces, missingList, createMissing } from './pl
 import type { Binding, BlockChoice, Place, TreeNode } from './places.ts';
 import type { Resolution, VorApi, VorImport, VorRow } from './vor.service.ts';
 import { VorWorks } from './VorWorks.ts';
+import { VorPositions } from './VorPositions.ts';
 
 export interface DraftProps {
   api: VorApi; projects: ProjectsApi | null; projectId: string; companyId: string; imp: VorImport;
@@ -116,6 +117,29 @@ export function VorDraft(props: DraftProps): ReactElement {
     onChanged();
   }
 
+  async function confirmImport(): Promise<void> {
+    if (busy) return;
+    setBusy('Подтверждаю ВОР…'); setError(''); setNotice('');
+    const r = await api.confirm(imp.id);
+    setBusy('');
+    if (!r.ok) { setError(r.message); return; }
+    setNotice(`ВОР подтверждён: создано позиций — ${r.value}. Дальше загрузка не меняется.`);
+    onChanged();
+  }
+
+  const head = h('div', { className: 'vor-draft-head' },
+    h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: onBack, 'data-testid': 'vor-back' }, '← Загрузки'),
+    h('div', { className: 'pj-name' }, h('b', null, imp.file_name), h('span', { className: 'pf-muted' }, `лист «${imp.sheet_name}»`),
+      h('span', { className: 'pj-badge' + (imp.status === 'confirmed' ? ' vor-badge--ok' : '') }, imp.status === 'confirmed' ? 'Подтверждён' : 'Черновик')));
+
+  if (imp.status === 'confirmed') {
+    return h('div', { className: 'pj-tab vor-draft', 'data-testid': 'vor-draft' }, head,
+      notice ? h('div', { className: 'pj-notice', role: 'status' }, notice) : null,
+      h('div', { className: 'pf-muted', 'data-testid': 'vor-confirmed' },
+        `Подтверждён ${imp.confirmed_at ? new Date(imp.confirmed_at).toLocaleString('ru-RU') : ''}. Строки, места и виды работ этой загрузки больше не меняются.`),
+      rows ? h(VorPositions, { api, projectId, importId: imp.id, rows }) : h('div', { className: 'pf-muted' }, 'Загрузка…'));
+  }
+
   if (rows === null || places === null) return h('div', { className: 'pf-muted' }, 'Загрузка черновика…');
   const missing = missingList(places.map((p) => p.binding as Binding), places.map((p) => p.place));
   // Блоки без корпуса (выбранные и нет) — список остаётся на экране, выбор можно поменять.
@@ -128,11 +152,27 @@ export function VorDraft(props: DraftProps): ReactElement {
     });
   const boundRows = works.filter((r) => r.location_id).length;
 
+  const ready = {
+    places: works.filter((r) => r.location_id).length,
+    types: works.filter((r) => r.match === 'green' && r.work_type_id).length,
+    units: works.filter((r) => r.unit_id).length,
+    qty: works.filter((r) => r.qty !== null).length
+  };
+  const canConfirm = editable && works.length > 0 && Object.values(ready).every((n) => n === works.length);
+  const confirmBlock = h('div', { className: 'pf-card vor-missing', 'data-testid': 'vor-confirm-block' },
+    h('h3', { className: 'pf-title un-title' }, 'Подтверждение'),
+    h('ul', { className: 'vor-ready' },
+      ([['places', 'Места привязаны'], ['types', 'Виды работ подтверждены (🟢)'], ['units', 'ЕИ распознаны'], ['qty', 'Объём указан']] as [keyof typeof ready, string][])
+        .map(([k, label]) => h('li', { key: k, className: ready[k] === works.length ? 'vor-stat--ok' : 'vor-stat--bad', 'data-ready': k },
+          `${ready[k] === works.length ? '✓' : '✗'} ${label}: ${ready[k]} из ${works.length}`))),
+    editable
+      ? h('button', { type: 'button', className: 'pf-btn', disabled: !canConfirm || !!busy, 'data-testid': 'vor-confirm', onClick: () => { void confirmImport(); } },
+          busy === 'Подтверждаю ВОР…' ? busy : 'Подтвердить ВОР')
+      : h('div', { className: 'pf-muted' }, 'Подтверждать ВОР может ПТО, РП или администратор.'),
+    canConfirm ? h('div', { className: 'pf-muted' }, `Будет создано позиций: ${works.length} (по одной на строку-работу). После подтверждения загрузку изменить нельзя.`) : null);
+
   return h('div', { className: 'pj-tab vor-draft', 'data-testid': 'vor-draft' },
-    h('div', { className: 'vor-draft-head' },
-      h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: onBack, 'data-testid': 'vor-back' }, '← Загрузки'),
-      h('div', { className: 'pj-name' }, h('b', null, imp.file_name), h('span', { className: 'pf-muted' }, `лист «${imp.sheet_name}»`),
-        h('span', { className: 'pj-badge' + (imp.status === 'confirmed' ? ' vor-badge--ok' : '') }, imp.status === 'confirmed' ? 'Подтверждён' : 'Черновик'))),
+    head,
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
     notice ? h('div', { className: 'pj-notice', role: 'status' }, notice) : null,
     h('h3', { className: 'pf-title un-title' }, 'Места'),
@@ -180,7 +220,8 @@ export function VorDraft(props: DraftProps): ReactElement {
     works.some((r) => placeNote(r.context || {}))
       ? h('div', { className: 'pf-muted' }, `Строк с пометкой (диапазон этажей / квартиры): ${works.filter((r) => placeNote(r.context || {})).length}`)
       : null,
-    h(VorWorks, { api, projects, projectId, companyId, rows, editable, canUnits, save }));
+    h(VorWorks, { api, projects, projectId, companyId, rows, editable, canUnits, save }),
+    confirmBlock);
 }
 
 export const VOR_DRAFT_CSS = `
@@ -189,6 +230,7 @@ export const VOR_DRAFT_CSS = `
 .vor-missing{padding:12px 14px;display:flex;flex-direction:column;gap:8px;font-size:13px}
 .vor-missing ul{margin:0;padding-left:18px}
 .vor-rule{font-size:11px}
+.vor-ready{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:4px}
 .vor-block-pick{display:flex;flex-wrap:wrap;gap:6px}
 .vor-block-pick select,.vor-block-pick input{flex:1 1 200px;min-width:0;min-height:40px}
 @media (max-width:600px){.vor-missing .pf-btn{width:100%}}
