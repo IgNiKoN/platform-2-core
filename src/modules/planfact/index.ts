@@ -16,6 +16,8 @@ import { createProjectsService } from '../../platform/company/projects.service.t
 import type { ProjectsApi } from '../../platform/company/projects.service.ts';
 import { PLANFACT_WORKS_CSS } from './PlanfactWorks.ts';
 import { VOR_CSS } from './vor/VorTab.ts';
+import { createVorService } from './vor/vor.service.ts';
+import type { VorApi } from './vor/vor.service.ts';
 import { createDataService } from './data.service.ts';
 import type { DataApi } from './data.service.ts';
 import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
@@ -32,6 +34,7 @@ let mountedEl: HTMLElement | null = null;
 let auth: AuthApi | null | undefined;
 let dataApi: DataApi | null = null;
 let projectsApi: ProjectsApi | null = null;
+let vorApi: VorApi | null = null;
 
 function getAuth(): AuthApi | null {
   if (auth === undefined) {
@@ -39,6 +42,7 @@ function getAuth(): AuthApi | null {
     auth = cfg ? createAuthService(cfg) : null;
     dataApi = auth ? createDataService() : null;
     projectsApi = auth ? createProjectsService() : null;
+    vorApi = auth ? createVorService() : null;
   }
   return auth;
 }
@@ -86,7 +90,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, onAccess })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, onAccess })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */

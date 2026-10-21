@@ -14,6 +14,7 @@ import { UnitsTab } from '../../platform/company/UnitsTab.ts';
 import { VorTab } from './vor/VorTab.ts';
 import type { CompanyAccess, ProjectsApi } from '../../platform/company/projects.service.ts';
 import type { DataApi } from './data.service.ts';
+import type { VorApi } from './vor/vor.service.ts';
 import type { PlanfactDemo } from './model.ts';
 
 type Mode = 'loading' | 'login' | 'authed' | 'demo';
@@ -36,8 +37,8 @@ function accessLabel(entries: AccessEntry[]): string {
   return Array.from(new Set(parts)).join('; ');
 }
 
-export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; onAccess?: (hasDirectories: boolean) => void }): ReactElement {
-  const { auth, data, api, projects, onAccess } = props;
+export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; onAccess?: (hasDirectories: boolean) => void }): ReactElement {
+  const { auth, data, api, projects, vor: vorApi, onAccess } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [who, setWho] = useState('');
   const [access, setAccess] = useState<AccessEntry[]>([]);
@@ -98,7 +99,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   // «ВОР»: при доступе к компании; в локальном демо-режиме — только просмотр разбора файла (сервер не нужен).
   const vor = route.page === 'vor' && ((mode === 'authed' && companies.length > 0) || mode === 'demo');
   const body = vor
-    ? h('div', { className: 'pf-root' }, h(VorTab, {}))
+    ? h('div', { className: 'pf-root' }, h(VorTab, { api: mode === 'authed' ? vorApi || null : null }))
     : dirs && projects
     ? h(CompanyScope, { api: projects, render: (c) => route.sub === 'units' ? h(UnitsTab, { api: projects, company: c }) : h(ProjectsTab, { api: projects, company: c }) })
     : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });

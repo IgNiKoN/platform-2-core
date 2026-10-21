@@ -8,6 +8,8 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { VorTab } from '../vor/VorTab.ts';
 import type { LoadedFile } from '../vor/VorTab.ts';
+import type { VorApi, VorImport } from '../vor/vor.service.ts';
+import { chunks, toServerRow } from '../vor/vor.service.ts';
 import { routeFromHash } from '../PlanfactApp.ts';
 
 const win = new Window({ url: 'http://localhost/' });
@@ -20,7 +22,7 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 
-const BOOK: LoadedFile = { name: 'вор.xlsx', sheets: [
+const BOOK: LoadedFile = { name: 'вор.xlsx', sha256: 'a'.repeat(64), sheets: [
   { name: 'График', rows: [[null, '№', 'Наименование работ', 'Ед. изм.', 'Количество', 'Норма выработки']] },
   { name: 'ВОР', hidden: true, rows: [
     ['№', 'Наименование работ', 'Ед. изм.', 'Норма расхода', 'Объём'],
@@ -30,12 +32,37 @@ const BOOK: LoadedFile = { name: 'вор.xlsx', sheets: [
   ] }
 ] };
 
-function mount(load: (f: File) => Promise<LoadedFile>) {
+function mount(load: (f: File) => Promise<LoadedFile>, api: VorApi | null = null) {
   const el = win.document.createElement('div');
   win.document.body.appendChild(el);
   const root = createRoot(el as unknown as HTMLElement);
-  flushSync(() => root.render(createElement(VorTab, { load })));
+  flushSync(() => root.render(createElement(VorTab, { load, api })));
   return el as N;
+}
+
+/** Подставной сервер ВОР: права по проекту, хранилище загрузок, порции строк. */
+function fakeApi(perms: string[], opts: { saveError?: string } = {}) {
+  const store: VorImport[] = [];
+  const saved: { rows: number; sheet: string; sha: string }[] = [];
+  const no = async () => ({ ok: false as const, message: 'не нужно в этом тесте' });
+  const api: VorApi = {
+    async listProjects() { return [{ id: 'p1', name: 'ЖК Альфа', company_id: 'c' }]; },
+    async permissions() { return perms; },
+    async listImports() { return store.slice(); },
+    async importRows() { return []; },
+    async saveDraft(p, rows, onProgress) {
+      if (opts.saveError) return { ok: false, message: opts.saveError };
+      saved.push({ rows: rows.length, sheet: p.sheet, sha: p.sha256 });
+      if (onProgress) onProgress(rows.length);
+      store.push({ id: 'i' + store.length, file_name: p.fileName, sheet_name: p.sheet, status: 'draft', row_count: rows.length, works: 1, positions: 0,
+        created_at: '2026-10-21T10:00:00Z', created_by_email: 'pto@test.invalid', confirmed_at: null, profile_id: null });
+      return { ok: true, value: 'i' + (store.length - 1) };
+    },
+    async deleteImport(id) { const k = store.findIndex((x) => x.id === id); if (k >= 0) store.splice(k, 1); return { ok: true, value: null }; },
+    async listProfiles() { return []; }, saveProfile: no, async listWorkTypes() { return []; }, addWorkType: no,
+    async dictionary() { return []; }, learn: no, resolveRows: no, confirm: no, async positions() { return []; }
+  };
+  return { api, store, saved };
 }
 
 async function choose(el: N, name: string) {
@@ -79,4 +106,46 @@ test('не .xlsx и повреждённый файл → понятная ош�
   assert.match(el.querySelector('[role="alert"]').textContent, /Нужен файл Excel \.xlsx/);
   await choose(el, 'битый.xlsx');
   assert.match(el.querySelector('[role="alert"]').textContent, /повреждён/);
+});
+
+test('ПТО: проект → «Сохранить черновик» → загрузка в списке проекта; удаление черновика с подтверждением', async () => {
+  const { api, saved, store } = fakeApi(['planfact.vor.manage']);
+  const el = mount(async () => BOOK, api);
+  await tick();
+  assert.equal(el.querySelector('[data-testid="vor-project"]').value, 'p1');
+  assert.ok(el.querySelector('[data-testid="vor-imports-empty"]'));
+  await choose(el, 'вор.xlsx');
+  el.querySelector('[data-testid="vor-save"]').click(); await tick();
+  assert.deepEqual(saved, [{ rows: 3, sheet: 'ВОР', sha: 'a'.repeat(64) }]);
+  assert.match(el.querySelector('[data-testid="vor-notice"]').textContent, /Черновик сохранён: 3 строк/);
+  assert.match(el.querySelector('[data-testid="vor-imports"]').textContent, /вор\.xlsx.*лист «ВОР».*Черновик/);
+  el.querySelector('[data-testid="vor-delete"]').click(); await tick();
+  el.querySelector('[data-testid="vor-delete-yes"]').click(); await tick();
+  assert.equal(store.length, 0);
+  assert.ok(el.querySelector('[data-testid="vor-imports-empty"]'));
+});
+
+test('прораб (без planfact.vor.manage): видит загрузки, загрузки файла и «Сохранить» нет', async () => {
+  const { api } = fakeApi(['planfact.works.view']);
+  const el = mount(async () => BOOK, api);
+  await tick();
+  assert.ok(el.querySelector('[data-testid="vor-readonly"]'));
+  assert.equal(el.querySelector('[data-testid="vor-file"]'), null);
+  assert.equal(el.querySelector('[data-testid="vor-save"]'), null);
+});
+
+test('ошибка сервера при сохранении показана, без падения', async () => {
+  const { api } = fakeApi(['planfact.vor.manage'], { saveError: 'Нет права загружать ВОР' });
+  const el = mount(async () => BOOK, api);
+  await tick();
+  await choose(el, 'вор.xlsx');
+  el.querySelector('[data-testid="vor-save"]').click(); await tick();
+  assert.match(el.querySelector('[role="alert"]').textContent, /Нет права загружать ВОР/);
+});
+
+test('порции по 1 000 и строка для сервера', () => {
+  assert.deepEqual(chunks([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
+  assert.equal(chunks(Array.from({ length: 2500 }, (_, i) => i), 1000).length, 3);
+  const r = toServerRow({ rowNo: 13, kind: 'material', number: '6', name: 'Смесь', unitText: 'кг', qty: 75, norm: 7.5, prices: {}, context: { section: '1' }, parentRowNo: 12, raw: [6, 'Смесь'] });
+  assert.deepEqual(r, { row_no: 13, kind: 'material', number: '6', name: 'Смесь', unit_text: 'кг', qty: 75, norm: 7.5, prices: {}, context: { section: '1' }, parent_row_no: 12, raw: [6, 'Смесь'] });
 });

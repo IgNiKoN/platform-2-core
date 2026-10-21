@@ -172,5 +172,69 @@ else {
     if (pid) check('проект отправлен в архив', (await rpc('pf_update_project', { p_project: pid, p_name: stamp5, p_code: 'REST', p_archived: true }, tok.alfaAdmin)).ok);
   }
 }
+// --- P2-0006: ВОР (миграция 007) — права, изоляция компаний, подтверждение, неизменяемость. Данные помечены «REST-ВОР …». ---
+const vorProbe = await rpc('pf_vor_list_imports', { p_project: pA }, tok.alfaPto);
+if (vorProbe.status === 404) { console.log('NOT RUN: миграция 007 не применена — проверки ВОР пропущены'); fails++; }
+else {
+  check('ПТО читает загрузки ВОР своего проекта', vorProbe.ok, `статус ${vorProbe.status}`);
+  const accV = await j(await rpc('pf_my_company_access', {}, tok.alfaAdmin));
+  const cV = accV[0]?.company_id;
+  const stampV = 'REST-ВОР ' + new Date().toISOString();
+  let pv = null, imp = null;
+  try {
+    pv = await j(await rpc('pf_create_project', { p_company: cV, p_name: stampV }, tok.alfaAdmin));
+    const sec = await j(await rpc('pf_add_location', { p_project: pv, p_parent: null, p_type: 'section', p_name: 'Секция 1' }, tok.alfaAdmin));
+    check('ПТО: право planfact.vor.manage в проекте', (await perms('alfaPto', pv)).includes('planfact.vor.manage'));
+    check('прораб: права planfact.vor.manage нет', !(await perms('alfaForeman', pv)).includes('planfact.vor.manage'));
+    const sha = 'e'.repeat(64);
+    check('прораб не создаёт загрузку', !(await rpc('pf_vor_create_import', { p_project: pv, p_file_name: 'x.xlsx', p_sha256: sha, p_sheet: 'Лист' }, tok.alfaForeman)).ok);
+    check('Бета-ПТО не создаёт загрузку в проекте Альфы', !(await rpc('pf_vor_create_import', { p_project: pv, p_file_name: 'x.xlsx', p_sha256: sha, p_sheet: 'Лист' }, tok.betaPto)).ok);
+    const ci = await rpc('pf_vor_create_import', { p_project: pv, p_file_name: stampV + '.xlsx', p_sha256: sha, p_sheet: 'ФКП', p_profile: null, p_totals: {} }, tok.alfaPto);
+    imp = await j(ci);
+    check('ПТО создал черновик загрузки', ci.ok && typeof imp === 'string', `статус ${ci.status}`);
+    const rowsV = [
+      { row_no: 10, kind: 'context', name: 'Секция 1', context: { section: '1' } },
+      { row_no: 11, kind: 'work', name: stampV + ' устройство пола', unit_text: 'м2', qty: 399.89, context: { section: '1', apartments: 'кв. 3, 16' } },
+      { row_no: 12, kind: 'material', name: 'Смесь', unit_text: 'кг', qty: 75, norm: 7.5, parent_row_no: 11, context: { section: '1' } }];
+    const big = Array.from({ length: 900 }, (_, i) => ({ row_no: 100 + i, kind: i % 2 ? 'material' : 'work', name: 'Строка ' + i, unit_text: 'м2', qty: i, parent_row_no: i % 2 ? 99 + i : null, context: {} }));
+    const ar = await rpc('pf_vor_add_rows', { p_import: imp, p_rows: rowsV }, tok.alfaPto);
+    check('строки сохранены', ar.ok && (await j(ar)) === 3, `статус ${ar.status}`);
+    const imp2 = await j(await rpc('pf_vor_create_import', { p_project: pv, p_file_name: 'большой.xlsx', p_sha256: sha, p_sheet: 'Лист' }, tok.alfaPto));
+    const tb = Date.now();
+    const br = await rpc('pf_vor_add_rows', { p_import: imp2, p_rows: big }, tok.alfaPto);
+    const msBig = Date.now() - tb;
+    check('900 строк одной порцией < 10 с', br.ok && msBig < 10000, `${msBig} мс, статус ${br.status}`);
+    check('черновик удалён', (await rpc('pf_vor_delete_import', { p_import: imp2 }, tok.alfaPto)).ok);
+    check('прораб читает строки', (await j(await rpc('pf_vor_import_rows', { p_import: imp }, tok.alfaForeman))).length === 3);
+    check('Бета-ПТО не читает строки Альфы', !(await rpc('pf_vor_import_rows', { p_import: imp }, tok.betaPto)).ok);
+    check('Бета-ПТО не читает загрузки Альфы', !(await rpc('pf_vor_list_imports', { p_project: pv }, tok.betaPto)).ok);
+    check('Бета-ПТО не пишет строки в загрузку Альфы', !(await rpc('pf_vor_add_rows', { p_import: imp, p_rows: [{ row_no: 50, kind: 'work', name: 'ВЗЛОМ' }] }, tok.betaPto)).ok);
+    const units = await j(await rpc('pf_list_units', { p_company: cV }, tok.alfaPto));
+    const m2 = units.find((u) => u.code === 'м²')?.id;
+    const wt = await j(await rpc('pf_vor_add_work_type', { p_project: pv, p_name: stampV + ' Устройство пола', p_unit: m2, p_code: null }, tok.alfaPto));
+    check('ПТО создал вид работ', typeof wt === 'string');
+    check('прораб не создаёт вид работ', !(await rpc('pf_vor_add_work_type', { p_project: pv, p_name: 'ВЗЛОМ', p_unit: m2, p_code: null }, tok.alfaForeman)).ok);
+    check('Бета-ПТО не видит виды работ Альфы', !(await rpc('pf_vor_list_work_types', { p_project: pv }, tok.betaPto)).ok);
+    check('словарь пополнен', (await rpc('pf_vor_learn', { p_project: pv, p_items: [{ name: stampV + ' устройство пола', unit_text: 'м2', work_type_id: wt }] }, tok.alfaPto)).ok);
+    check('Бета-ПТО не читает словарь Альфы', !(await rpc('pf_vor_dictionary', { p_project: pv }, tok.betaPto)).ok);
+    check('нельзя подтвердить неразобранный ВОР', !(await rpc('pf_vor_confirm', { p_import: imp }, tok.alfaPto)).ok);
+    check('решения строки сохранены', (await rpc('pf_vor_resolve_rows', { p_import: imp, p_items: [{ row_no: 11, location_id: sec, work_type_id: wt, unit_id: m2, match: 'green' }] }, tok.alfaPto)).ok);
+    check('прораб не подтверждает ВОР', !(await rpc('pf_vor_confirm', { p_import: imp }, tok.alfaForeman)).ok);
+    const cf = await rpc('pf_vor_confirm', { p_import: imp }, tok.alfaPto);
+    check('ВОР подтверждён: 1 позиция', cf.ok && (await j(cf)) === 1, `статус ${cf.status}`);
+    const pos = await j(await rpc('pf_vor_positions', { p_project: pv, p_location: null }, tok.alfaForeman));
+    check('прораб видит позицию «Секция 1 · вид работ · м² · 399,89 · кв.»', pos.length === 1 && pos[0].location_path === 'Секция 1' && pos[0].unit_code === 'м²' && Number(pos[0].qty) === 399.89 && pos[0].apartments_note === 'кв. 3, 16');
+    check('подтверждённый: строки не дописать', !(await rpc('pf_vor_add_rows', { p_import: imp, p_rows: [{ row_no: 60, kind: 'work', name: 'x' }] }, tok.alfaPto)).ok);
+    check('подтверждённый: не удалить', !(await rpc('pf_vor_delete_import', { p_import: imp }, tok.alfaPto)).ok);
+    check('Бета-ПТО не видит позиции Альфы', !(await rpc('pf_vor_positions', { p_project: pv, p_location: null }, tok.betaPto)).ok);
+    const audV = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 100 }, tok.alfaAdmin));
+    check('журнал компании: загрузка и подтверждение ВОР', audV.some((r) => r.table_name === 'vor_imports' && r.action === 'INSERT') && audV.some((r) => r.table_name === 'vor_imports' && r.new_data?.status === 'confirmed'));
+    const directV = await fetch(`${URL_}/rest/v1/vor_imports`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaPto}`, 'Accept-Profile': 'planfact' } });
+    check('таблицы ВОР не открыты через REST напрямую', !directV.ok, `статус ${directV.status}`);
+    check('anon: pf_vor_list_imports закрыт', !(await rpc('pf_vor_list_imports', { p_project: pv })).ok);
+  } finally {
+    if (pv) check('проект REST-ВОР отправлен в архив', (await rpc('pf_update_project', { p_project: pv, p_name: stampV, p_code: null, p_archived: true }, tok.alfaAdmin)).ok);
+  }
+}
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');
 process.exit(fails ? 1 : 0);

@@ -1,11 +1,14 @@
 /**
- * Экран «План/Факт → ВОР» (P2-0006). Этап 1: загрузка Excel, выбор листа, предпросмотр разбора без сохранения.
+ * Экран «План/Факт → ВОР» (P2-0006): проект → загрузки проекта; загрузка Excel, выбор листа, предпросмотр разбора,
+ * «Сохранить черновик» (строки исходника на сервер порциями). Без сервера (демо) — только предпросмотр.
  * Библиотека Excel и чтение файла подгружаются лениво (import('./xlsx-reader.ts')) — только когда выбран файл.
  */
-import { createElement as h, useMemo, useState } from 'react';
+import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { parseSheet, contextLabel } from './parse.ts';
 import type { ParseResult, ParsedRow, RowKind, SheetData } from './parse.ts';
+import { VOR_MANAGE } from './vor.service.ts';
+import type { VorApi, VorImport, VorProject } from './vor.service.ts';
 
 const KIND_LABEL: Record<RowKind, string> = { work: 'Работа', material: 'Материал', group: 'Группа', context: 'Место', skip: 'Пропуск' };
 type Filter = 'all' | RowKind;
@@ -14,14 +17,39 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'group', label: 'Группы' }, { id: 'context', label: 'Места' }, { id: 'skip', label: 'Пропуск' }
 ];
 
-export interface LoadedFile { name: string; sheets: SheetData[] }
+export interface LoadedFile { name: string; sheets: SheetData[]; sha256: string }
 
 /** Читает выбранный файл: лениво грузит модуль чтения Excel. Вынесено для подмены в тестах. */
 export async function loadFile(file: File): Promise<LoadedFile> {
   const buf = await file.arrayBuffer();
-  const { readWorkbook } = await import('./xlsx-reader.ts');
+  const { readWorkbook, sha256Hex } = await import('./xlsx-reader.ts');
   const wb = await readWorkbook(buf);
-  return { name: file.name, sheets: wb.sheets };
+  return { name: file.name, sheets: wb.sheets, sha256: await sha256Hex(buf) };
+}
+
+const dateFmt = (iso: string): string => { try { return new Date(iso).toLocaleDateString('ru-RU'); } catch { return iso; } };
+
+/** Загрузки ВОР проекта: файл · лист · статус · строки/работы · кто и когда. Черновик можно удалить (право vor.manage). */
+function ImportsList(props: { items: VorImport[] | null; canManage: boolean; busy: boolean; onDelete: (i: VorImport) => void }): ReactElement {
+  const { items, canManage, busy, onDelete } = props;
+  const [confirm, setConfirm] = useState('');
+  if (items === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
+  return h('div', { className: 'pf-card pj-list', 'data-testid': 'vor-imports' },
+    items.length
+      ? items.map((i) => h('div', { key: i.id, className: 'pj-row', 'data-import-id': i.id },
+          h('div', { className: 'pj-name' },
+            h('b', null, i.file_name), h('span', { className: 'pf-muted' }, `лист «${i.sheet_name}»`),
+            h('span', { className: 'pj-badge' + (i.status === 'confirmed' ? ' vor-badge--ok' : '') }, i.status === 'confirmed' ? 'Подтверждён' : 'Черновик'),
+            h('span', { className: 'pf-muted' }, `${i.row_count} строк · ${i.works} работ${i.positions ? ` · ${i.positions} позиций` : ''} · ${dateFmt(i.created_at)}${i.created_by_email ? ' · ' + i.created_by_email : ''}`)),
+          canManage && i.status === 'draft'
+            ? (confirm === i.id
+                ? h('span', { className: 'pj-actions' },
+                    h('button', { type: 'button', className: 'pf-btn un-danger', disabled: busy, 'data-testid': 'vor-delete-yes', onClick: () => { setConfirm(''); onDelete(i); } }, 'Да, удалить'),
+                    h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setConfirm('') }, 'Нет'))
+                : h('span', { className: 'pj-actions' },
+                    h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', disabled: busy, 'data-testid': 'vor-delete', onClick: () => setConfirm(i.id) }, 'Удалить черновик')))
+            : null))
+      : h('div', { className: 'pj-empty pf-muted', 'data-testid': 'vor-imports-empty' }, 'Загрузок ВОР в этом проекте пока нет.'));
 }
 
 const fmt = (n: number | null): string => n === null ? '' : n.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
@@ -40,8 +68,15 @@ function RowView(props: { r: ParsedRow }): ReactElement {
     h('span', { className: 'vor-c-qty pf-num' }, fmt(r.qty), r.norm !== null ? h('span', { className: 'vor-norm' }, `норма ${fmt(r.norm)}`) : null));
 }
 
-export function VorTab(props: { load?: (f: File) => Promise<LoadedFile> }): ReactElement {
+export function VorTab(props: { api?: VorApi | null; load?: (f: File) => Promise<LoadedFile> }): ReactElement {
   const load = props.load || loadFile;
+  const api = props.api || null;
+  const [projects, setProjects] = useState<VorProject[] | null>(api ? null : []);
+  const [projectId, setProjectId] = useState('');
+  const [perms, setPerms] = useState<string[]>([]);
+  const [imports, setImports] = useState<VorImport[] | null>(null);
+  const [saving, setSaving] = useState('');
+  const [notice, setNotice] = useState('');
   const [file, setFile] = useState<LoadedFile | null>(null);
   const [sheet, setSheet] = useState('');
   const [busy, setBusy] = useState(false);
@@ -54,6 +89,45 @@ export function VorTab(props: { load?: (f: File) => Promise<LoadedFile> }): Reac
     return out;
   }, [file]);
   const res = sheet ? results[sheet] : null;
+  const canManage = perms.includes(VOR_MANAGE);
+
+  useEffect(() => {
+    if (!api) return;
+    void api.listProjects().then((list) => { setProjects(list); if (list.length) setProjectId(list[0].id); });
+  }, []);
+
+  async function reloadImports(p: string): Promise<void> {
+    if (!api || !p) return;
+    setImports(null);
+    setImports(await api.listImports(p));
+  }
+  useEffect(() => {
+    if (!api || !projectId) return;
+    setPerms([]); setNotice('');
+    void api.permissions(projectId).then(setPerms);
+    void reloadImports(projectId);
+  }, [projectId]);
+
+  async function saveDraft(): Promise<void> {
+    if (!api || !file || !res || !res.isVor || saving) return;
+    setSaving('Сохраняю…'); setError(''); setNotice('');
+    const totals = { works: res.stats.works, materials: res.stats.materials, rows: res.rows.length, checks: res.checks };
+    const r = await api.saveDraft({ projectId, fileName: file.name, sha256: file.sha256, sheet: res.sheet, profileId: null, totals }, res.rows,
+      (done) => setSaving(`Сохраняю… ${done} из ${res.rows.length} строк`));
+    setSaving('');
+    if (!r.ok) { setError(r.message); return; }
+    setNotice(`Черновик сохранён: ${res.rows.length} строк листа «${res.sheet}».`);
+    await reloadImports(projectId);
+  }
+
+  async function removeImport(i: VorImport): Promise<void> {
+    if (!api) return;
+    setSaving('Удаляю…'); setError(''); setNotice('');
+    const r = await api.deleteImport(i.id);
+    setSaving('');
+    if (!r.ok) { setError(r.message); return; }
+    setNotice('Черновик удалён'); await reloadImports(projectId);
+  }
 
   async function pick(ev: ChangeEvent<HTMLInputElement>): Promise<void> {
     const f = ev.currentTarget.files && ev.currentTarget.files[0];
@@ -77,8 +151,20 @@ export function VorTab(props: { load?: (f: File) => Promise<LoadedFile> }): Reac
   const rows = res ? res.rows.filter((r) => filter === 'all' || r.kind === filter) : [];
   const bad = res ? res.checks.filter((c) => !c.ok) : [];
 
+  if (api && projects === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
+  if (api && projects && !projects.length) return h('div', { className: 'pf-card pj-empty pf-muted', 'data-testid': 'vor-no-projects' }, 'Нет доступных проектов. Проект создаётся в «Справочники → Объекты».');
+
   return h('div', { className: 'pj-tab vor-tab', 'data-testid': 'vor-tab' },
-    h('div', { className: 'pf-card pj-form' },
+    api && projects
+      ? h('div', { className: 'pf-card pj-form' },
+          h('label', { className: 'pf-field pj-grow' }, 'Проект',
+            h('select', { className: 'pj-input', value: projectId, 'data-testid': 'vor-project', onChange: (e: ChangeEvent<HTMLSelectElement>) => setProjectId(e.currentTarget.value) },
+              projects.map((p) => h('option', { key: p.id, value: p.id }, p.name)))),
+          !canManage && perms.length ? h('span', { className: 'pf-muted', 'data-testid': 'vor-readonly' }, 'Только просмотр: загрузка ВОР доступна ПТО, РП и администратору.') : null)
+      : null,
+    api ? h('h3', { className: 'pf-title un-title' }, 'Загрузки проекта') : null,
+    api ? h(ImportsList, { items: imports, canManage, busy: !!saving, onDelete: (i) => { void removeImport(i); } }) : null,
+    api && !canManage ? null : h('div', { className: 'pf-card pj-form' },
       h('label', { className: 'pf-btn vor-file' + (busy ? ' vor-file--busy' : '') },
         busy ? 'Читаю файл…' : 'Загрузить Excel (.xlsx)',
         h('input', { type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', disabled: busy, onChange: pick, 'data-testid': 'vor-file' })),
@@ -87,8 +173,14 @@ export function VorTab(props: { load?: (f: File) => Promise<LoadedFile> }): Reac
             h('select', { className: 'pj-input', value: sheet, 'data-testid': 'vor-sheet', onChange: (e: ChangeEvent<HTMLSelectElement>) => { setSheet(e.currentTarget.value); setFilter('all'); } },
               file.sheets.map((s) => h('option', { key: s.name, value: s.name },
                 s.name + (s.hidden ? ' (скрытый)' : '') + (results[s.name] && !results[s.name].isVor ? ' — не похоже на ВОР' : '')))))
-        : h('span', { className: 'pf-muted pj-grow' }, 'Файл заказчика в его форме: ФКП, себестоимость, ведомость договорной цены. Сохранения пока нет — только просмотр разбора.')),
+        : h('span', { className: 'pf-muted pj-grow' }, api
+            ? 'Файл заказчика в его форме: ФКП, себестоимость, ведомость договорной цены. Сначала посмотрите разбор, затем сохраните черновик.'
+            : 'Файл заказчика в его форме: ФКП, себестоимость, ведомость договорной цены. Демо-режим: только просмотр разбора, без сохранения.'),
+      api && canManage && res && res.isVor
+        ? h('button', { type: 'button', className: 'pf-btn', disabled: !!saving, 'data-testid': 'vor-save', onClick: () => { void saveDraft(); } }, saving || 'Сохранить черновик')
+        : null),
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
+    notice ? h('div', { className: 'pj-notice', role: 'status', 'data-testid': 'vor-notice' }, notice) : null,
     res && !res.isVor ? h('div', { className: 'pf-error', role: 'alert', 'data-testid': 'vor-notvor' }, `Лист «${res.sheet}» не похож на ВОР: ${res.reason}`) : null,
     res && res.isVor
       ? h('div', { className: 'vor-summary', 'data-testid': 'vor-summary' },
@@ -150,6 +242,7 @@ export const VOR_CSS = `
 .vor-kind--work{border-color:var(--primary);color:var(--primary)}
 .vor-kind--context{border-color:var(--color-green);color:var(--color-green)}
 .vor-kind--group{color:var(--text-main)}
+.vor-badge--ok{border-color:var(--color-green);color:var(--color-green)}
 @media (max-width:600px){
   .vor-row{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"kind kind no" "name name name" "unit qty qty";gap:4px 8px;padding:10px 12px}
   .vor-row--head{display:none}
