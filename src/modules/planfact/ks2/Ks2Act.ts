@@ -9,6 +9,7 @@ import type { ReactElement } from 'react';
 import type { Ks2ActData, Ks2Api, Ks2RevisionItem } from './ks2.service.ts';
 import { actTotal, emptyKs2Header, isEdited, ks2FileName, ks2Problems, rowCost, ruDate, writeUnifiedKs2, type Ks2Header, type Ks2Row, type Ks2Snapshot } from './form.ts';
 import { saveFile } from '../estimate/KpBlock.ts';
+import { fillTemplate, fromBase64 } from './template.ts';
 import { actHeader, actRowsOf, snapshotOf, STATUS_LABEL, toEdits } from './model.ts';
 import { money } from '../estimate/prices.ts';
 import { fmtQty, parseQty } from '../fact/fact.ts';
@@ -22,7 +23,7 @@ const FIELDS: { key: keyof Ks2Header; label: string; date?: boolean; wide?: bool
 ];
 const numText = (v: number | null): string => (v === null ? '' : String(v).replace('.', ','));
 
-export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; onBack: () => void; save?: (b: Uint8Array, n: string) => void }): ReactElement {
+export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; hasTemplate?: boolean; onBack: () => void; save?: (b: Uint8Array, n: string) => void }): ReactElement {
   const { api, actId, canEdit, onBack } = props;
   const saveBytes = props.save || saveFile;
   const [data, setData] = useState<Ks2ActData | null>(null);
@@ -36,6 +37,7 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; on
   const [history, setHistory] = useState<Ks2RevisionItem[] | null>(null);
   const [confirm, setConfirm] = useState<'' | 'issue' | 'annul'>('');
   const [reason, setReason] = useState('');
+  const [form, setForm] = useState<'template' | 'unified'>(props.hasTemplate ? 'template' : 'unified');
 
   async function load(): Promise<void> {
     const r = await api.act(actId);
@@ -82,7 +84,15 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; on
   async function download(snapshot: Ks2Snapshot, revisionNo: number): Promise<void> {
     if (busy) return;
     setBusy(true); setError('');
-    try { saveBytes(await writeUnifiedKs2(snapshot), ks2FileName(snapshot.header.act_no || act.act_no, revisionNo)); }
+    try {
+      let bytes: Uint8Array;
+      if (form === 'template' && props.hasTemplate) {
+        const t = await api.template(act.project_id);
+        if (!t.ok || !t.value) throw new Error(t.ok ? 'Бланк проекта не найден — выберите унифицированную форму' : t.message);
+        bytes = await fillTemplate(fromBase64(t.value.data), snapshot);
+      } else bytes = await writeUnifiedKs2(snapshot);
+      saveBytes(bytes, ks2FileName(snapshot.header.act_no || act.act_no, revisionNo));
+    }
     catch (e) { setError(e instanceof Error ? e.message : 'Не удалось сформировать файл'); }
     setBusy(false);
   }
@@ -167,6 +177,9 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; on
     editable && problems.length ? h('div', { className: 'ft-warn', 'data-testid': 'k2-problems' }, problems.join(' ')) : null,
     notice ? h('div', { className: 'pj-notice', role: 'status', 'data-testid': 'k2-notice' }, notice) : null,
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
+    props.hasTemplate && data.last_revision ? h('div', { className: 'pf-seg k2-form-seg', role: 'tablist', 'data-testid': 'k2-form' },
+      h('button', { type: 'button', role: 'tab', 'aria-selected': form === 'template', className: 'pf-seg-btn' + (form === 'template' ? ' pf-seg-btn--active' : ''), 'data-testid': 'k2-form-template', onClick: () => setForm('template') }, 'Бланк проекта'),
+      h('button', { type: 'button', role: 'tab', 'aria-selected': form === 'unified', className: 'pf-seg-btn' + (form === 'unified' ? ' pf-seg-btn--active' : ''), 'data-testid': 'k2-form-unified', onClick: () => setForm('unified') }, 'Унифицированная КС-2')) : null,
     h('div', { className: 'pj-actions k2-actions' },
       editable ? h('button', { type: 'button', className: 'pf-btn', disabled: busy, 'data-testid': 'k2-save', onClick: () => { void save(); } }, 'Сохранить редакцию') : null,
       data.last_revision ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', disabled: busy || dirty, 'data-testid': 'k2-download', title: dirty ? 'Сначала сохраните изменения' : '',
@@ -217,6 +230,8 @@ export const KS2_ACT_CSS = `
 .k2-edited{font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 6px;border-radius:6px;border:1px solid var(--primary);color:var(--primary)}
 .k2-in{width:100%;min-height:32px;padding:4px 8px;font-size:14px;box-sizing:border-box}
 .k2-small{min-height:30px;padding:3px 8px;font-size:12px}
+.k2-form-seg{align-self:stretch;max-width:460px}
+.k2-form-seg .pf-seg-btn{min-width:0;white-space:normal;letter-spacing:.04em;line-height:1.2}
 .k2-confirm{display:flex;flex-direction:column;gap:10px;padding:12px 14px;overflow:visible}
 .k2-history{display:flex;flex-direction:column}
 .k2-hrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) 150px auto;gap:6px 12px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--card-border);font-size:13px}

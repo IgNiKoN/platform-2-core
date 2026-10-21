@@ -12,6 +12,7 @@ import { defaultPeriod, STATUS_LABEL } from './model.ts';
 import { money } from '../estimate/prices.ts';
 import { todayMoscow } from '../fact/fact.ts';
 import { Ks2Act } from './Ks2Act.ts';
+import { Ks2Template } from './Ks2Template.ts';
 
 export function Ks2Tab(props: { api: Ks2Api; vor: VorApi }): ReactElement {
   const { api, vor } = props;
@@ -61,7 +62,7 @@ export function Ks2Tab(props: { api: Ks2Api; vor: VorApi }): ReactElement {
 
   if (actId) {
     return h('div', { className: 'pj-tab k2-tab', 'data-testid': 'k2-tab' }, picker,
-      h(Ks2Act, { api, actId, canEdit: !!settings?.can_edit, onBack: () => { setActId(''); void load(projectId); } }));
+      h(Ks2Act, { api, actId, canEdit: !!settings?.can_edit, hasTemplate: !!settings?.template_name, onBack: () => { setActId(''); void load(projectId); } }));
   }
 
   const canEdit = !!settings?.can_edit;
@@ -86,6 +87,7 @@ export function Ks2Tab(props: { api: Ks2Api; vor: VorApi }): ReactElement {
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
     settings === null && !error ? h('div', { className: 'pf-muted' }, 'Загрузка…') : null,
     contractCard,
+    settings ? h(Ks2Template, { api, projectId, settings, onChanged: () => { void api.settings(projectId).then((r) => { if (r.ok) setSettings(r.value); }); } }) : null,
     settings && canEdit && contract && !creating
       ? h('div', { className: 'pj-actions' }, h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'k2-new', onClick: () => setCreating(true) }, 'Новый акт'))
       : null,

@@ -225,3 +225,67 @@ test('выдача без цены — понятный отказ сервер�
   assert.match(txt(el, '[role="alert"]'), /Нет цены/);
   assert.equal(f.acts[0].status, 'draft');
 });
+
+// --- Этап 5: свой бланк ---
+const ExcelJS = (await import('exceljs')).default;
+async function tplBytes(bad = false): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Акт');
+  ws.getCell('A1').value = 'Акт № {акт_номер}, заказчик {заказчик}' + (bad ? ' {инн}' : '');
+  ws.getRow(3).values = ['{№}', '{наименование}', '{количество}', '{стоимость}'];
+  ws.getCell('D5').value = '{итого}';
+  return new Uint8Array(await wb.xlsx.writeBuffer());
+}
+function chooseFile(input: N, bytes: Uint8Array, name: string): void {
+  const file = new win.File([bytes as N], name);
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  input.dispatchEvent(new win.Event('change', { bubbles: true }));
+}
+const until = async (f: () => boolean) => { for (let i = 0; i < 50 && !f(); i++) await tick(); };
+
+test('бланк: неизвестная метка — список ошибок, на сервер не уходит; годный — загружен, виден, убирается', async () => {
+  const s = setup();
+  const el = mount(s);
+  await tick(); await tick();
+  assert.match(txt(el, '[data-testid="k2-template"]'), /не загружен/);
+  assert.match(txt(el, '[data-testid="k2-template"]'), /\{наименование\}/, 'список меток на экране');
+  chooseFile(el.querySelector('[data-testid="k2-tpl-file"]'), await tplBytes(true), 'бланк.xlsx');
+  await until(() => !!el.querySelector('[data-testid="k2-tpl-errors"]'));
+  assert.match(txt(el, '[data-testid="k2-tpl-errors"]'), /Неизвестные метки: \{инн\}/);
+  assert.ok(!s.calls.includes('saveTemplate'));
+  chooseFile(el.querySelector('[data-testid="k2-tpl-file"]'), new TextEncoder().encode('x'), 'бланк.pdf');
+  await tick();
+  assert.match(txt(el, '[data-testid="k2-tpl-errors"]'), /\.xlsx/);
+  chooseFile(el.querySelector('[data-testid="k2-tpl-file"]'), await tplBytes(), 'Бланк заказчика.xlsx');
+  await until(() => !!el.querySelector('[data-testid="k2-tpl-notice"]'));
+  assert.match(txt(el, '[data-testid="k2-tpl-notice"]'), /загружен: лист «Акт», строка-образец 3/);
+  await until(() => txt(el, '[data-testid="k2-template"] summary').includes('Бланк заказчика.xlsx'));
+  assert.match(txt(el, '[data-testid="k2-template"] summary'), /Бланк заказчика\.xlsx/);
+  el.querySelector('[data-testid="k2-tpl-clear"]').click();
+  await until(() => txt(el, '[data-testid="k2-template"] summary').includes('не загружен'));
+  assert.match(txt(el, '[data-testid="k2-template"] summary'), /не загружен/);
+});
+
+test('скачивание акта: бланк проекта (по умолчанию) или унифицированная форма', async () => {
+  const s = setup();
+  await s.api.saveTemplate('pr1', 'Бланк.xlsx', (await import('../ks2/template.ts')).toBase64(await tplBytes()));
+  const { Ks2Act } = await import('../ks2/Ks2Act.ts');
+  const saved: { bytes: Uint8Array; name: string }[] = [];
+  const actId = (await s.api.createAct('pr1', '5', '2026-10-31', '2026-10-01', '2026-10-31') as N).value;
+  await s.api.save(actId, { ...(await import('../ks2/form.ts')).emptyKs2Header(), customer: 'АО «Бета»', act_no: '5' }, [], '');
+  const el = win.document.createElement('div'); win.document.body.appendChild(el);
+  flushSync(() => createRoot(el as unknown as HTMLElement).render(createElement(Ks2Act, { api: s.api, actId, canEdit: true, hasTemplate: true, onBack: () => {}, save: (b: Uint8Array, n: string) => saved.push({ bytes: b, name: n }) } as N)));
+  await tick(); await tick();
+  assert.equal((el as N).querySelector('[data-testid="k2-form-template"]').getAttribute('aria-selected'), 'true');
+  (el as N).querySelector('[data-testid="k2-download"]').click();
+  await until(() => saved.length === 1);
+  const a = new ExcelJS.Workbook(); await a.xlsx.load(saved[0].bytes as unknown as ArrayBuffer);
+  const ws = a.getWorksheet('Акт')!;
+  assert.equal(ws.getCell('A1').value, 'Акт № 5, заказчик АО «Бета»');
+  assert.equal(ws.getCell('B3').value, 'Штукатурка стен «Альфа»'); assert.equal(ws.getCell('B4').value, 'Смесь «Бета»');
+  assert.equal(ws.getCell('D6').value, 15 * 300 + 135 * 12.5, 'итог сдвинут на 1 строку');
+  (el as N).querySelector('[data-testid="k2-form-unified"]').click(); await tick();
+  (el as N).querySelector('[data-testid="k2-download"]').click();
+  await until(() => saved.length === 2);
+  const flat = (await readWorkbook(saved[1].bytes)).sheets[0].rows.flat();
+  assert.ok(flat.includes('0322005'), 'унифицированная форма');
+});
