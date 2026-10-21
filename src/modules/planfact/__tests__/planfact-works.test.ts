@@ -8,6 +8,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { PlanfactWorks } from '../PlanfactWorks.ts';
 import type { DataApi, WorkRow } from '../data.service.ts';
+import { settle, until } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -15,7 +16,7 @@ before(() => {
   g.window = win; g.document = win.document; g.HTMLElement = win.HTMLElement; g.Node = win.Node;
   g.HTMLInputElement = win.HTMLInputElement; g.HTMLSelectElement = win.HTMLSelectElement; g.Event = win.Event; g.IS_REACT_ACT_ENVIRONMENT = false;
 });
-const tick = () => new Promise((r) => setTimeout(r, 30));
+const tick = (): Promise<void> => settle();
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 
@@ -49,7 +50,7 @@ const click = (b: N) => b.dispatchEvent(new win.Event('click', { bubbles: true }
 
 test('ПТО: видит кнопку «Добавить работу» и сумму, журнала нет', async () => {
   const el = mount(fakeApi(['planfact.works.view', 'planfact.works.edit', 'planfact.money.view']).api);
-  await tick();
+  await until(() => el.querySelector('[data-work-id]'));
   assert.ok(el.querySelector('[data-testid=pf-add]'));
   assert.ok(el.querySelector('[data-testid=pf-money-col]'));
   assert.match(el.textContent, /4\s?800\s?000/);
@@ -58,7 +59,7 @@ test('ПТО: видит кнопку «Добавить работу» и су�
 
 test('прораб: кнопки и колонки сумм нет', async () => {
   const el = mount(fakeApi(['planfact.works.view', 'planfact.fact.create']).api);
-  await tick();
+  await until(() => el.querySelector('[data-work-id]'));
   assert.ok(el.querySelector('[data-work-id]'));
   assert.ok(!el.querySelector('[data-testid=pf-add]'));
   assert.ok(!el.querySelector('[data-testid=pf-money-col]'));
@@ -66,7 +67,7 @@ test('прораб: кнопки и колонки сумм нет', async () =>
 
 test('администратор: виден журнал «кто — что — когда»', async () => {
   const el = mount(fakeApi(['planfact.works.view', 'planfact.audit.view']).api);
-  await tick();
+  await until(() => el.querySelector('[data-work-id]'));
   const a = el.querySelector('[data-testid=pf-audit]');
   assert.ok(a && /pto@test\.invalid/.test(a.textContent) && /Добавлена работа «Фундамент»/.test(a.textContent));
 });
@@ -74,7 +75,7 @@ test('администратор: виден журнал «кто — что �
 test('добавление работы: форма → сервер → строка в таблице', async () => {
   const { api, added } = fakeApi(['planfact.works.view', 'planfact.works.edit']);
   const el = mount(api);
-  await tick();
+  await until(() => el.querySelector('[data-work-id]'));
   click(el.querySelector('[data-testid=pf-add]'));
   await tick();
   (el.querySelector('input[name=name]') as N).value = 'Монтаж колонн';
@@ -88,7 +89,7 @@ test('добавление работы: форма → сервер → стр�
 
 test('сервер отказал → понятное сообщение, форма остаётся', async () => {
   const el = mount(fakeApi(['planfact.works.view', 'planfact.works.edit'], { addError: 'Недостаточно прав для добавления работы' }).api);
-  await tick();
+  await until(() => el.querySelector('[data-work-id]'));
   click(el.querySelector('[data-testid=pf-add]'));
   await tick();
   (el.querySelector('input[name=name]') as N).value = 'Работа';
@@ -100,7 +101,7 @@ test('сервер отказал → понятное сообщение, фо�
 
 test('переключатель проекта показывает работы выбранного проекта', async () => {
   const el = mount(fakeApi(['planfact.works.view']).api);
-  await tick();
+  await until(() => el.querySelector('[data-work-id]'));
   assert.match(el.textContent, /Фундамент/);
   const sel = el.querySelector('select') as N;
   sel.value = 'p2';

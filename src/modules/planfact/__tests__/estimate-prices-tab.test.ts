@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 import type { EstimateApi, PriceInput, PriceItem } from '../estimate/estimate.service.ts';
 import type { VorApi, VorRow } from '../vor/vor.service.ts';
+import { settle } from '../../../test-utils/settle.ts';
 
 // Окружение браузера — ДО загрузки React: иначе React при загрузке решает, что событий ввода нет, и onChange текстовых полей не срабатывает.
 const win = new Window({ url: 'http://localhost/' });
@@ -16,7 +17,7 @@ const { createElement } = await import('react');
 const { flushSync } = await import('react-dom');
 const { createRoot } = await import('react-dom/client');
 const { PricesTab } = await import('../estimate/PricesTab.ts');
-const tick = () => new Promise((r) => setTimeout(r, 40));
+const tick = (): Promise<void> => settle();
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 const COMPANY = { company_id: 'c1', company_name: 'Альфа', can_manage_projects: true, can_manage_units: true, can_manage_roles: true };

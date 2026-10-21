@@ -11,6 +11,7 @@ import type { LoadedFile } from '../vor/VorTab.ts';
 import type { VorApi, VorImport, VorProfile } from '../vor/vor.service.ts';
 import { chunks, toServerRow } from '../vor/vor.service.ts';
 import { routeFromHash } from '../PlanfactApp.ts';
+import { settle, until } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -18,7 +19,7 @@ before(() => {
   g.window = win; g.document = win.document; g.HTMLElement = win.HTMLElement; g.Node = win.Node;
   g.HTMLInputElement = win.HTMLInputElement; g.HTMLSelectElement = win.HTMLSelectElement; g.Event = win.Event; g.IS_REACT_ACT_ENVIRONMENT = false;
 });
-const tick = () => new Promise((r) => setTimeout(r, 30));
+const tick = (): Promise<void> => settle();
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 
@@ -78,7 +79,7 @@ async function choose(el: N, name: string) {
   const file = new win.File(['x'], name);
   Object.defineProperty(input, 'files', { value: [file], configurable: true });
   input.dispatchEvent(new win.Event('change', { bubbles: true }));
-  await tick();
+  await until(() => el.querySelector('[data-testid="vor-sheet"]') || el.querySelector('.pf-error'));
 }
 
 test('маршрут #/planfact/vor → страница «ВОР»', () => {

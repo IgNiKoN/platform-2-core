@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 import type { EstimateApi, OverheadLine } from '../estimate/estimate.service.ts';
+import { settle } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -15,7 +16,7 @@ const { flushSync } = await import('react-dom');
 const { createRoot } = await import('react-dom/client');
 const { EstimateOverheads, parseFactors } = await import('../estimate/OverheadsEditor.ts');
 
-const tick = () => new Promise((r) => setTimeout(r, 40));
+const tick = (): Promise<void> => settle();
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 const L = (p: Partial<OverheadLine> & Pick<OverheadLine, 'key' | 'section' | 'method'>): OverheadLine => ({ name: p.key, comment: null, base: {}, params: {}, in_total: true, ...p });

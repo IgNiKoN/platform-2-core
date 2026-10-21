@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 import type { EstimateApi, EstimateRow, PriceInput, RowPrice } from '../estimate/estimate.service.ts';
 import type { VorApi, VorRow } from '../vor/vor.service.ts';
+import { settle } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -16,7 +17,7 @@ const { flushSync } = await import('react-dom');
 const { createRoot } = await import('react-dom/client');
 const { EstimateView } = await import('../estimate/EstimateView.ts');
 
-const tick = () => new Promise((r) => setTimeout(r, 40));
+const tick = (): Promise<void> => settle();
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 const L_W = 'Цена за ед. / Работа', L_M = 'Цена за ед. / Материал';

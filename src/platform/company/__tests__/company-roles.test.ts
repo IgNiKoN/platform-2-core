@@ -12,6 +12,7 @@ import { groupCatalog } from '../action-groups.ts';
 import { mapCompanyError } from '../company.service.ts';
 import type { CompanyApi, RoleRow, Result } from '../company.service.ts';
 import type { AuthApi } from '../../auth/auth.service.ts';
+import { settle } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -19,7 +20,7 @@ before(() => {
   g.window = win; g.document = win.document; g.HTMLElement = win.HTMLElement; g.Node = win.Node;
   g.HTMLInputElement = win.HTMLInputElement; g.HTMLSelectElement = win.HTMLSelectElement; g.Event = win.Event; g.IS_REACT_ACT_ENVIRONMENT = false;
 });
-const tick = () => new Promise((r) => setTimeout(r, 30));
+const tick = (): Promise<void> => settle();
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 const click = (b: N) => b.dispatchEvent(new win.Event('click', { bubbles: true }));

@@ -7,6 +7,7 @@ import { Window } from 'happy-dom';
 import ExcelJS from 'exceljs';
 import type { EstimateApi, EstimateRow, KpRevision } from '../estimate/estimate.service.ts';
 import type { VorApi } from '../vor/vor.service.ts';
+import { settle } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -18,7 +19,7 @@ const { createRoot } = await import('react-dom/client');
 const { KpBlock } = await import('../estimate/KpBlock.ts');
 const { sha256Hex, readWorkbook } = await import('../vor/xlsx-reader.ts');
 
-const tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+const tick = (ms?: number): Promise<void> => (ms ? new Promise((r) => setTimeout(r, ms)) : settle());
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 
