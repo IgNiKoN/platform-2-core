@@ -7,7 +7,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { PLANFACT_CSS } from './PlanfactTable.ts';
-import { PlanfactApp, PLANFACT_AUTH_CSS, PLANFACT_TABS_CSS } from './PlanfactApp.ts';
+import { PlanfactApp, PLANFACT_AUTH_CSS, PLANFACT_TABS_CSS, ROUTE_EVENT } from './PlanfactApp.ts';
 import { SCOPE_CSS } from '../../platform/company/CompanyScope.ts';
 import { PROJECTS_CSS } from '../../platform/company/ProjectsTab.ts';
 import { LOCATIONS_CSS } from '../../platform/company/LocationsTree.ts';
@@ -121,6 +121,7 @@ function showView(): void {
   if (mountedEl !== el || !root) mount(el);
   navActive = true;
   syncPlatformNav();
+  window.dispatchEvent(new Event(ROUTE_EVENT));
 }
 
 export async function init(ctx?: ShellCtx): Promise<void> {

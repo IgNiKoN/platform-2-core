@@ -100,12 +100,14 @@ window.AppRouter = {
             defaultSlug: 'platform',
             slugToId: {
                 platform: 'platform',
+                company: 'company',
                 admin: 'admin',
                 quality: 'quality',
                 construction: 'construction'
             },
             idToSlug: {
                 platform: 'platform',
+                company: 'company',
                 admin: 'admin',
                 quality: 'quality',
                 construction: 'construction'

@@ -8,7 +8,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { CompanyScope } from '../CompanyScope.ts';
 import { ProjectsTab } from '../ProjectsTab.ts';
-import { PlanfactApp, routeFromHash } from '../../../modules/planfact/PlanfactApp.ts';
+import { PlanfactApp, routeFromHash, ROUTE_EVENT } from '../../../modules/planfact/PlanfactApp.ts';
 import type { CompanyAccess, ProjectItem, ProjectsApi } from '../projects.service.ts';
 import type { Result } from '../company.service.ts';
 import type { AuthApi } from '../../auth/auth.service.ts';
@@ -167,5 +167,16 @@ test('План/Факт: нет доступа к компании — спра�
   const seen: boolean[] = [];
   const el = mountApp(fakeApi({ access: [] }).api, (h) => seen.push(h)); await tick();
   assert.deepEqual(seen, [false]);
+  assert.ok(!el.querySelector('[data-testid="pj-projects"]'));
+});
+
+test('переход через роутер оболочки (history.pushState, без hashchange) тоже открывает «Справочники»', async () => {
+  win.location.hash = '#/planfact';
+  const el = mountApp(fakeApi().api); await tick();
+  assert.ok(!el.querySelector('[data-testid="pj-projects"]'));
+  win.history.pushState(null, '', '#/planfact/directories');   // так переходит AppRouter.navigate — hashchange не приходит
+  win.dispatchEvent(new win.Event(ROUTE_EVENT)); await tick();
+  assert.ok(el.querySelector('[data-testid="pj-projects"]'));
+  win.history.pushState(null, '', '#/planfact'); win.dispatchEvent(new win.Event(ROUTE_EVENT)); await tick();
   assert.ok(!el.querySelector('[data-testid="pj-projects"]'));
 });

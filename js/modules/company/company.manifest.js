@@ -1,7 +1,7 @@
 /**
- * Манифест раздела платформы «Компания» (Platform 2.0, P2-0004b): роли и сотрудники компании.
- * menu.requiresAccess — пункт виден только когда раздел сам подтвердил право с сервера
- * (window.RBI.platformMenuAccess.company === true, право security.roles.assign). Сервер проверяет каждый вызов.
+ * Манифест раздела платформы «Компания» (Platform 2.0, P2-0004b): роли, сотрудники, журнал компании.
+ * С P2-0005 раздел живёт в Настройках (#/settings/company); адрес #/company перенаправляет туда.
+ * Видимость — window.RBI.platformMenuAccess.company (право security.roles.assign, подтверждает сервер).
  */
 
 export const CompanyManifest = {
@@ -13,7 +13,7 @@ export const CompanyManifest = {
     status: 'active',
     enabled: true,
     entry: './index.js',
-    menu: { section: 'platform', label: 'Компания', order: 60, path: '#/company', requiresAccess: true },
+    // Пункта в боковом меню нет: «Компания» — подраздел Настроек (#/settings/company), виден при праве security.roles.assign.
     routes: ['/company'],
     defaultRoute: '/company'
 };

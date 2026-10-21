@@ -60,6 +60,8 @@ var SettingsRender = {
                     <div id="settings-subnav" class="flex flex-nowrap gap-1 p-1 rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] overflow-x-auto no-scrollbar" role="tablist" aria-label="Подразделы настроек" data-i18n="settings.subnav_aria" data-i18n-attr="aria-label">
                         <button type="button" data-settings-subsection="platform" role="tab" data-i18n="settings.section.platform"
                             class="settings-subnav-btn flex-1 min-w-[4.75rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Платформа</button>
+                        <button type="button" data-settings-subsection="company" role="tab" id="settings-subnav-company" hidden
+                            class="settings-subnav-btn flex-1 min-w-[5.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Компания</button>
                         <button type="button" data-settings-subsection="admin" role="tab" id="settings-subnav-admin"
                             class="settings-subnav-btn flex-1 min-w-[5.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate inline-flex items-center justify-center gap-1">
                             <svg class="w-3 h-3 shrink-0 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
@@ -889,6 +891,7 @@ var SettingsRender = {
                     Developed by Igor Kondratiev
                 </div>
             </div>
+            <div id="settings-panel-company" data-settings-panel="company" hidden></div>
             <div id="settings-panel-admin" data-settings-panel="admin" class="space-y-3" hidden>
                 <p class="text-rbi-caption text-[var(--text-muted)] leading-snug px-1" data-i18n="settings.admin.intro">
                     Единая админка платформы: справочники, очереди заявок, команда и права.
@@ -1699,7 +1702,27 @@ console.log('[SettingsRender] settings.render.js markup mounted');
     }
 
     var SETTINGS_SUBSECTION_KEY = 'rbi.settings.subsection';
-    var SETTINGS_SUBSECTIONS = ['platform', 'admin', 'quality', 'construction'];
+    var SETTINGS_SUBSECTIONS = ['platform', 'company', 'admin', 'quality', 'construction'];
+
+    /** Platform 2.0: «Компания» (роли, сотрудники, журнал) — подраздел Настроек; виден, когда сервер подтвердил право (RBI.platformMenuAccess.company). */
+    function _companyAllowed() {
+        return !!(window.RBI && window.RBI.platformMenuAccess && window.RBI.platformMenuAccess.company === true);
+    }
+    function _syncCompanyTab() {
+        var btn = document.getElementById('settings-subnav-company');
+        if (btn) btn.hidden = !_companyAllowed();
+        if (!_companyAllowed()) {
+            var panel = document.getElementById('settings-panel-company');
+            if (panel && !panel.hidden) _setSettingsSubsection('platform', { skipGate: true, fromRouter: true });
+        }
+    }
+    window.addEventListener('rbi:platform-access', _syncCompanyTab);
+    function _mountCompanyPanel(on) {
+        var host = window.RBI && window.RBI.platformPanels && window.RBI.platformPanels.company;
+        var panel = document.getElementById('settings-panel-company');
+        if (!host || !panel) return;
+        if (on) host.mount(panel); else host.unmount();
+    }
 
     function _normalizeSettingsSubsection(key) {
         if (key === 'directories') return 'admin';
@@ -1775,6 +1798,8 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         key = _normalizeSettingsSubsection(key);
         if (SETTINGS_SUBSECTIONS.indexOf(key) === -1) key = 'platform';
 
+        if (key === 'company' && !_companyAllowed()) key = 'platform';
+
         if (key === 'admin' && !opts.skipGate) {
             if (!_isAdminGateOk()) {
                 window._rbiAdminGatePending = 'settings-admin';
@@ -1808,6 +1833,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (key === 'admin') {
             _mountAdminOpsContent();
         }
+        _mountCompanyPanel(key === 'company');
         if (!opts.fromRouter && window.AppRouter && typeof window.AppRouter.navigateSub === 'function') {
             window.AppRouter.navigateSub('#/settings', key);
         }
@@ -1859,6 +1885,8 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (adminBtn) {
             adminBtn.classList.toggle('hidden', !_canSeeAdminTab());
         }
+        var companyBtn = document.getElementById('settings-subnav-company');
+        if (companyBtn) companyBtn.hidden = !_companyAllowed();
         var initial = null;
         if (window.AppRouter && typeof window.AppRouter.subTabIdFromPath === 'function') {
             var hash = window.location.hash || '';

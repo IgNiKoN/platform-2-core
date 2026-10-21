@@ -15,6 +15,8 @@ import type { DataApi } from './data.service.ts';
 import type { PlanfactDemo } from './model.ts';
 
 type Mode = 'loading' | 'login' | 'authed' | 'demo';
+/** Событие модуля: маршрут #/planfact… показан (его шлёт index.ts при каждом переходе роутера). */
+export const ROUTE_EVENT = 'planfact:route';
 type Page = 'works' | 'directories';
 type Sub = 'objects';
 
@@ -40,8 +42,10 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 
   useEffect(() => {
     const onHash = (): void => setRoute(routeFromHash(window.location.hash));
+    // Роутер оболочки переходит через history.pushState — hashchange при этом НЕ приходит; модуль шлёт planfact:route на каждый заход в маршрут.
     window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
+    window.addEventListener(ROUTE_EVENT, onHash);
+    return () => { window.removeEventListener('hashchange', onHash); window.removeEventListener(ROUTE_EVENT, onHash); };
   }, []);
 
   async function enter(a: AuthApi): Promise<void> {
@@ -85,11 +89,11 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const body = dirs && projects
     ? h(CompanyScope, { api: projects, render: (c) => h(ProjectsTab, { api: projects, company: c }) })
     : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });
-  return h('div', null, bar, dirs ? h('h2', { className: 'pf-title pf-pagetitle' }, 'Справочники · Объекты') : null, body);
+  return h('div', null, bar, dirs ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'Справочники · Объекты')) : null, body);
 }
 
 export const PLANFACT_TABS_CSS = `
-.pf-pagetitle{margin:0 0 12px}
+.pf-dirhead{padding-bottom:0}
 `;
 
 /** Стили входа перенесены в платформенный слой (LoginForm); имя сохранено для index.ts. */

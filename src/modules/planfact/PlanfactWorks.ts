@@ -112,6 +112,7 @@ export function PlanfactWorks(props: { api: DataApi }): ReactElement {
 
 export const PLANFACT_WORKS_CSS = `
 .pf-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.pf-head .pf-select,.pf-head .pf-btn{min-height:38px;box-sizing:border-box}
 .pf-select{font-size:13px;padding:8px 10px;border:1px solid var(--card-border);border-radius:10px;background:var(--card-bg);color:var(--text-main)}
 .pf-addform{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:14px;margin-bottom:12px}
 .pf-audit{margin-top:24px}

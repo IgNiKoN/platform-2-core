@@ -16,6 +16,7 @@ let _localeBound = false;
 
 const SECTION_KEYS = {
   platform: 'settings.section.platform',
+  company: 'settings.section.company',
   admin: 'settings.section.admin',
   quality: 'settings.section.quality',
   construction: 'settings.section.construction'
@@ -23,6 +24,7 @@ const SECTION_KEYS = {
 
 const SECTION_FALLBACKS = {
   platform: 'Платформа',
+  company: 'Компания',
   admin: 'Админ',
   quality: 'Качество',
   construction: 'Стройконтроль'
