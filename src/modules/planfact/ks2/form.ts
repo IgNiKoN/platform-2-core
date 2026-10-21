@@ -44,9 +44,9 @@ export function ks2Problems(s: Ks2Snapshot): string[] {
   return out;
 }
 
-/** ГГГГ-ММ-ДД → ДД.ММ.ГГГГ (прочее — как есть). */
+/** ГГГГ-ММ-ДД (или ISO-время с такой датой в начале) → ДД.ММ.ГГГГ (прочее — как есть). */
 export function ruDate(d: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d ?? '');
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(d ?? '');
   return m ? `${m[3]}.${m[2]}.${m[1]}` : (d ?? '');
 }
 

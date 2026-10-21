@@ -32,6 +32,10 @@ import type { VorApi } from './vor/vor.service.ts';
 import { createFactService } from './fact/fact.service.ts';
 import { FACT_CSS } from './fact/FactTab.ts';
 import type { FactApi } from './fact/fact.service.ts';
+import { createKs2Service } from './ks2/ks2.service.ts';
+import type { Ks2Api } from './ks2/ks2.service.ts';
+import { KS2_CSS } from './ks2/Ks2Tab.ts';
+import { KS2_ACT_CSS } from './ks2/Ks2Act.ts';
 import { createDataService } from './data.service.ts';
 import type { DataApi } from './data.service.ts';
 import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
@@ -51,6 +55,7 @@ let projectsApi: ProjectsApi | null = null;
 let vorApi: VorApi | null = null;
 let estimateApi: EstimateApi | null = null;
 let factApi: FactApi | null = null;
+let ks2Api: Ks2Api | null = null;
 
 function getAuth(): AuthApi | null {
   if (auth === undefined) {
@@ -61,12 +66,13 @@ function getAuth(): AuthApi | null {
     vorApi = auth ? createVorService() : null;
     estimateApi = auth ? createEstimateService() : null;
     factApi = auth ? createFactService() : null;
+    ks2Api = auth ? createKs2Service() : null;
   }
   return auth;
 }
 
-/** requiresAccess: true — доступ к компании; 'estimate' — право на цены и сметы (planfact.estimate.manage). */
-interface NavItem { id: string; label: string; path: string; icon?: string; requiresAccess?: boolean | 'estimate' }
+/** requiresAccess: true — доступ к компании; 'estimate' — право на цены и сметы (planfact.estimate.manage); 'ks2' — право на КС-2 (ks2.view/ks2.edit). */
+interface NavItem { id: string; label: string; path: string; icon?: string; requiresAccess?: boolean | 'estimate' | 'ks2' }
 interface ShellCtx {
   shell?: { renderSidebar?: () => void } | null;
   nav?: NavItem[];   // подвкладки из манифеста (js/modules/planfact/planfact.manifest.js) — единственный источник
@@ -77,6 +83,7 @@ type ModeMgr = { AppModeManager?: { renderBottomNav?: () => void } };
 let navItems: NavItem[] = [];
 let hasDirectories = false;
 let hasEstimate = false;
+let hasKs2 = false;
 let navActive = false;
 
 /** Подвкладки модуля в нижнем таббаре (телефон/планшет) и nav2 (≥1280) — общий механизм оболочки window.RBI.platformNav. */
@@ -84,15 +91,16 @@ function syncPlatformNav(): void {
   const w = window as unknown as RbiGlobal & ModeMgr;
   w.RBI = w.RBI || {};
   w.RBI.platformNav = navActive
-    ? { id: 'planfact', title: 'План/Факт', items: navItems.filter((i) => !i.requiresAccess || (i.requiresAccess === 'estimate' ? hasEstimate : hasDirectories)).map((i) => ({ path: i.path, label: i.label, icon: i.icon })) }
+    ? { id: 'planfact', title: 'План/Факт', items: navItems.filter((i) => !i.requiresAccess || (i.requiresAccess === 'estimate' ? hasEstimate : i.requiresAccess === 'ks2' ? hasKs2 : hasDirectories)).map((i) => ({ path: i.path, label: i.label, icon: i.icon })) }
     : null;
   if (w.AppModeManager && typeof w.AppModeManager.renderBottomNav === 'function') w.AppModeManager.renderBottomNav();
 }
 
-function onAccess(has: boolean, est: boolean): void {
-  if (has === hasDirectories && est === hasEstimate) return;
+function onAccess(has: boolean, est: boolean, k2: boolean): void {
+  if (has === hasDirectories && est === hasEstimate && k2 === hasKs2) return;
   hasDirectories = has;
   hasEstimate = est;
+  hasKs2 = k2;
   if (navActive) syncPlatformNav();
 }
 
@@ -100,7 +108,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS;
+  style.textContent = PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS + KS2_CSS + KS2_ACT_CSS;
   doc.head.appendChild(style);
 }
 
@@ -111,7 +119,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, onAccess })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, ks2: ks2Api, onAccess })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
