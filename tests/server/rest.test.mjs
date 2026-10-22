@@ -462,5 +462,26 @@ else {
     for (const a of asgV) check('назначение на объект автопроверок отозвано', (await rpc('pf_revoke_assignment', { p_assignment: a }, tok.alfaAdmin)).ok);
   }
 }
+// --- P2-0013 (014): кто я и администрирование платформы — только чтение и отказы, сервер не меняется ---
+{
+  const me = async (k) => { const r = await rpc('pf_my_platform', {}, tok[k]); return r.ok ? r.json() : null; };
+  const mf = await me('alfaForeman'), mb = await me('betaPto');
+  check('014: прораб Альфы — не админ платформы, компания Альфа, модуль planfact, «Компания» недоступна',
+    mf?.is_platform_admin === false && mf.companies.length === 1 && mf.companies[0].name === 'Альфа'
+    && JSON.stringify(mf.companies[0].modules) === '["planfact"]' && mf.companies[0].can_manage_company === false, JSON.stringify(mf));
+  check('014: ПТО Беты видит только Бету', mb?.companies?.length === 1 && mb.companies[0].name === 'Бета', JSON.stringify(mb?.companies?.map((c) => c.name)));
+  check('014: администратор Альфы — «Компания» доступна', (await me('alfaAdmin'))?.companies?.find((c) => c.name === 'Альфа')?.can_manage_company === true);
+  const cA = mf?.companies?.[0]?.id;
+  for (const k of ['alfaAdmin', 'alfaForeman']) {
+    check(`014: ${k} — pf_platform_companies отказ`, !(await rpc('pf_platform_companies', {}, tok[k])).ok);
+    check(`014: ${k} — pf_platform_create_company отказ`, !(await rpc('pf_platform_create_company', { p_name: 'REST-взлом' }, tok[k])).ok);
+    check(`014: ${k} — pf_platform_set_module отказ`, !(await rpc('pf_platform_set_module', { p_company: cA, p_module: 'planfact', p_enabled: false }, tok[k])).ok);
+    check(`014: ${k} — pf_platform_set_company_admin отказ`, !(await rpc('pf_platform_set_company_admin', { p_company: cA, p_email: 'alfa-pto@test.invalid' }, tok[k])).ok);
+  }
+  check('014: после отказов модуль Альфы включён', JSON.stringify((await me('alfaForeman'))?.companies?.[0]?.modules) === '["planfact"]');
+  check('014: anon — pf_my_platform и pf_platform_companies закрыты', !(await rpc('pf_my_platform', {})).ok && !(await rpc('pf_platform_companies', {})).ok);
+  const directPA = await fetch(`${URL_}/rest/v1/platform_admins`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaAdmin}`, 'Accept-Profile': 'planfact' } });
+  check('014: platform_admins не открыта через REST', !directPA.ok, `статус ${directPA.status}`);
+}
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');
 process.exit(fails ? 1 : 0);

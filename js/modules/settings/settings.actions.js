@@ -466,8 +466,8 @@
             }
 
             // 3. ЖЕСТКО удаляем всю базу данных целиком (самый надежный способ)
-            // DB_NAME берется из storage-db.core.js ('PLATFORM2_DB')
-            const req = indexedDB.deleteDatabase(typeof DB_NAME !== 'undefined' ? DB_NAME : 'PLATFORM2_DB');
+            // имя базы — из переключателя сборки (config.service.js, P2-0013)
+            const req = indexedDB.deleteDatabase((window.APP_CONFIG && window.APP_CONFIG.LOCAL_DB_NAME) || 'PLATFORM2_DB');
 
             await new Promise((resolve) => {
                 req.onsuccess = resolve;

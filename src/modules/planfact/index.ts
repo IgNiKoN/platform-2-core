@@ -86,6 +86,8 @@ function getAuth(): AuthApi | null {
 interface NavItem { id: string; label: string; path: string; icon?: string; requiresAccess?: boolean | 'estimate' | 'ks2' }
 interface ShellCtx {
   shell?: { renderSidebar?: () => void } | null;
+  /** P2-0013: маршрут #/planfact держит обёртка js/modules/planfact/index.js (проверка доступа до загрузки бандла) — бандл свой не регистрирует. */
+  externalRoute?: boolean;
   nav?: NavItem[];   // подвкладки из манифеста (js/modules/planfact/planfact.manifest.js) — единственный источник
 }
 
@@ -135,6 +137,7 @@ export function mount(el: HTMLElement): void {
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */
 export function unmount(): void {
+  if (navActive) { navActive = false; syncPlatformNav(); }
   if (root) root.unmount();
   root = null;
   if (mountedEl) mountedEl.replaceChildren();
@@ -158,7 +161,7 @@ function ensureView(): HTMLElement {
 }
 
 /** Маршрут #/planfact: показать вкладку модуля (как switchViewNode оболочки) и смонтировать экран. */
-function showView(): void {
+export function showView(): void {
   const el = ensureView();
   document.querySelectorAll('.view-section').forEach((n) => n.classList.remove('active'));
   el.classList.add('active');
@@ -181,7 +184,7 @@ export async function init(ctx?: ShellCtx): Promise<void> {
   window.addEventListener('hashchange', onLeave);
   window.addEventListener('rbi:route', onLeave);
   const router = (window as unknown as { AppRouter?: { addRoute?: (p: string, fn: () => void) => void } }).AppRouter;
-  if (router && typeof router.addRoute === 'function') {
+  if (router && typeof router.addRoute === 'function' && !(ctx && ctx.externalRoute)) {
     router.addRoute(ROUTE, showView);
     if (String(location.hash || '').indexOf(ROUTE) === 0) showView();
   }

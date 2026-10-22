@@ -1,45 +1,7 @@
 /**
- * Общая форма входа Platform 2.0 (почта + пароль). Используется разделами «План/Факт» и «Компания».
- * Сессия одна на страницу (auth.service): вошли в одном разделе — вошли во всех.
+ * Общие стили базовых элементов разделов Platform 2.0 (полоса «кто вошёл», кнопки, поля). Форма входа внутри разделов
+ * убрана (P2-0013): вход — общий экран «Вход» платформы (login-screen.ts). Имя файла сохранено ради импортов.
  */
-import { createElement as h, useState } from 'react';
-import type { FormEvent, ReactElement, ReactNode } from 'react';
-import type { AuthApi } from './auth.service.ts';
-
-export function LoginForm(props: { auth: AuthApi; title: string; onDone: () => void; extra?: ReactNode }): ReactElement {
-  const { auth, title, onDone, extra } = props;
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  async function submit(ev: FormEvent): Promise<void> {
-    ev.preventDefault();
-    if (busy) return;
-    const form = ev.currentTarget as HTMLFormElement;
-    const email = (form.elements.namedItem('email') as HTMLInputElement).value;
-    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
-    if (!email.trim() || !password) { setError('Введите почту и пароль'); return; }
-    setBusy(true); setError('');
-    const res = await auth.signIn(email, password);
-    setBusy(false);
-    if (!res.ok) { setError(res.message); return; }
-    form.reset();
-    onDone();
-  }
-
-  return h('div', { className: 'pf-root' },
-    h('form', { className: 'pf-login pf-card', onSubmit: submit, 'data-testid': 'pf-login' },
-      h('h2', { className: 'pf-title' }, title),
-      h('label', { className: 'pf-field' }, 'Почта',
-        h('input', { type: 'email', name: 'email', autoComplete: 'username' })),
-      h('label', { className: 'pf-field' }, 'Пароль',
-        h('input', { type: 'password', name: 'password', autoComplete: 'current-password' })),
-      error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
-      h('button', { type: 'submit', className: 'pf-btn', disabled: busy }, busy ? 'Входим…' : 'Войти'),
-      extra || null
-    )
-  );
-}
-
 /** Общие стили входа и базовых элементов (токены оболочки, светлая/тёмная тема). */
 export const PLATFORM_AUTH_CSS = `
 .pf-login{max-width:380px;margin:24px auto;padding:20px;display:flex;flex-direction:column;gap:12px}
