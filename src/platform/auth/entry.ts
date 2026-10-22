@@ -12,7 +12,7 @@ import { showShellUser, restoreShellUser } from './shell-user.ts';
 type Rbi = Record<string, unknown> & {
   services?: { shell?: { renderSidebar?: () => void; renderMobileModuleMenu?: () => void }; config?: { isCloudEnabled?: () => boolean; getCloudDisabledMessage?: () => string } };
 };
-type Win = Window & { RBI?: Rbi; syncConfig?: { enabled?: boolean }; AppRouter?: { navigate?: (p: string, replace?: boolean) => void } };
+type Win = Window & { RBI?: Rbi; syncConfig?: { enabled?: boolean }; AppRouter?: { navigate?: (p: string, replace?: boolean) => void }; AppModeManager?: { renderBottomNav?: () => void } };
 
 const OVERLAY_ID = 'auth-gate-overlay';
 const STYLE_ID = 'p2-login-style';
@@ -119,6 +119,8 @@ function apply(st: PlatformState): void {
   const shell = r.services?.shell;
   if (shell && typeof shell.renderSidebar === 'function') shell.renderSidebar();
   if (shell && typeof shell.renderMobileModuleMenu === 'function') shell.renderMobileModuleMenu();
+  const amm = w().AppModeManager;
+  if (amm && typeof amm.renderBottomNav === 'function') amm.renderBottomNav();   // подвкладки: вошедшему почтой — без старого Quality
   if (st.mode === 'email' && st.email) {
     const cur = st.companies.find((c) => c.id === st.companyId);
     showShellUser(st.email, cur ? cur.name + (cur.roles[0] ? ' · ' + cur.roles[0] : '') : (st.isPlatformAdmin ? 'администратор платформы' : ''));
