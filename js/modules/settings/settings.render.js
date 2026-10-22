@@ -86,10 +86,10 @@ var SettingsRender = {
             <div class="settings-panels">
             <div id="settings-panel-platform" data-settings-panel="platform" class="space-y-3">
                 <!-- P2-0013: кто вошёл в Platform 2.0 (почта) и «Выйти»; рисует _syncP2Account по состоянию входа платформы -->
-                <div id="settings-p2-account" hidden
-                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
+                <div id="settings-p2-account"
+                    class="hidden bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex-wrap items-center justify-between gap-3">
                     <div class="min-w-0">
-                        <div class="text-rbi-caption font-black uppercase tracking-widest text-muted">Вход в Platform 2.0</div>
+                        <div class="text-rbi-caption font-black uppercase tracking-widest text-muted">Вы вошли по почте</div>
                         <div id="settings-p2-account-who" class="text-rbi-body font-bold truncate"></div>
                         <div id="settings-p2-company" class="mt-2"></div>
                     </div>
@@ -1761,7 +1761,9 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         var p2 = window.RBI && window.RBI.platform2;
         var st = p2 && typeof p2.getState === 'function' ? p2.getState() : null;
         var on = !!(st && st.mode === 'email' && st.email);
-        box.hidden = !on;
+        // класс, а не атрибут hidden: у блока раскладка flex, она перебивала hidden (видно было и при входе по PIN)
+        box.classList.toggle('hidden', !on);
+        box.classList.toggle('flex', on);
         if (!on) return;
         var cur = (st.companies || []).filter(function (c) { return c.id === st.companyId; })[0];
         var who = document.getElementById('settings-p2-account-who');
