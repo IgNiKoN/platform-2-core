@@ -1,0 +1,41 @@
+# P2-0014 этап 1 — аудит доступа к Качеству (22.10.2026, только чтение)
+
+Запросы: `tests/server/015_rbi_audit.sql` (выгрузка CSV владельцем, 200 строк), `tests/server/015_rbi_audit_functions.sql` (выполнен Исполнителем по разрешению владельца). Ничего не менялось. Почты/имена не выводились.
+
+## Учётки Auth (только счётчики)
+
+| Тип | Кол-во | В профилях Качества |
+|---|---|---|
+| PIN-технические `@rbi-quality.local` | 35 (у всех `project_code` в метаданных) | 23 |
+| Тестовые P2 `@test.invalid` | 4 | 0 |
+| Демо P2 `@demo.invalid` | 9 | 0 |
+| Прочие почты | 1 | 0 |
+
+Не-PIN учёток, работающих в старом Quality (есть профиль `rbi_engineer_profiles`), **нет** → стоп-условие «законная почтовая учётка» не сработало.
+
+## Как Качество узнаёт «своего»
+
+Все признаки (`rbi_current_role`, `rbi_current_project_code`, `rbi_is_approved`, `rbi_can_*`) — по строке `rbi_engineer_profiles` с `auth_user_id = auth.uid()`. Почта не проверяется нигде. PIN-учётка создаётся самим приложением через `signUp` — любой, кто знает публичный ключ, может завести «PIN-почту» `…@rbi-quality.local`. **Признак по почте ненадёжен**; надёжный — одобренный профиль (`cloud_status = 'approved'`, `rbi_is_approved()`).
+
+## Таблицы (74 в `public`, RLS включён у всех; у `anon` и `authenticated` полные GRANT)
+
+| Группа | Кто может | Почтовая учётка | Аноним (без входа) |
+|---|---|---|---|
+| Старые таблицы Качества: `rbi_inspections`, `rbi_inspection_items/photos`, `rbi_tasks`, `sk_records`, `sk_*_map`, `sk_volumes`, `construction_*` (старые), `shared_feedback`, `plan_fact_*` (старые RBI) | только свой проект профиля / роль manager | **закрыто** (нет профиля → проект `''`, роль `guest`) | закрыто |
+| **Стройконтроль v2 и справочники** (14): `construction_acceptance_v2` (~19 строк), `construction_buildings_v2`, `construction_defects_v2` (~24), `construction_floors_v2` (~106), `construction_objects_v2`, `construction_units_v2`, `contractor_aliases_v2`, `contractors`, `contracts`, `issue_items`, `issues`, `location_node_aliases`, `location_nodes`, `sk_records_v2` | SELECT — `public` (true), ALL — `authenticated` (true) | **ДЫРА: читает, пишет, удаляет всё** | **ДЫРА: читает всё** |
+| Библиотека `shared_checklists/docs/etalons/nodes/practices/twi_cards` | SELECT `authenticated` true; запись — по правам | **читает** (запись закрыта) | закрыто |
+| `rbi_company_settings`, `allowed_projects` | SELECT всем, запись — manager | читает настройки/список проектов | читает |
+| `rbi_sync_queue` | INSERT всем (true) | может писать в очередь | может писать |
+| `rbi_engineer_profiles` | INSERT: `auth_user_id = uid()`; SELECT/UPDATE «ничьих» (`auth_user_id is null`) — всем | **может создать себе профиль** (поля роли/статуса при вставке — триггером не проверено, см. ниже) и читать/«забрать» ничьи профили | читает/правит ничьи профили |
+| Прочие (KB, отчёты, справочники подрядчиков, черновики, ошибки) | по функциям прав профиля | закрыто | закрыто |
+
+Триггер `rbi_guard_profile_update` защищает только UPDATE. Защищает ли что-то INSERT профиля с `role='manager'`, `cloud_status='approved'` — в выводе не видно (строки триггеров не попали в экран); **если не защищает — любой вошедший (почта или самозаведённая «PIN-почта») становится руководителем любого проекта.** Проверка — на копии на этапе 2.
+
+## Файлы (Storage)
+
+Все 12 бакетов **public = true** (файл открывается по прямой ссылке без входа): `inspection-photos` 4 177 файлов, `library-twi` 378, `reports` 347, `library-etalons` 336, `custom-assets` 146, `construction-defects` 36, `library-practices` 30, `construction-plans` 25, `library-docs` 24, `library-nodes` 2, `library-checklists` 0, `twi-pdfs` 0.
+Политики `storage.objects`: «Allow all for anon on …» (ALL для `anon` на 9 бакетах), `construction-defects_*` (anon+authenticated, все действия), «Public … Plans», «temp reports … emergency» (public: чтение, запись, удаление), `storage_*_transition`. → **любой, у кого есть публичный ключ из кода приложения, без входа может читать, заменять и удалять фото осмотров и отчёты.** Ограничение только почтовых учёток эту дыру не закрывает.
+
+## Вывод
+
+Дыра подтверждена и **шире карточки**: (1) Стройконтроль v2 — почтовая учётка пишет/удаляет, аноним читает; (2) Storage — аноним может всё; (3) профиль Качества можно завести себе самому; (4) «PIN-почта» не признак — её может завести кто угодно. Нужен выбор владельца/Архитектора по объёму (вопрос в чате).
