@@ -63,11 +63,11 @@ var SettingsRender = {
                         <button type="button" data-settings-subsection="company" role="tab" id="settings-subnav-company" hidden
                             class="settings-subnav-btn flex-1 min-w-[5.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Компания</button>
                         <button type="button" data-settings-subsection="platform-admin" role="tab" id="settings-subnav-platform-admin" hidden
-                            class="settings-subnav-btn flex-1 min-w-[7.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Администрирование платформы</button>
+                            class="settings-subnav-btn flex-1 min-w-[7.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Админ платформы</button>
                         <button type="button" data-settings-subsection="admin" role="tab" id="settings-subnav-admin"
                             class="settings-subnav-btn flex-1 min-w-[5.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate inline-flex items-center justify-center gap-1">
                             <svg class="w-3 h-3 shrink-0 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-                            <span data-i18n="settings.section.admin">Админ</span>
+                            <span data-i18n="settings.section.admin">Админ Качества</span>
                         </button>
                         <button type="button" data-settings-subsection="quality" role="tab" data-i18n="settings.section.quality"
                             class="settings-subnav-btn flex-1 min-w-[4.75rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Качество</button>
@@ -89,12 +89,14 @@ var SettingsRender = {
                 <div id="settings-p2-account"
                     class="hidden bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex-wrap items-center justify-between gap-3">
                     <div class="min-w-0">
-                        <div class="text-rbi-caption font-black uppercase tracking-widest text-muted">Вы вошли по почте</div>
+                        <div id="settings-p2-account-title" class="text-rbi-caption font-black uppercase tracking-widest text-muted">Как вы вошли</div>
                         <div id="settings-p2-account-who" class="text-rbi-body font-bold truncate"></div>
                         <div id="settings-p2-company" class="mt-2"></div>
                     </div>
                     <button type="button" id="settings-p2-signout"
                         class="min-h-[40px] px-4 rounded-xl border border-[var(--card-border)] font-black text-rbi-caption uppercase tracking-widest active:scale-95">Выйти</button>
+                    <button type="button" id="settings-p2-login"
+                        class="hidden min-h-[40px] px-4 rounded-xl border border-[var(--card-border)] font-black text-rbi-caption uppercase tracking-widest active:scale-95">Войти по почте</button>
                 </div>
                 <!-- СИНХРОНИЗАЦИЯ КОМАНДЫ -->
                 <details
@@ -1754,28 +1756,57 @@ console.log('[SettingsRender] settings.render.js markup mounted');
     }
     window.addEventListener('rbi:platform-access', _syncCompanyTab);
 
-    /** P2-0013: «Настройки → Платформа» — кто вошёл почтой и «Выйти» (общий выход платформы → экран «Вход»). */
+    /**
+     * P2-0013: «Настройки → Платформа» — как вы вошли (до переноса «Качества» в Platform 2.0 это два разных входа и две админки):
+     * почта — Platform 2.0 («План/Факт», «Админ платформы», «Компания»), «Выйти»; PIN — «Качество» / «Стройконтроль» («Админ Качества»),
+     * «Войти по почте»; демо — «Войти».
+     */
     function _syncP2Account() {
         var box = document.getElementById('settings-p2-account');
         if (!box) return;
         var p2 = window.RBI && window.RBI.platform2;
         var st = p2 && typeof p2.getState === 'function' ? p2.getState() : null;
-        var on = !!(st && st.mode === 'email' && st.email);
-        // класс, а не атрибут hidden: у блока раскладка flex, она перебивала hidden (видно было и при входе по PIN)
+        var mode = st ? st.mode : 'none';
+        var on = mode === 'email' || mode === 'pin' || mode === 'demo';
+        // класс, а не атрибут hidden: у блока раскладка flex, она перебивала hidden
         box.classList.toggle('hidden', !on);
         box.classList.toggle('flex', on);
         if (!on) return;
-        var cur = (st.companies || []).filter(function (c) { return c.id === st.companyId; })[0];
+        var title = document.getElementById('settings-p2-account-title');
         var who = document.getElementById('settings-p2-account-who');
-        var role = cur && cur.roles && cur.roles[0] ? cur.roles[0] : (st.isPlatformAdmin ? 'администратор платформы' : '');
-        if (who) who.textContent = st.email + (cur ? ' \u00b7 ' + cur.name : '') + (role ? ' \u00b7 ' + role : '');
-        if (typeof p2.renderCompanySwitch === 'function') p2.renderCompanySwitch(document.getElementById('settings-p2-company'));
-        var btn = document.getElementById('settings-p2-signout');
-        if (btn && !btn.dataset.bound) {
-            btn.dataset.bound = '1';
-            btn.addEventListener('click', function () {
+        var out = document.getElementById('settings-p2-signout');
+        var login = document.getElementById('settings-p2-login');
+        if (mode === 'email') {
+            var cur = (st.companies || []).filter(function (c) { return c.id === st.companyId; })[0];
+            var role = cur && cur.roles && cur.roles[0] ? cur.roles[0] : (st.isPlatformAdmin ? 'администратор платформы' : '');
+            if (title) title.textContent = 'Вы вошли по почте — Platform 2.0';
+            if (who) who.textContent = st.email + (cur ? ' \u00b7 ' + cur.name : '') + (role ? ' \u00b7 ' + role : '');
+            if (typeof p2.renderCompanySwitch === 'function') p2.renderCompanySwitch(document.getElementById('settings-p2-company'));
+        } else {
+            if (title) title.textContent = mode === 'pin' ? 'Вы вошли по PIN — «Качество» и «Стройконтроль»' : 'Вы смотрите без входа (демо)';
+            if (who) who.textContent = mode === 'pin'
+                ? '«План/Факт» и «Админ платформы» — при входе по почте. Админ «Качества» — подраздел «Админ Качества».'
+                : 'Войдите, чтобы работать с данными.';
+            var sw = document.querySelector('#settings-p2-company select');
+            if (sw) sw.remove();
+        }
+        if (out) out.classList.toggle('hidden', mode !== 'email');
+        if (login) {
+            login.classList.toggle('hidden', mode === 'email');
+            login.textContent = mode === 'pin' ? 'Войти по почте' : 'Войти';
+        }
+        if (out && !out.dataset.bound) {
+            out.dataset.bound = '1';
+            out.addEventListener('click', function () {
                 var api = window.RBI && window.RBI.platform2;
                 if (api && typeof api.signOut === 'function') api.signOut();
+            });
+        }
+        if (login && !login.dataset.bound) {
+            login.dataset.bound = '1';
+            login.addEventListener('click', function () {
+                var api = window.RBI && window.RBI.platform2;
+                if (api && typeof api.showLogin === 'function') api.showLogin();
             });
         }
     }

@@ -26,8 +26,8 @@ const SECTION_KEYS = {
 const SECTION_FALLBACKS = {
   platform: 'Платформа',
   company: 'Компания',
-  'platform-admin': 'Администрирование платформы',
-  admin: 'Админ',
+  'platform-admin': 'Админ платформы',
+  admin: 'Админ Качества',
   quality: 'Качество',
   construction: 'Стройконтроль'
 };

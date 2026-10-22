@@ -10,7 +10,7 @@
 - Этап 6 (показ): переключатель `APP_BUILD` («выпуск»: облако Quality, `RBI_QUALITY_DB`, `rbi-quality-*`), `scripts/make-release.mjs`, `docs/SERVERS.md`. Локально: данные/черновик старой версии на месте, старый кэш заменён. Quality-файлы = `rbi-q-main`.
 - Этап 7: unit 304 ×3, `check:ts` 0, сборки OK; APP_GUIDE, SERVERS, DEMO, CHANGELOG, TECH_DEBT №87–92, FILE_MAP, «История обновлений» 18.59.90.
 - Вне списка файлов: `app-mode-utils.js`, `app-shell.desktop.js`, `settings.desktop.render.js`, `settings.actions.js`, `package.json` (обоснование — в отчёте).
-- NOT RUN: вход по PIN + синхронизация на тестовом проекте боевого Quality — делает владелец (Исполнитель не вводит учётные данные на боевом сервере); сборка «выпуск» — `http://localhost:8810`.
+- Вход по PIN в сборке «выпуск» проверил владелец — «всё отработало корректно». Доработки по показу: плашка входа (видна только по почте), «Админ Качества» / «Админ платформы», блок «Как вы вошли» в «Настройки → Платформа».
 - Ревью diff 014 Архитектором (CRITICAL) — при приёмке.
 
 STATUS: READY_FOR_ACCEPTANCE
