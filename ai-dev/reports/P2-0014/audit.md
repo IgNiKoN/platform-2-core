@@ -39,3 +39,17 @@
 ## Вывод
 
 Дыра подтверждена и **шире карточки**: (1) Стройконтроль v2 — почтовая учётка пишет/удаляет, аноним читает; (2) Storage — аноним может всё; (3) профиль Качества можно завести себе самому; (4) «PIN-почта» не признак — её может завести кто угодно. Нужен выбор владельца/Архитектора по объёму (вопрос в чате).
+
+## Дополнение: расширенный аудит сервера (`tests/server/015_rbi_audit_security.sql`, 22.10.2026, только чтение)
+
+- **Триггеры профиля:** только `BEFORE UPDATE` (`rbi_guard_profile_update`, `set_updated_at`). **На INSERT защиты нет**; столбцы `role` (по умолчанию `guest`), `cloud_status` (по умолчанию `pending`), `project_code`, `assigned_projects` клиент может задать сам. Политика INSERT пропускает любую строку с `auth_user_id = auth.uid()`.
+- **Auth:** 49 учёток, неподтверждённых почт 0 (регистрация без подтверждения включена), за 30 дней — 14 новых (PIN — 0, то есть демо/тестовые P2).
+- **Профили:** 23, все `approved` (менеджер 3, зам 1, директор 3, инженер 16), «ничьих» (`auth_user_id is null`) — 0.
+- **Реальные строки в открытых таблицах:** `location_nodes` 392, `construction_floors_v2` 133, `construction_units_v2` 64, `construction_defects_v2` 33, `construction_acceptance_v2` 20, `contractors` 14, `contracts` 2, `allowed_projects` 2, `rbi_company_settings` 1, `rbi_sync_queue` 1 703 (INSERT открыт всем); остальные v2 — 0.
+- **SECURITY DEFINER, вызываемые анонимом:** 39 функций-признаков `rbi_*`/`auth_*` (без аргументов-данных, отвечают «про себя» — утечки нет) и `get_public_report_by_token(text)` — публичная ссылка на отчёт по токену (задумано; стойкость токена — проверить в коде).
+- **Без RLS и с SELECT для anon** (вне `public`): `net._http_response`, `net.http_request_queue`, `supabase_functions.hooks/migrations`, `realtime.subscription/schema_migrations`, представления `extensions.pg_stat_statements*`. Опасны, только если эти схемы открыты в PostgREST/GraphQL (настройку `PGRST_DB_SCHEMAS` из SQL не видно — проверить на сервере).
+- **Realtime:** таблиц в публикации нет.
+- `planfact`: anon без доступа к схеме — корректно.
+
+### Критично (вывод сервера, не проверено попыткой)
+Цепочка без всяких прав: публичный ключ (есть в коде приложения) → `signUp` любой почтой (подтверждение выключено) → `insert into rbi_engineer_profiles (auth_user_id = свой id, role = 'manager', cloud_status = 'approved', project_code = <любой>)` → `rbi_current_role() = 'manager'` → политики `rbi_super_admin_access` / `rbi_admin_storage_access` открывают все данные и файлы проекта. Подтвердить на копии схемы (этап 2), на боевом сервере не пробовать.
