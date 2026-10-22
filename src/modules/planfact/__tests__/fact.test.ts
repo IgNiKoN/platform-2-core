@@ -66,3 +66,17 @@ test('подсказка позиции (P2-0009, К3): «№ строки · р
   assert.equal(h.get('p3'), 'Стены (пом. Встроенные: офис)', 'без номера — только раздел');
   assert.ok(!h.has('p4') && !h.has('p5'), 'без строки или без загрузки — без подсказки');
 });
+
+test('подсказка позиции с КВР (P2-0012): № · КВР · пояснение строки Номенклатуры — две одноимённые работы различаются', () => {
+  const rows = [
+    { row_no: 10, kind: 'group', number: '8.', name: 'КВР-группа 8' },
+    { row_no: 11, kind: 'work', number: '8.', name: 'Работа «Вид 13»', context: { kvr: 10, note: 'Пояснение 17' } },
+    { row_no: 12, kind: 'work', number: '8.', name: 'Работа «Вид 13»', context: { kvr: 10, note: 'Пояснение 18' } },
+    { row_no: 13, kind: 'work', number: '8.', name: 'Работа «Вид 12»', context: null }
+  ];
+  const h = vorHints([{ id: 'a', import_id: 'i', source_row_no: 11 }, { id: 'b', import_id: 'i', source_row_no: 12 }, { id: 'c', import_id: 'i', source_row_no: 13 }],
+    new Map([['i', rows]]));
+  assert.equal(h.get('a'), '№ 8. · КВР-группа 8 · Пояснение 17');
+  assert.equal(h.get('b'), '№ 8. · КВР-группа 8 · Пояснение 18');
+  assert.equal(h.get('c'), '№ 8. · КВР-группа 8');
+});

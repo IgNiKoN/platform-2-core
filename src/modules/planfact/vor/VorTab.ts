@@ -61,16 +61,18 @@ function ImportsList(props: { items: VorImport[] | null; canManage: boolean; bus
 
 const fmt = (n: number | null): string => n === null ? '' : n.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 
-function RowView(props: { r: ParsedRow }): ReactElement {
-  const { r } = props;
+function RowView(props: { r: ParsedRow; warn?: string }): ReactElement {
+  const { r, warn } = props;
   const place = contextLabel(r.context);
-  return h('div', { className: `vor-row vor-row--${r.kind}`, 'data-kind': r.kind, 'data-row': r.rowNo },
+  return h('div', { className: `vor-row vor-row--${r.kind}` + (warn ? ' vor-row--warn' : ''), 'data-kind': r.kind, 'data-row': r.rowNo, 'data-warn': warn ? '1' : undefined },
     h('span', { className: 'vor-c-no' }, String(r.rowNo)),
     h('span', { className: 'vor-c-kind' }, h('span', { className: `vor-kind vor-kind--${r.kind}` }, KIND_LABEL[r.kind])),
     h('span', { className: 'vor-c-name' },
       r.number ? h('span', { className: 'vor-num' }, r.number) : null,
       h('span', null, r.name || '—'),
-      place && r.kind !== 'context' ? h('span', { className: 'vor-place' }, place) : null),
+      place && r.kind !== 'context' ? h('span', { className: 'vor-place' }, place) : null,
+      r.context.note ? h('span', { className: 'vor-note' }, r.context.note) : null,
+      warn ? h('span', { className: 'vor-warn' }, warn) : null),
     h('span', { className: 'vor-c-unit pf-unit' }, r.unitText || ''),
     h('span', { className: 'vor-c-qty pf-num' }, fmt(r.qty), r.norm !== null ? h('span', { className: 'vor-norm' }, `норма ${fmt(r.norm)}`) : null));
 }
@@ -152,7 +154,8 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
       setProfiles(await api.listProfiles(projectId));
       const next = { ...overrides }; delete next[res.sheet]; setOverrides(next);
     }
-    const totals = { works: res.stats.works, materials: res.stats.materials, rows: res.rows.length, checks: res.checks };
+    const totals = { works: res.stats.works, materials: res.stats.materials, rows: res.rows.length, checks: res.checks,
+      kvr: res.kvrChecks.length ? { checks: res.kvrChecks.length, bad: res.kvrChecks.filter((c) => !c.ok).length } : undefined };
     const r = await api.saveDraft({ projectId, fileName: file.name, sha256: file.sha256, sheet: res.sheet, profileId, totals }, res.rows,
       (done) => setSaving(`Сохраняю… ${done} из ${res.rows.length} строк`));
     setSaving('');
@@ -192,6 +195,13 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
 
   const rows = res ? res.rows.filter((r) => filter === 'all' || r.kind === filter) : [];
   const bad = res ? res.checks.filter((c) => !c.ok) : [];
+  // Сверка КВР (P2-0012): расхождение — жёлтым у строк Номенклатуры и у их КВР; подтверждать ВОР можно.
+  const kvrBad = res ? res.kvrChecks.filter((c) => !c.ok) : [];
+  const warnOf = new Map<number, string>();
+  for (const c of kvrBad) {
+    const text = `не сходится с КВР (стр. ${c.kvrRowNo}): ${c.name} — по работам ${fmt(c.actual)} ${c.unit}, в КВР ${fmt(c.expected)} ${c.unit}`;
+    for (const n of [c.kvrRowNo, ...c.rowNos]) warnOf.set(n, warnOf.has(n) ? warnOf.get(n) + '; ' + text : text);
+  }
 
   if (api && projects === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   if (api && projects && !projects.length) return h('div', { className: 'pf-card pj-empty pf-muted', 'data-testid': 'vor-no-projects' }, 'Нет доступных проектов. Проект создаётся в «Справочники → Объекты».');
@@ -243,7 +253,11 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
           res.checks.length
             ? h('span', { className: 'vor-stat ' + (bad.length ? 'vor-stat--bad' : 'vor-stat--ok'), 'data-testid': 'vor-checks' },
                 bad.length ? `итоги не сходятся: ${bad.length} из ${res.checks.length}` : `итоги сходятся (${res.checks.length})`)
-            : h('span', { className: 'vor-stat pf-muted' }, 'итогов с числами в файле нет'))
+            : h('span', { className: 'vor-stat pf-muted' }, 'итогов с числами в файле нет'),
+          res.kvrChecks.length
+            ? h('span', { className: 'vor-stat' + (kvrBad.length ? ' vor-stat--warn' : ' vor-stat--ok'), 'data-testid': 'vor-kvr-checks' },
+                'сверка с КВР: ', h('b', null, `${res.kvrChecks.length - kvrBad.length} сходятся`), kvrBad.length ? h('b', null, `, расхождений ${kvrBad.length}`) : null)
+            : null)
       : null,
     bad.length
       ? h('div', { className: 'pf-card vor-bad', 'data-testid': 'vor-bad' }, bad.slice(0, 5).map((c) => h('div', { key: c.rowNo + c.label },
@@ -262,7 +276,7 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
           h('div', { className: 'vor-row vor-row--head' },
             h('span', { className: 'vor-c-no' }, 'Стр.'), h('span', { className: 'vor-c-kind' }, 'Тип'), h('span', { className: 'vor-c-name' }, 'Наименование · место'),
             h('span', { className: 'vor-c-unit' }, 'ЕИ'), h('span', { className: 'vor-c-qty pf-num' }, 'Объём')),
-          rows.length ? rows.map((r) => h(RowView, { key: r.rowNo, r })) : h('div', { className: 'pj-empty pf-muted' }, 'Нет строк этого типа.'))
+          rows.length ? rows.map((r) => h(RowView, { key: r.rowNo, r, warn: warnOf.get(r.rowNo) })) : h('div', { className: 'pj-empty pf-muted' }, 'Нет строк этого типа.'))
       : null);
 }
 
@@ -290,6 +304,9 @@ export const VOR_CSS = `
 .vor-c-name{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
 .vor-num{font-size:11px;color:var(--text-muted)}
 .vor-place{font-size:11px;color:var(--primary)}
+.vor-note{font-size:11px;color:var(--text-muted)}
+.vor-row--warn{box-shadow:inset 3px 0 0 var(--color-yellow)}
+.vor-warn{font-size:11px;font-weight:700;color:var(--color-yellow)}
 .vor-norm{display:block;font-size:11px;color:var(--text-muted)}
 .vor-kind{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 6px;border-radius:6px;border:1px solid var(--card-border);color:var(--text-muted)}
 .vor-kind--work{border-color:var(--primary);color:var(--primary)}

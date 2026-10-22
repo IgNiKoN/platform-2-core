@@ -157,6 +157,7 @@ export function VorWorks(props: {
         h('span', { className: 'vor-light' }, LIGHT_LABEL[x.v.light]),
         h('span', { className: 'vor-c-name' }, h('span', null, x.row.name),
           h('span', { className: 'vor-place' }, `стр. ${x.row.row_no} · ${x.row.unit_text || 'нет ЕИ'} · ${x.row.qty === null ? 'нет объёма' : x.row.qty.toLocaleString('ru-RU')}`),
+          x.row.context && x.row.context.note ? h('span', { className: 'pf-muted vor-wnote', 'data-testid': 'vor-wnote' }, x.row.context.note) : null,
           x.v.workTypeId ? h('span', { className: 'pf-muted' }, `→ ${nameOf(x.v.workTypeId)}${x.v.light === 'yellow' ? ` (сходство ${Math.round(x.v.score * 100)} %)` : ''}`) : null),
         editable && x.v.light !== 'green' && x.v.unitId
           ? h('span', { className: 'vor-wrow-act' },
@@ -188,6 +189,7 @@ export const VOR_WORKS_CSS = `
 .vor-wrow--yellow .vor-light{color:var(--color-yellow)}
 .vor-wrow--red .vor-light{color:var(--color-red)}
 .vor-light{font-size:11px;font-weight:700;white-space:nowrap}
+.vor-wnote{font-size:11px}
 .vor-wrow-act{display:flex;flex-wrap:wrap;gap:6px}
 .vor-wrow-act select{flex:1 1 200px;min-width:0;min-height:40px}
 .vor-more{margin:10px 14px}

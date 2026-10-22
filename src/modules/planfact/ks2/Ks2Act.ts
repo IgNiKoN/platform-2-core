@@ -10,6 +10,7 @@ import type { Ks2ActData, Ks2Api, Ks2RevisionItem } from './ks2.service.ts';
 import { actTotal, emptyKs2Header, isEdited, ks2FileName, ks2Problems, rowCost, ruDate, writeUnifiedKs2, type Ks2Header, type Ks2Row, type Ks2Snapshot } from './form.ts';
 import { saveFile } from '../estimate/KpBlock.ts';
 import { fillTemplate, fromBase64 } from './template.ts';
+import { planOffer, offerFileName } from './offer.ts';
 import { actHeader, actRowsOf, snapshotOf, STATUS_LABEL, toEdits } from './model.ts';
 import { money } from '../estimate/prices.ts';
 import { fmtQty, parseQty } from '../fact/fact.ts';
@@ -37,7 +38,9 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; ha
   const [history, setHistory] = useState<Ks2RevisionItem[] | null>(null);
   const [confirm, setConfirm] = useState<'' | 'issue' | 'annul'>('');
   const [reason, setReason] = useState('');
-  const [form, setForm] = useState<'template' | 'unified'>(props.hasTemplate ? 'template' : 'unified');
+  const [form, setForm] = useState<'template' | 'unified' | 'offer'>(props.hasTemplate ? 'template' : 'unified');
+  // «В файл оферты» (P2-0012): какая редакция ждёт выбора файла заказчика.
+  const [offerFor, setOfferFor] = useState<{ snapshot: Ks2Snapshot; revisionNo: number } | null>(null);
 
   async function load(): Promise<void> {
     const r = await api.act(actId);
@@ -83,6 +86,7 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; ha
 
   async function download(snapshot: Ks2Snapshot, revisionNo: number): Promise<void> {
     if (busy) return;
+    if (form === 'offer') { setOfferFor({ snapshot, revisionNo }); setError(''); setNotice(''); return; }
     setBusy(true); setError('');
     try {
       let bytes: Uint8Array;
@@ -94,6 +98,30 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; ha
       saveBytes(bytes, ks2FileName(snapshot.header.act_no || act.act_no, revisionNo));
     }
     catch (e) { setError(e instanceof Error ? e.message : 'Не удалось сформировать файл'); }
+    setBusy(false);
+  }
+  /** Акт в файл оферты: объёмы акта — в «Кол-во» строк заказчика; формулы и строки КВР не трогаются. */
+  async function toOffer(file: File): Promise<void> {
+    if (!offerFor || busy) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const { readWorkbook } = await import('../vor/xlsx-reader.ts');
+      const { patchXlsx } = await import('../vor/xlsx-writer.ts');
+      const plan = planOffer((await readWorkbook(buf)).sheets, offerFor.snapshot);
+      if (plan.missing.length || !plan.sheets.length) {
+        throw new Error(`Это другой файл: в нём нет строк акта (${plan.missing.length}) — например, ${plan.missing.slice(0, 3).join(', ')}. Выберите файл оферты, из которого загружен ВОР.`);
+      }
+      let bytes: Uint8Array = buf, written = 0, formulas = 0, zero = 0;
+      for (const sh of plan.sheets) {
+        const res = await patchXlsx(bytes, sh.sheet, sh.writes);
+        bytes = res.bytes; written += res.written.length; formulas += res.skippedFormula.length; zero += sh.zero;
+      }
+      saveBytes(bytes, offerFileName(file.name, offerFor.snapshot.header.act_no || act.act_no, offerFor.revisionNo));
+      setNotice(`КС-2 в файле оферты: объём вписан в ${written} строк${zero ? ` (из них ${zero} — 0, нет в акте)` : ''}${formulas ? `; формул заказчика не тронуто ${formulas}` : ''}`
+        + `${plan.priceDiff.length ? `; цена в файле отличается от цены акта у ${plan.priceDiff.length} строк — выберите файл с договорным КП` : ''}. Файл скачан.`);
+      setOfferFor(null);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось записать акт в файл'); }
     setBusy(false);
   }
   async function downloadRevision(id: string): Promise<void> {
@@ -177,9 +205,18 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; ha
     editable && problems.length ? h('div', { className: 'ft-warn', 'data-testid': 'k2-problems' }, problems.join(' ')) : null,
     notice ? h('div', { className: 'pj-notice', role: 'status', 'data-testid': 'k2-notice' }, notice) : null,
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
-    props.hasTemplate && data.last_revision ? h('div', { className: 'pf-seg k2-form-seg', role: 'tablist', 'data-testid': 'k2-form' },
-      h('button', { type: 'button', role: 'tab', 'aria-selected': form === 'template', className: 'pf-seg-btn' + (form === 'template' ? ' pf-seg-btn--active' : ''), 'data-testid': 'k2-form-template', onClick: () => setForm('template') }, 'Бланк проекта'),
-      h('button', { type: 'button', role: 'tab', 'aria-selected': form === 'unified', className: 'pf-seg-btn' + (form === 'unified' ? ' pf-seg-btn--active' : ''), 'data-testid': 'k2-form-unified', onClick: () => setForm('unified') }, 'Унифицированная КС-2')) : null,
+    data.last_revision ? h('div', { className: 'pf-seg k2-form-seg', role: 'tablist', 'data-testid': 'k2-form' },
+      props.hasTemplate ? h('button', { type: 'button', role: 'tab', 'aria-selected': form === 'template', className: 'pf-seg-btn' + (form === 'template' ? ' pf-seg-btn--active' : ''), 'data-testid': 'k2-form-template', onClick: () => { setForm('template'); setOfferFor(null); } }, 'Бланк проекта') : null,
+      h('button', { type: 'button', role: 'tab', 'aria-selected': form === 'unified', className: 'pf-seg-btn' + (form === 'unified' ? ' pf-seg-btn--active' : ''), 'data-testid': 'k2-form-unified', onClick: () => { setForm('unified'); setOfferFor(null); } }, 'Унифицированная КС-2'),
+      h('button', { type: 'button', role: 'tab', 'aria-selected': form === 'offer', className: 'pf-seg-btn' + (form === 'offer' ? ' pf-seg-btn--active' : ''), 'data-testid': 'k2-form-offer', onClick: () => setForm('offer') }, 'В файл оферты')) : null,
+    offerFor ? h('div', { className: 'pf-card k2-confirm', 'data-testid': 'k2-offer' },
+      h('b', null, `Акт, редакция ${offerFor.revisionNo}: выберите файл оферты заказчика (исходный или с ценами КП)`),
+      h('div', { className: 'pf-muted' }, 'В «Кол-во» строк заказчика впишется объём акта; цены, формулы и строки КВР не меняются — Excel пересчитает суммы сам.'),
+      h('div', { className: 'pj-actions' },
+        h('label', { className: 'pf-btn k2-file' + (busy ? ' k2-file--busy' : '') }, busy ? 'Записываю…' : 'Выбрать файл (.xlsx)',
+          h('input', { type: 'file', accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', disabled: busy, 'data-testid': 'k2-offer-file',
+            onChange: (e) => { const f = (e.target as HTMLInputElement).files?.[0]; (e.target as HTMLInputElement).value = ''; if (f) void toOffer(f); } })),
+        h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setOfferFor(null) }, 'Отмена'))) : null,
     h('div', { className: 'pj-actions k2-actions' },
       editable ? h('button', { type: 'button', className: 'pf-btn', disabled: busy, 'data-testid': 'k2-save', onClick: () => { void save(); } }, 'Сохранить редакцию') : null,
       data.last_revision ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', disabled: busy || dirty, 'data-testid': 'k2-download', title: dirty ? 'Сначала сохраните изменения' : '',
@@ -210,6 +247,9 @@ export function Ks2Act(props: { api: Ks2Api; actId: string; canEdit: boolean; ha
 }
 
 export const KS2_ACT_CSS = `
+.k2-file{position:relative;overflow:hidden;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-height:40px}
+.k2-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.k2-file--busy{opacity:.7;cursor:progress}
 .k2-act{container-type:inline-size;container-name:k2act}
 .k2-act-top{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .k2-act-title{margin:0;font-size:18px;overflow-wrap:anywhere}

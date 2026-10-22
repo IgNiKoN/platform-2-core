@@ -8,7 +8,7 @@ import type { ColumnMap, EditableRole } from './parse.ts';
 
 const ROLES: { id: EditableRole; label: string }[] = [
   { id: 'name', label: 'Наименование' }, { id: 'unit', label: 'Ед. изм.' }, { id: 'qty', label: 'Объём / количество' },
-  { id: 'norm', label: 'Норма расхода' }, { id: 'number', label: '№ п/п' }, { id: 'type', label: 'Тип строки (Г/Р/М)' }
+  { id: 'norm', label: 'Норма расхода' }, { id: 'number', label: '№ п/п' }, { id: 'type', label: 'Тип строки (Г/Р/М, КВР)' }
 ];
 
 /** Буква колонки Excel: 0 → A, 25 → Z, 26 → AA. */

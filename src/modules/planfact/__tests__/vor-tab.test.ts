@@ -12,6 +12,7 @@ import type { VorApi, VorImport, VorProfile } from '../vor/vor.service.ts';
 import { chunks, toServerRow } from '../vor/vor.service.ts';
 import { routeFromHash } from '../PlanfactApp.ts';
 import { settle, until } from '../../../test-utils/settle.ts';
+import { kvrSheet } from './kvr-fixture.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -107,6 +108,17 @@ test('файл выбран → открыт лист-ВОР (даже скры�
   sel.value = 'График';
   sel.dispatchEvent(new win.Event('change', { bubbles: true })); await tick();
   assert.match(el.querySelector('[data-testid="vor-notvor"]').textContent, /не похож на ВОР/);
+});
+
+test('файл с КВР / Номенклатурой (P2-0012): 41 работа, 16 групп, «сверка с КВР: 25 сходятся, расхождений 1», жёлтые строки и пояснения', async () => {
+  const el = mount(async () => ({ name: 'оферта.xlsx', sha256: 'b'.repeat(64), sheets: [kvrSheet()] }));
+  await choose(el, 'оферта.xlsx');
+  assert.match(el.querySelector('[data-testid="vor-summary"]').textContent, /41 работ.*16 групп/);
+  assert.match(el.querySelector('[data-testid="vor-kvr-checks"]').textContent, /25 сходятся, расхождений 1/);
+  const warn = Array.from(el.querySelectorAll('[data-warn="1"]') as N[]);
+  assert.equal(warn.length, 2); // строка Номенклатуры и её КВР
+  assert.match(warn.map((w: N) => w.textContent).join(' '), /не сходится с КВР \(стр\. \d+\): Работа «Вид 23» — по работам 13,08 м2, в КВР 1\s061,1 м2/);
+  assert.match(el.querySelector('[data-kind="work"]').textContent, /Пояснение 1/);
 });
 
 test('не .xlsx и повреждённый файл → понятная ошибка, без падения', async () => {
