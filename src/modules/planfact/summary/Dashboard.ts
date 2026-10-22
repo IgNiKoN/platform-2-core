@@ -7,7 +7,9 @@
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import type { SummaryApi, SummaryPlace, SummaryProject, SummaryWeek, SummaryWorkType } from './summary.service.ts';
+import type { SummaryApi, SummaryPlace, SummaryPosition, SummaryProject, SummaryWeek, SummaryWorkType } from './summary.service.ts';
+import { Attention } from './Attention.ts';
+import type { SummaryLinks } from './Attention.ts';
 import { LIGHT_LABEL, dateOr, lagDaysText, lightText, pctText, rub, rubDay, verdictText } from './model.ts';
 import { BarChart, ChartCard, KpiTile, LineChart, ProgressBar, StatusBadge, compactNumber, compactRub, dayMonth, daysBetween } from '../../../platform/ui/index.ts';
 import { fmtQty, todayMoscow } from '../fact/fact.ts';
@@ -22,8 +24,8 @@ export function weeksFor(p: Pick<SummaryProject, 'planned_start'>, today: string
 }
 const unitsText = (u: { unit: string; qty: number }[]): string => u.map((x) => `${fmtQty(x.qty)} ${x.unit}`).join(', ');
 
-export function Dashboard(props: { api: SummaryApi; p: SummaryProject; period: Period; actions?: ReactNode }): ReactElement {
-  const { api, p, period, actions } = props;
+export function Dashboard(props: { api: SummaryApi; p: SummaryProject; period: Period; actions?: ReactNode; links?: SummaryLinks; onDates?: () => void }): ReactElement {
+  const { api, p, period, actions, links, onDates } = props;
   const [weeks, setWeeks] = useState<SummaryWeek[] | null>(null);
   const [places, setPlaces] = useState<SummaryPlace[] | null>(null);
   const [works, setWorks] = useState<SummaryWorkType[] | null>(null);
@@ -53,9 +55,10 @@ export function Dashboard(props: { api: SummaryApi; p: SummaryProject; period: P
     m ? null : h('div', { className: 'pf-muted sm-note', 'data-testid': 'sm-nomoney' },
       'Суммы в рублях, общий % и отставание видят РП, ПТО, экономист и руководство. Объёмы — в «Видах работ» ниже.'),
     h(Tiles, { p }),
-    m && weeks ? h('div', { className: 'db-row' }, h(PlanFactChart, { p, weeks, today }), h(PlacesPanel, { p, places })) : h(PlacesPanel, { p, places }),
+    m && weeks ? h('div', { className: 'db-row' }, h(PlanFactChart, { p, weeks, today }), h(PlacesPanel, { api, p, places })) : h(PlacesPanel, { api, p, places }),
     m && weeks ? h('div', { className: 'db-row' }, h(WeeksChart, { p, weeks: weeks.slice(-period) }), h(NotStarted, { works })) : null,
-    !m && weeks ? h(WeeksVolume, { weeks: weeks.slice(-period) }) : null);
+    !m && weeks ? h(WeeksVolume, { weeks: weeks.slice(-period) }) : null,
+    h(Attention, { api, p, links, onDates }));
 }
 
 function Tiles(props: { p: SummaryProject }): ReactElement {
@@ -130,19 +133,58 @@ function WeeksVolume(props: { weeks: SummaryWeek[] }): ReactElement {
       h('tbody', null, props.weeks.map((w) => h('tr', { key: w.week_end }, h('td', null, `${dateOr(w.week_start)} — ${dateOr(w.week_end)}`), h('td', null, unitsText(w.units) || '—'))))));
 }
 
-function PlacesPanel(props: { p: SummaryProject; places: SummaryPlace[] | null }): ReactElement {
-  const { p, places } = props;
-  return h('section', { className: 'p2-chart db-side', 'data-testid': 'sm-places', 'aria-label': 'Готовность по корпусам' },
+interface Crumb { id: string; name: string; node_type: string; here: number }
+
+/** Готовность по местам с проваливанием: корпус → секция → этаж → позиции (pf_summary_places, pf_summary_positions). */
+function PlacesPanel(props: { api: SummaryApi; p: SummaryProject; places: SummaryPlace[] | null }): ReactElement {
+  const { api, p } = props;
+  const [path, setPath] = useState<Crumb[]>([]);
+  const [rows, setRows] = useState<SummaryPlace[] | null>(null);
+  const [pos, setPos] = useState<SummaryPosition[] | null>(null);
+  const [error, setError] = useState('');
+  const node = path.length ? path[path.length - 1] : null;
+  useEffect(() => {
+    let alive = true;
+    setError('');
+    if (!node) { setRows(props.places); setPos(null); return; }
+    setRows(null); setPos(null);
+    void (async () => {
+      const [r, ps] = await Promise.all([api.places(p.project_id, node.id), node.here ? api.positions(p.project_id, null) : Promise.resolve(null)]);
+      if (!alive) return;
+      const bad = !r.ok ? r.message : ps && !ps.ok ? ps.message : '';
+      if (bad) setError(bad);
+      setRows(r.ok ? r.value : []);
+      setPos(ps && ps.ok ? ps.value.filter((x) => x.location_id === node.id) : null);
+    })();
+    return () => { alive = false; };
+  }, [node ? node.id : '', props.places]);
+  const open = (x: SummaryPlace): void => setPath([...path, { id: x.location_id, name: x.name, node_type: x.node_type, here: x.here_positions }]);
+  const list = node ? rows : props.places;
+  return h('section', { className: 'p2-chart db-side', 'data-testid': 'sm-places', 'aria-label': 'Готовность по местам' },
     h('h2', { className: 'p2-chart__title' }, 'Готовность по местам'),
-    places === null ? h('div', { className: 'pf-muted' }, 'Загрузка…')
-      : !places.length ? h('div', { className: 'pf-muted' }, 'Мест в проекте нет.')
-      : places.map((x) => h('div', { key: x.location_id, className: 'db-place', 'data-location-id': x.location_id },
-          h('div', { className: 'db-place-head' }, h('b', null, x.name), h('span', { className: 'p2-num' }, p.can_money ? pctText(x.pct_money) : `${x.positions} поз.`)),
+    path.length ? h('nav', { className: 'db-crumbs', 'aria-label': 'Путь', 'data-testid': 'sm-crumbs' },
+      h('button', { type: 'button', className: 'db-crumb', onClick: () => setPath([]) }, 'Все'),
+      path.map((c, i) => h('span', { key: c.id }, ' › ', i === path.length - 1 ? h('b', null, c.name)
+        : h('button', { type: 'button', className: 'db-crumb', onClick: () => setPath(path.slice(0, i + 1)) }, c.name)))) : null,
+    error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
+    list === null ? h('div', { className: 'pf-muted' }, 'Загрузка…')
+      : !list.length && !node ? h('div', { className: 'pf-muted' }, 'Мест в проекте нет.')
+      : list.map((x) => h('div', { key: x.location_id, className: 'db-place', 'data-location-id': x.location_id },
+          h('div', { className: 'db-place-head' },
+            x.positions ? h('button', { type: 'button', className: 'db-crumb db-open', 'data-testid': 'sm-place-open', onClick: () => open(x) }, x.name) : h('b', null, x.name),
+            h('span', { className: 'p2-num' }, p.can_money ? pctText(x.pct_money) : `${x.positions} поз.`)),
           p.can_money ? h(ProgressBar, { value: x.pct_money, label: `Готовность: ${x.name}` }) : null,
           h('span', { className: 'pf-muted p2-num db-place-sub' }, p.can_money && x.plan_money !== null
             ? `${compactRub(x.done_money)} из ${compactRub(x.plan_money)} · ${x.positions} поз.`
             : x.units.map((u) => `${fmtQty(u.fact)} из ${fmtQty(u.plan)} ${u.unit}`).join(' · ') || 'позиций нет'))),
-    p.can_money ? h('div', { className: 'db-pace' },
+    node && node.here && node.node_type === 'building'
+      ? h('div', { className: 'ft-warn', 'data-testid': 'sm-not-split' }, `Объёмы не разнесены по этажам: ${node.here} поз. записаны на корпус целиком. Разнесение по этажам — в блоке прораба.`)
+      : null,
+    node && pos && pos.length ? h('div', { className: 'db-pos', 'data-testid': 'sm-place-positions' },
+      h('span', { className: 'pf-muted db-small' }, `Позиции на уровне «${node.name}»: ${pos.length}`),
+      h('ul', null, pos.map((x) => h('li', { key: x.position_id, 'data-position-id': x.position_id },
+        h('span', { className: 'db-ellipsis' }, x.work_name), h('span', { className: 'p2-num' }, `${fmtQty(x.fact_qty)} из ${fmtQty(x.plan_qty)} ${x.unit_code} · ${pctText(x.pct)}`))))) : null,
+    !node && p.can_money ? h('div', { className: 'db-pace' },
       h('span', { className: 'pf-muted' }, 'Темп'),
       h('div', { className: 'db-pace-row' }, h('span', null, 'За 14 дней'), h('b', { className: 'p2-num' }, rubDay(p.pace14))),
       h('div', { className: 'db-pace-row' }, h('span', null, `Нужно до ${dateOr(p.planned_finish, '—')}`), h('b', { className: 'p2-num' }, rubDay(p.need_pace))),
@@ -183,6 +225,13 @@ export const DASHBOARD_CSS = `
 .db-pace{border-top:1px solid var(--card-border);padding-top:12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
 .db-pace-row{display:flex;justify-content:space-between;gap:8px}
 .db-verdict{font-size:13px}
+.db-crumbs{font-size:12px;color:var(--text-muted);overflow-wrap:anywhere}
+.db-crumb{font:inherit;color:var(--text-main);background:none;border:0;padding:6px 0;min-height:32px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-align:left}
+.db-open{font-weight:700;font-size:13px;padding:2px 0;min-height:28px;min-width:0;overflow-wrap:anywhere}
+.db-crumb:focus-visible{outline:2px solid var(--p2-chart-fact);outline-offset:2px}
+.db-pos ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:320px;overflow:auto;font-size:12px}
+.db-pos li{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--card-border);padding:4px 0}
+.db-pos li>:last-child{white-space:nowrap;flex-shrink:0}
 @media (max-width:760px){
 .db-tiles,.db-tiles.db-tiles--4{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
 .db-actions{margin-left:0}

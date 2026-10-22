@@ -257,16 +257,17 @@ begin
 
   -- 9. Проваливание: Корпус 1 (всё) / Корпус 2 (пусто) → Секция 1 (+ двери на корпусе) → Этаж 1 (+ грунтовка на секции)
   select * into r from public.pf_summary_places(pa) p where p.location_id = b1;
+  res := res || pg_temp.t(r.here_positions = 1, 'Корпус 1: на самом корпусе 1 позиция (двери) (' || r.here_positions || ')');
   res := res || pg_temp.t(r.positions = 3 and r.children = 1 and r.plan_money = 21000 and r.done_money = 2700 and r.pct_money = 12.9
                           and jsonb_array_length(r.units) = 2, 'Корпус 1: 3 позиции, 21 000 / 2 700 ₽, 12,9 %, две ЕИ (' || r.units::text || ')');
   select * into r from public.pf_summary_places(pa) p where p.location_id = b2;
   res := res || pg_temp.t(r.positions = 0 and r.plan_money = 0 and r.pct_money is null, 'Корпус 2: пусто');
   select * into r from public.pf_summary_places(pa, b1) p;
   res := res || pg_temp.t(r.location_id = s1 and r.positions = 2 and r.here_positions = 1 and r.plan_money = 11000 and r.done_money = 1100,
-                          'Корпус 1 → Секция 1: 2 позиции, 11 000 / 1 100 ₽; на самом корпусе 1 позиция (' || r.plan_money || '/' || r.here_positions || ')');
+                          'Корпус 1 → Секция 1: 2 позиции, 11 000 / 1 100 ₽; на самой секции 1 (грунтовка) (' || r.plan_money || '/' || r.here_positions || ')');
   select * into r from public.pf_summary_places(pa, s1) p;
   res := res || pg_temp.t(r.location_id = f1 and r.positions = 1 and r.here_positions = 1 and r.done_money = 1100
-                          and r.units = '[{"pct": 10.0, "fact": 10, "plan": 100, "unit": "м²"}]'::jsonb, 'Секция 1 → Этаж 1: 10 из 100 м² (' || r.units::text || ')');
+                          and r.units = '[{"pct": 10.0, "fact": 10, "plan": 100, "unit": "м²"}]'::jsonb, 'Секция 1 → Этаж 1: 10 из 100 м², на этаже 1 позиция (' || r.units::text || ')');
   select count(*) into n from public.pf_summary_places(pa, f1);
   res := res || pg_temp.t(n = 0, 'у этажа детей нет');
   t := pg_temp.err(format('select * from public.pf_summary_places(%L, %L)', pa, lb));

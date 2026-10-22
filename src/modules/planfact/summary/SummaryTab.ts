@@ -13,6 +13,7 @@ import { Ks2Gap } from './Ks2Gap.ts';
 import { Dashboard, PERIODS } from './Dashboard.ts';
 import type { Period } from './Dashboard.ts';
 import { StatusBadge } from '../../../platform/ui/index.ts';
+import type { SummaryLinks } from './Attention.ts';
 
 /** Порядок объектов: сначала самые отстающие (дни отставания с сервера), без данных — в конце. */
 export function byLag(a: SummaryProject, b: SummaryProject): number {
@@ -21,8 +22,8 @@ export function byLag(a: SummaryProject, b: SummaryProject): number {
   return a.name.localeCompare(b.name, 'ru');
 }
 
-export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: string) => void }): ReactElement {
-  const { api, save } = props;
+export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: string) => void; links?: SummaryLinks }): ReactElement {
+  const { api, save, links } = props;
   const [list, setList] = useState<SummaryProject[] | null>(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
@@ -54,7 +55,7 @@ export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: s
           PERIODS.map((w) => chip(period === w, `${w} недель`, () => setPeriod(w), String(w), 'sm-chip-period'))))
     : null;
   const dash = (p: SummaryProject): ReactElement => h('div', { className: 'sm-dash' },
-    h(Dashboard, { api, p, period, actions: p.can_manage
+    h(Dashboard, { api, p, period, links, onDates: p.can_manage ? () => setEditing(true) : undefined, actions: p.can_manage
       ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-dates-btn', onClick: () => setEditing(!editing) }, editing ? 'Закрыть' : 'Даты проекта')
       : null }),
     editing && p.can_manage ? h(DatesForm, { api, p, onSaved: () => { setEditing(false); void load(); } }) : null);

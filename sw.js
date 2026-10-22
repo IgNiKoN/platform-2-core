@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.59.81';
+const SW_VERSION = '18.59.82';
 const CACHE_PREFIX = 'platform2-';
 const CACHE_NAME = `${CACHE_PREFIX}v${SW_VERSION}`;
 

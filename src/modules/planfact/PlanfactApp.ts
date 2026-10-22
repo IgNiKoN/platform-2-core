@@ -140,7 +140,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
       ? 'Войдите, чтобы увидеть сводку, ВОР, факт и акты КС-2. Без входа доступен только разбор файла ВОР.'
       : 'Сервер не настроен — вход недоступен. Без входа доступен только разбор файла ВОР.';
   const body = sm
-    ? h('div', { className: 'pf-root' }, h(SummaryTab, { api: summaryApi! }))
+    ? h('div', { className: 'pf-root' }, h(SummaryTab, { api: summaryApi!, links: { go: (pg) => nav(`${BASE}/${pg}`), can: { ks2: !!canKs2, estimate: !!canEstimate, fact: true } } }))
     : k2
     ? h('div', { className: 'pf-root' }, h(Ks2Tab, { api: ks2Api!, vor: vorApi! }))
     : fct

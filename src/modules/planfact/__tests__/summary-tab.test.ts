@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 import { settle } from '../../../test-utils/settle.ts';
 import type { SummaryProject } from '../summary/summary.service.ts';
-import { GAP, makeFakeSummary, PLACES, PTO_PROJECT } from './summary-fake.ts';
+import { ATTENTION, GAP, makeFakeSummary, PLACES, POSITIONS, PTO_PROJECT } from './summary-fake.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -83,7 +83,8 @@ test('недели для графика: от плановой даты нач�
 test('прораб: ₽, % и отставание не приходят — рублёвых плиток и графиков нет; светофор, план на сегодня, сроки, объёмы недель есть', async () => {
   const fore: SummaryProject = { ...PTO_PROJECT, can_money: false, can_manage: false, can_thresholds: false, plan_money: null, done_money: null, issued_money: null,
     gap_money: null, pct_money: null, pace7: null, pace14: null, need_pace: null, forecast_finish: null, lag_pp: null, lag_days: null };
-  const el = mount(makeFakeSummary([fore], { places: { root: PLACES.map((x) => ({ ...x, plan_money: null, done_money: null, pct_money: null })) } }).api);
+  const el = mount(makeFakeSummary([fore], { places: { root: PLACES.map((x) => ({ ...x, plan_money: null, done_money: null, pct_money: null })) },
+    attention: { ...ATTENTION, counts: { ...ATTENTION.counts, gap_money: null }, gap: ATTENTION.gap.map((g) => ({ ...g, money: null })) } }).api);
   await tick();
   const d = el.querySelector('[data-testid="sm-dashboard"]');
   for (const id of ['plan', 'done', 'issued', 'gap', 'lag', 'forecast']) assert.equal(tile(d, id), null, id);
@@ -247,4 +248,64 @@ test('«Скачать Excel»: берёт с сервера виды работ
   assert.match(saved[0].n, /^Сводка ЖК Сводка \d\d\.\d\d\.\d{4}\.xlsx$/);
   assert.ok(saved[0].size > 1000);
   assert.ok(f.calls.includes('positions:pr1:null'));
+});
+
+test('«Требует внимания»: строки с сервера, переход в КС-2 / Смету / Факт, даты — открывают форму; полнота данных', async () => {
+  const f = makeFakeSummary([PTO_PROJECT], { attention: { ...ATTENTION, counts: { ...ATTENTION.counts, no_dates: true, pending_entries: 2 } } });
+  const went: string[] = [];
+  const el = win.document.createElement('div');
+  win.document.body.appendChild(el);
+  flushSync(() => createRoot(el as unknown as HTMLElement).render(createElement(SummaryTab, { api: f.api, links: { go: (pg: string) => went.push(pg), can: { ks2: true, estimate: false, fact: true } } } as N)));
+  await tick();
+  const at = (el as N).querySelector('[data-testid="sm-attention"]');
+  assert.ok(f.calls.includes('attention:pr1'));
+  const ids = [...at.querySelectorAll('[data-attention]')].map((x: N) => x.getAttribute('data-attention'));
+  assert.deepEqual(ids, ['no_dates', 'gap', 'unpriced', 'stale', 'pending']);
+  assert.match(at.querySelector('[data-attention="gap"]').textContent, /Сделано, не выставлено в КС-2 на 300,00 ₽ — строк: 1/);
+  assert.match(at.querySelector('[data-attention="gap"] details').textContent, /1\.1 Штукатурка стен — 1 м2 · 300,00 ₽/);
+  at.querySelector('[data-attention="gap"] [data-testid="sm-attention-go"]').click();
+  at.querySelector('[data-attention="stale"] [data-testid="sm-attention-go"]').click();
+  assert.deepEqual(went, ['ks2', 'fact']);
+  assert.equal(at.querySelector('[data-attention="unpriced"] [data-testid="sm-attention-go"]'), null, 'без доступа к смете — без кнопки');
+  at.querySelector('[data-attention="no_dates"] [data-testid="sm-attention-go"]').click(); await tick();
+  assert.ok((el as N).querySelector('[data-testid="sm-dates-form"]'), '«Указать даты» открывает форму дат');
+  const full = (el as N).querySelector('[data-testid="sm-completeness"]');
+  assert.match(full.querySelector('[data-full="priced"]').textContent, /75 %.*3 из 4/);
+  assert.match(full.querySelector('[data-full="placed"]').textContent, /100 %.*3 из 3/);
+});
+
+test('прораб: «требует внимания» без ₽, счётчики есть; замечаний нет — понятное сообщение', async () => {
+  const fore: SummaryProject = { ...PTO_PROJECT, can_money: false, can_manage: false, plan_money: null, done_money: null, pct_money: null, lag_pp: null, lag_days: null };
+  const el = mount(makeFakeSummary([fore], { attention: { ...ATTENTION, counts: { ...ATTENTION.counts, gap_money: null }, gap: ATTENTION.gap.map((g) => ({ ...g, money: null })) } }).api);
+  await tick();
+  const at = el.querySelector('[data-testid="sm-attention"]');
+  assert.match(at.querySelector('[data-attention="gap"]').textContent, /строк: 1/);
+  assert.ok(!/₽/.test(at.textContent));
+  const ok = mount(makeFakeSummary([PTO_PROJECT], { attention: { ...ATTENTION, counts: { no_kp: false, no_dates: false, gap_rows: 0, gap_money: 0, unpriced_rows: 0, stale_positions: 0, pending_entries: 0 } } }).api);
+  await tick();
+  assert.ok(ok.querySelector('[data-testid="sm-attention-ok"]'));
+});
+
+test('проваливание: корпус → секция → этаж → позиции; позиции на корпусе — подсказка «не разнесено по этажам»', async () => {
+  const pl = (id: string, name: string, node_type: string, children: number, here: number, positions = 1) =>
+    ({ ...PLACES[0], location_id: id, name, node_type, children, here_positions: here, positions });
+  const places = { root: [pl('b1', 'Корпус 1', 'building', 1, 1, 3)], b1: [pl('s1', 'Секция 1', 'section', 1, 0, 2)], s1: [pl('f1', 'Этаж 5', 'floor', 0, 1)], f1: [] };
+  const positions = [{ ...POSITIONS[0], location_id: 'b1' }, { ...POSITIONS[1], location_id: 'f1' }];
+  const f = makeFakeSummary([PTO_PROJECT], { places, positions });
+  const el = mount(f.api);
+  await tick();
+  const panel = () => el.querySelector('[data-testid="sm-places"]');
+  panel().querySelector('[data-location-id="b1"] [data-testid="sm-place-open"]').click(); await tick();
+  assert.ok(f.calls.includes('places:pr1:b1'));
+  assert.match(panel().querySelector('[data-testid="sm-crumbs"]').textContent, /Все › Корпус 1/);
+  assert.ok(panel().querySelector('[data-location-id="s1"]'));
+  assert.match(panel().querySelector('[data-testid="sm-not-split"]').textContent, /не разнесены по этажам: 1 поз\./);
+  assert.match(panel().querySelector('[data-testid="sm-place-positions"]').textContent, /Штукатурка стен.*10 из 100 м²/);
+  panel().querySelector('[data-location-id="s1"] [data-testid="sm-place-open"]').click(); await tick();
+  panel().querySelector('[data-location-id="f1"] [data-testid="sm-place-open"]').click(); await tick();
+  assert.match(panel().querySelector('[data-testid="sm-crumbs"]').textContent, /Все › Корпус 1 › Секция 1 › Этаж 5/);
+  assert.equal(panel().querySelector('[data-testid="sm-not-split"]'), null, 'этаж — без подсказки');
+  assert.ok(panel().querySelector('[data-position-id="p14"]'));
+  [...panel().querySelectorAll('[data-testid="sm-crumbs"] button')].find((b: N) => b.textContent === 'Все').click(); await tick();
+  assert.ok(panel().querySelector('[data-location-id="b1"]'));
 });

@@ -396,19 +396,16 @@ end $$;
 
 -- Проваливание: дети узла p_location (null — верхний уровень проекта) с итогами по поддереву: позиций, план и сделано ₽ (по договорной
 -- КП — planfact.position_money; только с money.view), % по деньгам, объёмы по ЕИ (план, факт, % — разные ЕИ не складываются).
--- here_positions — позиции, привязанные прямо к узлу p_location (не к его детям); для p_location = null — 0.
+-- here_positions — позиции, привязанные прямо к этому месту (не к его детям): например, объёмы корпуса, не разнесённые по этажам.
 create or replace function public.pf_summary_places(p_project uuid, p_location uuid default null)
 returns table(location_id uuid, name text, node_type text, depth int, children int, positions int, here_positions int,
               plan_money numeric, done_money numeric, pct_money numeric, units jsonb)
 language plpgsql stable security definer set search_path = pg_catalog, planfact as $$
-declare v_money boolean; v_today date := planfact.fact_today(); v_kp uuid; v_here int := 0;
+declare v_money boolean; v_today date := planfact.fact_today(); v_kp uuid;
 begin
   v_money := planfact.require_summary_view(p_project);
-  if p_location is not null then
-    if not exists (select 1 from planfact.locations l where l.id = p_location and l.project_id = p_project and l.deleted_at is null) then
-      raise exception 'Место не найдено в проекте' using errcode = '22023';
-    end if;
-    select count(*)::int into v_here from planfact.vor_positions p where p.project_id = p_project and p.location_id = p_location;
+  if p_location is not null and not exists (select 1 from planfact.locations l where l.id = p_location and l.project_id = p_project and l.deleted_at is null) then
+    raise exception 'Место не найдено в проекте' using errcode = '22023';
   end if;
   select st.contract_kp_revision_id into v_kp from planfact.ks2_settings st where st.project_id = p_project;
   return query
@@ -437,7 +434,7 @@ begin
   )
   select l.id, l.name, l.node_type, l.depth,
          (select count(*)::int from planfact.locations c where c.parent_id = l.id and c.deleted_at is null),
-         coalesce(agg.n, 0), v_here,
+         coalesce(agg.n, 0), (select count(*)::int from planfact.vor_positions vp where vp.project_id = p_project and vp.location_id = l.id),
          case when v_money and v_kp is not null then round(coalesce(agg.pm, 0), 2) end,
          case when v_money and v_kp is not null then round(coalesce(agg.dm, 0), 2) end,
          case when v_money and agg.pm > 0 then round(agg.dm / agg.pm * 100, 1) end,
