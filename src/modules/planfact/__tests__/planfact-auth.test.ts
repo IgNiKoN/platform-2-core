@@ -1,5 +1,5 @@
 /// <reference types="node" />
-/** Вход/выход/шапка экрана «План/Факт» с подставным AuthApi (без сети). DOM — happy-dom. */
+/** Шапка и выход экрана «План/Факт» с подставным AuthApi (без сети); вход — общий экран платформы (P2-0013). DOM — happy-dom. */
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
@@ -54,51 +54,43 @@ test('без настроек сервера — сразу локальный �
   assert.ok(!el.querySelector('[data-testid="pf-login"]'));
 });
 
-test('есть сервер, нет сессии → форма входа; данные не показаны', async () => {
+test('есть сервер, нет сессии → своей формы входа нет: подсказка «Войдите», «Войти» открывает общий экран «Вход»', async () => {
+  let opened = 0;
+  (win as N).RBI = { platform2: { showLogin: () => { opened++; } } };
   const { el } = mount(fakeAuth({ password: 'ok' }));
   await tick();
-  assert.ok(el.querySelector('[data-testid="pf-login"]'));
+  assert.ok(!el.querySelector('[data-testid="pf-login"]') && !el.querySelector('input[type=password]'));
+  assert.match(el.querySelector('[data-testid="pf-hint"]')?.textContent || '', /Войдите/);
   assert.ok(!el.querySelector('[data-work-id]'));
+  click(Array.from(el.querySelectorAll('button')).find((b) => b.textContent === 'Войти')!);
+  assert.equal(opened, 1);
+  delete (win as N).RBI;
 });
 
-test('неверный пароль → понятное сообщение, форма остаётся', async () => {
-  const { el } = mount(fakeAuth({ password: 'ok' }));
-  await tick();
-  setValue(el.querySelector('input[name=email]')!, 'a@b.c');
-  setValue(el.querySelector('input[name=password]')!, 'bad');
-  (el.querySelector("form") as N).dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
-  await tick();
-  assert.match(el.textContent || '', /Неверная почта или пароль/);
-  assert.ok(el.querySelector('[data-testid="pf-login"]'));
-});
-
-test('верный пароль → шапка «почта · компания · роль»; без доступа к компании — подсказка; выход скрывает данные', async () => {
-  const auth = fakeAuth({ password: 'ok' });
+test('вошёл → полоса «почта · компания · роль»; «Выйти» — общий выход платформы, данные скрыты', async () => {
+  const auth = fakeAuth({ password: 'ok', signedIn: true });
+  let out = 0;
+  (win as N).RBI = { platform2: { signOut: async () => { out++; await auth.signOut(); } } };
   const { el } = mount(auth);
-  await tick();
-  setValue(el.querySelector('input[name=email]')!, 'pto@test.invalid');
-  setValue(el.querySelector('input[name=password]')!, 'ok');
-  (el.querySelector("form") as N).dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
   await tick();
   const bar = el.querySelector('[data-testid="pf-user"]');
   assert.ok(bar && /pto@test\.invalid/.test(bar.textContent || '') && /Альфа · Инженер ПТО/.test(bar.textContent || ''));
   assert.match(el.querySelector('[data-testid="pf-hint"]')?.textContent || '', /Нет доступных объектов/);
-  assert.ok(!el.querySelector('[data-work-id]'));
-  const out = Array.from(el.querySelectorAll('button')).find((b) => b.textContent === 'Выйти')!;
-  click(out);
+  click(Array.from(el.querySelectorAll('button')).find((b) => b.textContent === 'Выйти')!);
   await tick();
-  assert.deepEqual(auth.calls.includes('signOut'), true);
-  assert.ok(el.querySelector('[data-testid="pf-login"]'));
-  assert.ok(!el.querySelector('[data-work-id]'));
+  assert.equal(out, 1);
+  assert.match(el.querySelector('[data-testid="pf-hint"]')?.textContent || '', /Войдите/);
+  assert.ok(!el.querySelector('[data-testid="pf-user"]'));
+  delete (win as N).RBI;
 });
 
-test('«Работать локально» — без входа подсказка «войдите», данных нет', async () => {
-  const { el } = mount(fakeAuth({ password: 'ok' }));
+test('без оболочки «Выйти» завершает сессию сервиса входа', async () => {
+  const auth = fakeAuth({ password: 'ok', signedIn: true });
+  const { el } = mount(auth);
   await tick();
-  click(Array.from(el.querySelectorAll('button')).find((b) => /Работать локально/.test(b.textContent || ''))!);
+  click(Array.from(el.querySelectorAll('button')).find((b) => b.textContent === 'Выйти')!);
   await tick();
-  assert.match(el.querySelector('[data-testid="pf-hint"]')?.textContent || '', /Войдите/);
-  assert.ok(!el.querySelector('[data-work-id]'));
+  assert.ok(auth.calls.includes('signOut'));
 });
 
 test('mapAuthError: понятные сообщения', () => {

@@ -83,6 +83,17 @@ var SettingsRender = {
 
             <div class="settings-panels">
             <div id="settings-panel-platform" data-settings-panel="platform" class="space-y-3">
+                <!-- P2-0013: кто вошёл в Platform 2.0 (почта) и «Выйти»; рисует _syncP2Account по состоянию входа платформы -->
+                <div id="settings-p2-account" hidden
+                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="text-rbi-caption font-black uppercase tracking-widest text-muted">Вход в Platform 2.0</div>
+                        <div id="settings-p2-account-who" class="text-rbi-body font-bold truncate"></div>
+                        <div id="settings-p2-company" class="mt-2"></div>
+                    </div>
+                    <button type="button" id="settings-p2-signout"
+                        class="min-h-[40px] px-4 rounded-xl border border-[var(--card-border)] font-black text-rbi-caption uppercase tracking-widest active:scale-95">Выйти</button>
+                </div>
                 <!-- СИНХРОНИЗАЦИЯ КОМАНДЫ -->
                 <details
                     class="bg-[var(--card-bg)] border border-brand-soft rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden"
@@ -1717,6 +1728,31 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         }
     }
     window.addEventListener('rbi:platform-access', _syncCompanyTab);
+
+    /** P2-0013: «Настройки → Платформа» — кто вошёл почтой и «Выйти» (общий выход платформы → экран «Вход»). */
+    function _syncP2Account() {
+        var box = document.getElementById('settings-p2-account');
+        if (!box) return;
+        var p2 = window.RBI && window.RBI.platform2;
+        var st = p2 && typeof p2.getState === 'function' ? p2.getState() : null;
+        var on = !!(st && st.mode === 'email' && st.email);
+        box.hidden = !on;
+        if (!on) return;
+        var cur = (st.companies || []).filter(function (c) { return c.id === st.companyId; })[0];
+        var who = document.getElementById('settings-p2-account-who');
+        var role = cur && cur.roles && cur.roles[0] ? cur.roles[0] : (st.isPlatformAdmin ? 'администратор платформы' : '');
+        if (who) who.textContent = st.email + (cur ? ' \u00b7 ' + cur.name : '') + (role ? ' \u00b7 ' + role : '');
+        if (typeof p2.renderCompanySwitch === 'function') p2.renderCompanySwitch(document.getElementById('settings-p2-company'));
+        var btn = document.getElementById('settings-p2-signout');
+        if (btn && !btn.dataset.bound) {
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var api = window.RBI && window.RBI.platform2;
+                if (api && typeof api.signOut === 'function') api.signOut();
+            });
+        }
+    }
+    window.addEventListener('rbi:platform-access', _syncP2Account);
     function _mountCompanyPanel(on) {
         var host = window.RBI && window.RBI.platformPanels && window.RBI.platformPanels.company;
         var panel = document.getElementById('settings-panel-company');
@@ -1887,6 +1923,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         }
         var companyBtn = document.getElementById('settings-subnav-company');
         if (companyBtn) companyBtn.hidden = !_companyAllowed();
+        _syncP2Account();
         var initial = null;
         if (window.AppRouter && typeof window.AppRouter.subTabIdFromPath === 'function') {
             var hash = window.location.hash || '';

@@ -175,10 +175,10 @@ test('без права security.roles.assign — раздел говорит «
   assert.equal(rolesAsked, false);
 });
 
-test('не вошёл — общая форма входа; без сервера — сообщение', async () => {
+test('не вошёл — своей формы входа нет, «Войти» ведёт на общий экран; без сервера — сообщение', async () => {
   const el = mountApp(fakeAuth(false), fakeApi().api);
   await tick();
-  assert.ok(el.querySelector('[data-testid=pf-login]'));
+  assert.ok(el.querySelector('[data-testid=co-login]') && !el.querySelector('input[type=password]'));
   const off = mountApp(null, null);
   assert.ok(off.querySelector('[data-testid=co-offline]'));
 });

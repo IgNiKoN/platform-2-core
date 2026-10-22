@@ -1,5 +1,5 @@
 /**
- * Оболочка экрана «План/Факт»: вход (общая форма платформы LoginForm), шапка «кто · компания · роль», выход.
+ * Оболочка экрана «План/Факт»: шапка «кто · компания · роль», выход. Вход — общий экран «Вход» платформы (P2-0013), своей формы нет.
  * Нет настроек сервера → локальный режим без входа (только разбор файла ВОР). «Работать локально» остаётся всегда.
  * P2-0009: страница по умолчанию и для разделов без права — «Сводка»; старая демо-таблица «Работы» больше не показывается
  * (PlanfactTable/PlanfactWorks не удалены — отдельным решением, ТД).
@@ -7,7 +7,7 @@
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { AccessEntry, AuthApi } from '../../platform/auth/auth.service.ts';
-import { LoginForm, PLATFORM_AUTH_CSS } from '../../platform/auth/LoginForm.ts';
+import { PLATFORM_AUTH_CSS } from '../../platform/auth/LoginForm.ts';
 import { CompanyScope } from '../../platform/company/CompanyScope.ts';
 import { ProjectsTab } from '../../platform/company/ProjectsTab.ts';
 import { UnitsTab } from '../../platform/company/UnitsTab.ts';
@@ -21,7 +21,7 @@ import { OverheadTemplateTab } from './estimate/OverheadsEditor.ts';
 import type { EstimateApi } from './estimate/estimate.service.ts';
 import { Ks2Tab } from './ks2/Ks2Tab.ts';
 import { SummaryTab } from './summary/SummaryTab.ts';
-import { showShellUser, restoreShellUser } from '../../platform/auth/shell-user.ts';
+import { showShellUser, restoreShellUser, openPlatformLogin, platformSignOut, readPlatformView, setPlatformCompany, platformRoleLabel, PLATFORM_ACCESS_EVENT } from '../../platform/auth/shell-user.ts';
 import type { SummaryApi } from './summary/summary.service.ts';
 import type { Ks2Api } from './ks2/ks2.service.ts';
 import { KS2_EDIT, KS2_VIEW } from './ks2/ks2.service.ts';
@@ -30,7 +30,7 @@ import type { DataApi } from './data.service.ts';
 import type { VorApi } from './vor/vor.service.ts';
 import type { PlanfactDemo } from './model.ts';
 
-type Mode = 'loading' | 'login' | 'authed' | 'demo';
+type Mode = 'loading' | 'authed' | 'demo';
 const BASE = '#/planfact';
 /** Событие модуля: маршрут #/planfact… показан (его шлёт index.ts при каждом переходе роутера). */
 export const ROUTE_EVENT = 'planfact:route';
@@ -82,6 +82,13 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const [companies, setCompanies] = useState<CompanyAccess[]>([]);
   const [canEstimate, setCanEstimate] = useState(false);
   const [canKs2, setCanKs2] = useState(false);
+  const [p2, setP2] = useState(readPlatformView());
+
+  useEffect(() => {
+    const onP2 = (): void => setP2(readPlatformView());
+    window.addEventListener(PLATFORM_ACCESS_EVENT, onP2);
+    return () => window.removeEventListener(PLATFORM_ACCESS_EVENT, onP2);
+  }, []);
 
   useEffect(() => {
     const onHash = (): void => setRoute(routeFromHash(window.location.hash));
@@ -93,7 +100,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 
   async function enter(a: AuthApi): Promise<void> {
     const mail = await a.getEmail();
-    if (!mail) { setMode('login'); return; }
+    if (!mail) { reset(); setMode('demo'); return; }
     setWho(mail);
     setAccess(await a.getAccess());
     const comp = projects ? await projects.myAccess() : [];
@@ -110,8 +117,12 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     setMode('authed');
   }
 
+  // Вход и выход — на общем экране «Вход» платформы (P2-0013); раздел только перечитывает, кто вошёл.
   useEffect(() => {
-    if (auth) void enter(auth);
+    if (!auth) return undefined;
+    if (auth.onAuthChange) return auth.onAuthChange(() => { void enter(auth); });
+    void enter(auth);
+    return undefined;
   }, []);
 
   // Адрес без права / неизвестный — заменить на открытый экран (replace: «назад» не возвращает на недоступный адрес).
@@ -125,26 +136,33 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     if (r && typeof r.navigate === 'function') r.navigate(fix, true); else { window.history.replaceState(null, '', fix); setRoute(routeFromHash(fix)); }
   }, [fix]);
 
-  async function logout(): Promise<void> {
-    if (auth) await auth.signOut();
+  function reset(): void {
     restoreShellUser();
-    setWho(''); setAccess([]); setCompanies([]); setCanEstimate(false); setCanKs2(false); if (onAccess) onAccess(false, false, false); setMode('login');
+    setWho(''); setAccess([]); setCompanies([]); setCanEstimate(false); setCanKs2(false); if (onAccess) onAccess(false, false, false);
+  }
+
+  async function logout(): Promise<void> {
+    await platformSignOut(auth ? () => auth.signOut() : null);
+    reset(); setMode('demo');
   }
 
   if (mode === 'loading') return h('div', { className: 'pf-root pf-muted' }, 'Загрузка…');
 
-  if (mode === 'login' && auth) {
-    return h(LoginForm, { auth, title: 'Вход в План/Факт', onDone: () => { void enter(auth); },
-      extra: h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setMode('demo') }, 'Работать локально (демо)') });
-  }
-
   const bar = mode === 'authed'
     ? h('div', { className: 'pf-bar', 'data-testid': 'pf-user' },
-        h('span', null, h('b', null, who), ' · ', accessLabel(access)),
+        p2
+          ? h('span', { className: 'pf-bar-who' }, h('b', null, who), ' · ',
+              p2.companies.length > 1
+                ? h('select', { className: 'pf-bar-company', 'aria-label': 'Компания', 'data-testid': 'pf-company', value: p2.companyId || '',
+                    onChange: (e: { target: EventTarget | null }) => setPlatformCompany((e.target as HTMLSelectElement).value) },
+                    p2.companies.map((c) => h('option', { key: c.id, value: c.id }, 'Компания: ' + c.name)))
+                : (p2.companies.find((c) => c.id === p2.companyId)?.name || ''),
+              ' · ', platformRoleLabel(p2))
+          : h('span', null, h('b', null, who), ' · ', accessLabel(access)),
         h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: logout }, 'Выйти'))
     : auth
       ? h('div', { className: 'pf-bar' }, h('span', null, 'Локальный демо-режим, без входа'),
-          h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => setMode('login') }, 'Войти'))
+          h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: openPlatformLogin }, 'Войти'))
       : null;
 
   // «Справочники» открываются, только если сервер дал доступ к компании (пункт меню показывается по тому же признаку).
@@ -211,6 +229,8 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 }
 
 export const PLANFACT_TABS_CSS = `
+.pf-bar-who{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0}
+.pf-bar-company{max-width:100%;font-size:12px;font-weight:700;min-height:36px;padding:4px 8px;border:1px solid var(--card-border);border-radius:10px;background:var(--card-bg);color:var(--text-main)}
 .pf-dirhead{padding-bottom:0;display:flex;flex-direction:column;gap:12px}
 .pf-hint{padding:16px;display:flex;flex-direction:column;align-items:flex-start;gap:12px;font-size:14px}
 .pf-seg{display:flex;flex-wrap:nowrap;gap:var(--rbi-subtab-gap,6px);padding:4px;border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg);overflow-x:auto;-webkit-overflow-scrolling:touch}

@@ -221,46 +221,11 @@
         <div id="global-loader-text" class="text-white font-black text-[12px] uppercase tracking-widest animate-pulse">
             Формирование PDF...</div>
     </div>
-    <!-- === AUTH GATE (первый запуск) === -->
+    <!-- === ВХОД (P2-0013): экран «Вход» рисует вход платформы js/dist/platform/platform.js (src/platform/auth/login-screen.ts) === -->
     <div id="auth-gate-overlay"
         class="fixed inset-0 bg-slate-900/90 z-[10000] hidden flex items-center justify-center p-4 backdrop-blur-md">
-        <div class="bg-[var(--card-bg)] w-full max-w-sm p-6 rounded-3xl shadow-2xl border border-slate-200/50 dark:border-slate-700/50">
-            <div class="font-black text-[15px] uppercase tracking-tight mb-2 text-slate-800 dark:text-white text-center">
-                RBI Platform</div>
-            <div class="text-[12px] text-[var(--text-muted)] text-center mb-5">
-                Выберите режим работы</div>
-            <div id="auth-gate-choice" class="space-y-3">
-                <button data-shell-action="hideAuthGate"
-                    class="w-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-sm active:scale-95 border border-slate-200 dark:border-slate-700">
-                    Работать локально
-                </button>
-                <button onclick="document.getElementById('auth-gate-choice').classList.add('hidden'); document.getElementById('auth-gate-connect').classList.remove('hidden');"
-                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-md active:scale-95">
-                    Войти в облако
-                </button>
-            </div>
-            <div id="auth-gate-connect" class="hidden space-y-3">
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Имя (Фамилия И.О.) *</label>
-                    <input type="text" id="gate-sync-name" class="input-base" placeholder="Иванов И.И.">
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Код компании *</label>
-                    <input type="text" id="gate-sync-code" class="input-base" placeholder="Например: RBI-COMPANY">
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">ПИН-код (Опционально)</label>
-                    <input type="password" id="gate-sync-pin" autocomplete="new-password" class="input-base" placeholder="4 цифры" maxlength="4" inputmode="numeric">
-                </div>
-                <button data-shell-action="submitAuthGateConnect"
-                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-md active:scale-95">
-                    Подключиться
-                </button>
-                <button onclick="document.getElementById('auth-gate-connect').classList.add('hidden'); document.getElementById('auth-gate-choice').classList.remove('hidden');"
-                    class="w-full text-slate-400 py-2 font-bold text-[10px] uppercase active:scale-95">
-                    Назад
-                </button>
-            </div>
+        <div data-p2-login-host class="w-full flex items-center justify-center">
+            <div class="text-white/80 text-[12px] font-bold uppercase tracking-widest animate-pulse">Загрузка…</div>
         </div>
     </div>
     <!-- === PLATFORM ENTRY: выбор рабочих модулей (App Shell Блок 2, §29 п.9, multi-select) === -->

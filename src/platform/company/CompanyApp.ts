@@ -6,7 +6,7 @@
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { AuthApi } from '../auth/auth.service.ts';
-import { LoginForm } from '../auth/LoginForm.ts';
+import { openPlatformLogin, platformSignOut } from '../auth/shell-user.ts';
 import { CompanyRoles } from './CompanyRoles.ts';
 import { CompanyMembers, COMPANY_MEMBERS_CSS } from './CompanyMembers.ts';
 import { CompanyAudit } from './CompanyAudit.ts';
@@ -61,10 +61,15 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
     setMode(list.length ? 'ready' : 'noaccess');
   }
 
-  useEffect(() => { void enter(); }, []);
+  // Вход и выход — на общем экране «Вход» платформы (P2-0013); раздел перечитывает, кто вошёл.
+  useEffect(() => {
+    if (auth && auth.onAuthChange) return auth.onAuthChange(() => { void enter(); });
+    void enter();
+    return undefined;
+  }, []);
 
   async function logout(): Promise<void> {
-    if (auth) await auth.signOut();
+    await platformSignOut(auth ? () => auth.signOut() : null);
     setWho(''); setCompanies([]); setCompanyId(''); setMode('login');
   }
 
@@ -72,7 +77,10 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
     return h('div', { className: 'pf-root pf-muted', 'data-testid': 'co-offline' }, 'Раздел «Компания» работает только с сервером — вход не настроен.');
   }
   if (mode === 'loading') return h('div', { className: 'pf-root pf-muted' }, 'Загрузка…');
-  if (mode === 'login') return h(LoginForm, { auth, title: 'Вход: Компания', onDone: () => { void enter(); } });
+  if (mode === 'login') {
+    return h('div', { className: 'pf-root pf-hint', 'data-testid': 'co-login' }, h('div', { className: 'pf-muted' }, 'Войдите, чтобы управлять компанией.'),
+      h('button', { type: 'button', className: 'pf-btn', onClick: openPlatformLogin }, 'Войти'));
+  }
 
   const bar = h('div', { className: 'pf-bar', 'data-testid': 'co-user' },
     h('span', null, h('b', null, who),

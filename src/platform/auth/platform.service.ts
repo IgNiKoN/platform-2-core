@@ -1,0 +1,153 @@
+/**
+ * Один вход Platform 2.0 (P2-0013, ADR-064): кто вошёл и как, мои компании и доступные модули — по ответу сервера pf_my_platform.
+ * Способы входа: почта + пароль (сессия Supabase, auth.service — единственное хранилище сессии), старый PIN Quality
+ * (свой код sync-*.js, здесь только «вошёл ли»), демо без входа (выбор запоминается на устройстве).
+ * Права здесь не решаются: модули и признаки приходят с сервера; меню и экраны только читают это состояние.
+ */
+import type { AuthApi, SignInResult } from './auth.service.ts';
+
+export type EntryMode = 'none' | 'email' | 'pin' | 'demo';
+
+export interface PlatformCompany {
+  id: string;
+  name: string;
+  is_test: boolean;
+  roles: string[];
+  modules: string[];
+  can_manage_company: boolean;
+}
+
+export interface PlatformState {
+  mode: EntryMode;
+  email: string | null;
+  isPlatformAdmin: boolean;
+  companies: PlatformCompany[];
+  companyId: string | null;
+}
+
+/** Флаги для меню и Настроек (window.RBI.platformMenuAccess): модули выбранной компании, «Компания», «Администрирование платформы». */
+export type PlatformAccess = Record<string, boolean>;
+
+export interface PlatformDeps {
+  auth: AuthApi | null;
+  rpc: ((fn: string) => Promise<{ data: unknown; error: unknown }>) | null;
+  storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null;
+  /** Вошёл ли человек по старому PIN-входу Quality (облако Quality включено и подключено). */
+  pinActive: () => boolean;
+}
+
+/** Ключи устройства — только свои (platform2_*); ключи старого Quality не читаются и не пишутся. */
+export const ENTRY_KEY = 'platform2_entry';
+export const COMPANY_KEY = 'platform2_company';
+
+const EMPTY: PlatformState = { mode: 'none', email: null, isPlatformAdmin: false, companies: [], companyId: null };
+
+function safeGet(s: PlatformDeps['storage'], k: string): string | null {
+  try { return s ? s.getItem(k) : null; } catch { return null; }
+}
+function safeSet(s: PlatformDeps['storage'], k: string, v: string | null): void {
+  try { if (!s) return; if (v === null) s.removeItem(k); else s.setItem(k, v); } catch { /* приватный режим — без запоминания */ }
+}
+
+export function parsePlatform(data: unknown): { isPlatformAdmin: boolean; companies: PlatformCompany[] } {
+  const d = (data && typeof data === 'object' ? data : {}) as { is_platform_admin?: unknown; companies?: unknown };
+  const list = Array.isArray(d.companies) ? d.companies : [];
+  return {
+    isPlatformAdmin: d.is_platform_admin === true,
+    companies: list.map((c: Record<string, unknown>) => ({
+      id: String(c.id), name: String(c.name || ''), is_test: c.is_test === true,
+      roles: Array.isArray(c.roles) ? c.roles.map(String) : [],
+      modules: Array.isArray(c.modules) ? c.modules.map(String) : [],
+      can_manage_company: c.can_manage_company === true
+    }))
+  };
+}
+
+export function accessFor(st: PlatformState): PlatformAccess {
+  const cur = st.companies.find((c) => c.id === st.companyId) || null;
+  const a: PlatformAccess = {
+    company: st.mode === 'email' && st.companies.some((c) => c.can_manage_company),
+    platformAdmin: st.mode === 'email' && st.isPlatformAdmin
+  };
+  if (st.mode === 'email' && cur) for (const m of cur.modules) a[m] = true;
+  return a;
+}
+
+export interface Platform {
+  boot(): Promise<PlatformState>;
+  refresh(): Promise<PlatformState>;
+  signIn(email: string, password: string): Promise<SignInResult>;
+  signOut(): Promise<void>;
+  chooseDemo(): void;
+  setCompany(id: string): void;
+  getState(): PlatformState;
+  access(): PlatformAccess;
+  subscribe(cb: (st: PlatformState) => void): () => void;
+}
+
+export function createPlatform(deps: PlatformDeps): Platform {
+  let state: PlatformState = { ...EMPTY };
+  const subs = new Set<(st: PlatformState) => void>();
+  const emit = (): void => { for (const cb of subs) cb(state); };
+
+  async function loadEmail(email: string): Promise<PlatformState> {
+    let parsed = { isPlatformAdmin: false, companies: [] as PlatformCompany[] };
+    if (deps.rpc) {
+      const { data, error } = await deps.rpc('pf_my_platform');
+      if (!error) parsed = parsePlatform(data);
+    }
+    const saved = safeGet(deps.storage, COMPANY_KEY);
+    const companyId = parsed.companies.some((c) => c.id === saved) ? saved
+      : (parsed.companies.find((c) => c.modules.length > 0) || parsed.companies[0] || null)?.id || null;
+    return { mode: 'email', email, isPlatformAdmin: parsed.isPlatformAdmin, companies: parsed.companies, companyId };
+  }
+
+  async function refresh(): Promise<PlatformState> {
+    const email = deps.auth ? await deps.auth.getEmail() : null;
+    if (email) {
+      state = await loadEmail(email);
+      safeSet(deps.storage, ENTRY_KEY, null);
+    } else if (deps.pinActive()) {
+      state = { ...EMPTY, mode: 'pin' };
+    } else if (safeGet(deps.storage, ENTRY_KEY) === 'demo') {
+      state = { ...EMPTY, mode: 'demo' };
+    } else {
+      state = { ...EMPTY };
+    }
+    emit();
+    return state;
+  }
+
+  return {
+    boot: refresh,
+    refresh,
+    async signIn(email, password) {
+      if (!deps.auth) return { ok: false, message: 'Сервер не настроен — вход недоступен' };
+      if (!email.trim() || !password) return { ok: false, message: 'Введите почту и пароль' };
+      const res = await deps.auth.signIn(email, password);
+      if (res.ok) await refresh();
+      return res;
+    },
+    async signOut() {
+      if (deps.auth) await deps.auth.signOut();
+      safeSet(deps.storage, ENTRY_KEY, null);
+      safeSet(deps.storage, COMPANY_KEY, null);
+      state = { ...EMPTY };
+      emit();
+    },
+    chooseDemo() {
+      safeSet(deps.storage, ENTRY_KEY, 'demo');
+      state = { ...EMPTY, mode: 'demo' };
+      emit();
+    },
+    setCompany(id) {
+      if (state.mode !== 'email' || !state.companies.some((c) => c.id === id) || state.companyId === id) return;
+      safeSet(deps.storage, COMPANY_KEY, id);
+      state = { ...state, companyId: id };
+      emit();
+    },
+    getState: () => state,
+    access: () => accessFor(state),
+    subscribe(cb) { subs.add(cb); return () => { subs.delete(cb); }; }
+  };
+}

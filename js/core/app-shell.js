@@ -149,17 +149,36 @@
       el.textContent = company.name + suffix;
       if (syncEl) el.dataset.hasSyncIndicator = '1';
     },
+    /**
+     * P2-0013: при открытии решает вход платформы (js/dist/platform/platform.js) — кто вошёл (почта / PIN / демо);
+     * никто — экран «Вход» поверх оболочки. Ключи старого Quality (rbi_auth_gate_seen) не читаются и не пишутся.
+     */
     shouldShowAuthGate: function () {
-      return !localStorage.getItem('rbi_auth_gate_seen');
+      return true;
+    },
+    _platformEntry: null,
+    loadPlatformEntry: function () {
+      if (!this._platformEntry) {
+        var url = new URL('./js/dist/platform/platform.js', document.baseURI).href;
+        this._platformEntry = import(url).then(function (m) { return m.api; });
+      }
+      return this._platformEntry;
     },
     showAuthGate: function () {
       var el = document.getElementById('auth-gate-overlay');
-      if (el) el.classList.remove('hidden');
+      // Сразу закрыть экран, если на устройстве нет ни сессии, ни выбора «демо» (без мелькания оболочки).
+      var known = false;
+      try { known = !!(localStorage.getItem('platform2-auth') || localStorage.getItem('platform2_entry')); } catch (e) { /* ignore */ }
+      if (el && !known) el.classList.remove('hidden');
+      this.loadPlatformEntry().then(function (api) { return api.start(); }).catch(function (e) {
+        console.error('[ShellService] вход платформы не загрузился', e);
+        if (el) el.classList.remove('hidden');
+      });
     },
     hideAuthGate: function () {
       var el = document.getElementById('auth-gate-overlay');
       if (el) el.classList.add('hidden');
-      localStorage.setItem('rbi_auth_gate_seen', '1');
+      window.dispatchEvent(new Event('platform2:refresh'));   // вход по PIN завершён — вход платформы перечитывает состояние
     },
     showPlatformEntry: function () {
       var el = document.getElementById('platform-entry-modal');
