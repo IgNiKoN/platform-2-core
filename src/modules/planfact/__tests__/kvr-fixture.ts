@@ -1,6 +1,8 @@
 /** Вымышленный файл вида «Шаблон оферты СМР» (P2-0012): колонка «Вид» КВР / Номенклатура; структура и объёмы — как у образца
  *  владельца (16 КВР, 41 строка Номенклатуры, Σ объёмов работ 160 015,28; сверка 25 / 1 расхождение), наименования вымышлены. */
+import ExcelJS from 'exceljs';
 import type { Cell, SheetData } from '../vor/parse.ts';
+import { colLetters } from '../vor/xlsx-writer.ts';
 
 const N = null;
 export const KVR_HEAD = ['УИД строки', '№', 'Комментарий', 'Вид', 'Наименование работ и затрат', 'Характеристика', 'Кол-во', 'Ед.изм.', 'Цена', 'Сумма',
@@ -84,4 +86,29 @@ export function kvrSheet(kvrWord = 'КВР', workWord = 'Номенклатур�
   rows.push([]);
   rows.push([N, 'Руководитель Контрагента']);
   return { name: 'Шаблон Excel', rows };
+}
+
+/** Тот же лист файлом .xlsx с формулами заказчика: Номенклатура — Цена = материал + работа, Сумма = Цена × Кол-во;
+ *  КВР — Сумма = SUMIF(«Вид» = "Номенклатура") по своим строкам, Цена = Сумма ÷ Кол-во. */
+export async function kvrOfferXlsx(): Promise<Uint8Array> {
+  const L = colLetters;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Шаблон Excel');
+  const rows = kvrSheet().rows;
+  rows.forEach((r, i) => { ws.getRow(i + 1).values = r.map((v) => (v === null ? undefined : v)) as ExcelJS.CellValue[]; });
+  const kvrRows: number[] = [];
+  rows.forEach((r, i) => { if (r[KVR_COL.type] === 'КВР') kvrRows.push(i + 1); });
+  rows.forEach((r, i) => {
+    const n = i + 1;
+    if (r[KVR_COL.type] === 'Номенклатура') {
+      ws.getCell(L(KVR_COL.price) + n).value = { formula: `${L(KVR_COL.mat)}${n}+${L(KVR_COL.lab)}${n}`, result: 0 };
+      ws.getCell(L(KVR_COL.sum) + n).value = { formula: `${L(KVR_COL.price)}${n}*${L(KVR_COL.qty)}${n}`, result: 0 };
+    } else if (r[KVR_COL.type] === 'КВР') {
+      const next = kvrRows.find((k) => k > n) || rows.length - 2;
+      const rng = (c: number): string => `${L(c)}${n + 1}:${L(c)}${next - 1}`;
+      ws.getCell(L(KVR_COL.sum) + n).value = { formula: `SUMIF(${rng(KVR_COL.type)},"Номенклатура",${rng(KVR_COL.sum)})`, result: 0 };
+      ws.getCell(L(KVR_COL.price) + n).value = { formula: `${L(KVR_COL.sum)}${n}/${L(KVR_COL.qty)}${n}`, result: 0 };
+    }
+  });
+  return new Uint8Array(await wb.xlsx.writeBuffer());
 }

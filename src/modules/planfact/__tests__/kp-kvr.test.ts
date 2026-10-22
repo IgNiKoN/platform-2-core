@@ -10,33 +10,9 @@ import { readWorkbook } from '../vor/xlsx-reader.ts';
 import { parseSheet } from '../vor/parse.ts';
 import { guessKpColumns, kpWrites } from '../estimate/kp.ts';
 import type { KpSnapshot } from '../estimate/kp.ts';
-import { kvrSheet, KVR_COL } from './kvr-fixture.ts';
+import { KVR_COL, kvrOfferXlsx as offer } from './kvr-fixture.ts';
 
 const L = (c: number): string => colLetters(c);
-
-/** Файл из вымышленного листа + формулы заказчика в «Цена» / «Сумма». */
-async function offer(): Promise<Uint8Array> {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Шаблон Excel');
-  const sheet = kvrSheet();
-  sheet.rows.forEach((r, i) => { ws.getRow(i + 1).values = r.map((v) => (v === null ? undefined : v)) as ExcelJS.CellValue[]; });
-  const rows = sheet.rows;
-  const kvrRows: number[] = [];
-  rows.forEach((r, i) => { if (r[KVR_COL.type] === 'КВР') kvrRows.push(i + 1); });
-  rows.forEach((r, i) => {
-    const n = i + 1;
-    if (r[KVR_COL.type] === 'Номенклатура') {
-      ws.getCell(L(KVR_COL.price) + n).value = { formula: `${L(KVR_COL.mat)}${n}+${L(KVR_COL.lab)}${n}`, result: 0 };
-      ws.getCell(L(KVR_COL.sum) + n).value = { formula: `${L(KVR_COL.price)}${n}*${L(KVR_COL.qty)}${n}`, result: 0 };
-    } else if (r[KVR_COL.type] === 'КВР') {
-      const next = kvrRows.find((k) => k > n) || rows.length - 2;
-      const rng = (c: number): string => `${L(c)}${n + 1}:${L(c)}${next - 1}`;
-      ws.getCell(L(KVR_COL.sum) + n).value = { formula: `SUMIF(${rng(KVR_COL.type)},"Номенклатура",${rng(KVR_COL.sum)})`, result: 0 };
-      ws.getCell(L(KVR_COL.price) + n).value = { formula: `${L(KVR_COL.sum)}${n}/${L(KVR_COL.qty)}${n}`, result: 0 };
-    }
-  });
-  return new Uint8Array(await wb.xlsx.writeBuffer());
-}
 
 test('КП в форме с КВР: колонки цен узнаны, вписаны только материал/работа Номенклатуры, формулы и КВР целы', async () => {
   const src = await offer();
@@ -62,7 +38,7 @@ test('КП в форме с КВР: колонки цен узнаны, впис
   assert.ok(res.written.every((a) => /^[LM]\d+$/.test(a) && !kvrNos.has(Number(a.slice(1)))), 'только L/M строк Номенклатуры');
 
   const out = new ExcelJS.Workbook();
-  await out.xlsx.load(res.bytes);
+  await out.xlsx.load(res.bytes.slice().buffer as ArrayBuffer);
   const ws = out.getWorksheet('Шаблон Excel')!;
   for (const r of parsed.rows.filter((x) => x.kind === 'work' || x.kind === 'group')) {
     for (const c of [KVR_COL.price, KVR_COL.sum]) {
