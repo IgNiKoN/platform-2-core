@@ -46,9 +46,11 @@ function mount(auth: AuthApi | null) {
   return { el, root };
 }
 
-test('без настроек сервера — сразу локальный демо-режим с таблицей', () => {
+test('без настроек сервера — сразу локальный режим: подсказка и разбор ВОР, без старой таблицы', () => {
   const { el } = mount(null);
-  assert.ok(el.querySelector('[data-work-id]'));
+  assert.match(el.querySelector('[data-testid="pf-hint"]')?.textContent || '', /Сервер не настроен/);
+  assert.ok(el.querySelector('[data-testid="pf-hint-vor"]'));
+  assert.ok(!el.querySelector('[data-work-id]'));
   assert.ok(!el.querySelector('[data-testid="pf-login"]'));
 });
 
@@ -70,7 +72,7 @@ test('неверный пароль → понятное сообщение, ф�
   assert.ok(el.querySelector('[data-testid="pf-login"]'));
 });
 
-test('верный пароль → шапка «почта · компания · роль» и таблица; выход скрывает данные', async () => {
+test('верный пароль → шапка «почта · компания · роль»; без доступа к компании — подсказка; выход скрывает данные', async () => {
   const auth = fakeAuth({ password: 'ok' });
   const { el } = mount(auth);
   await tick();
@@ -80,7 +82,8 @@ test('верный пароль → шапка «почта · компания 
   await tick();
   const bar = el.querySelector('[data-testid="pf-user"]');
   assert.ok(bar && /pto@test\.invalid/.test(bar.textContent || '') && /Альфа · Инженер ПТО/.test(bar.textContent || ''));
-  assert.ok(el.querySelector('[data-work-id]'));
+  assert.match(el.querySelector('[data-testid="pf-hint"]')?.textContent || '', /Нет доступных объектов/);
+  assert.ok(!el.querySelector('[data-work-id]'));
   const out = Array.from(el.querySelectorAll('button')).find((b) => b.textContent === 'Выйти')!;
   click(out);
   await tick();
@@ -89,12 +92,13 @@ test('верный пароль → шапка «почта · компания 
   assert.ok(!el.querySelector('[data-work-id]'));
 });
 
-test('«Работать локально» открывает демо без входа', async () => {
+test('«Работать локально» — без входа подсказка «войдите», данных нет', async () => {
   const { el } = mount(fakeAuth({ password: 'ok' }));
   await tick();
   click(Array.from(el.querySelectorAll('button')).find((b) => /Работать локально/.test(b.textContent || ''))!);
   await tick();
-  assert.ok(el.querySelector('[data-work-id]'));
+  assert.match(el.querySelector('[data-testid="pf-hint"]')?.textContent || '', /Войдите/);
+  assert.ok(!el.querySelector('[data-work-id]'));
 });
 
 test('mapAuthError: понятные сообщения', () => {

@@ -2,7 +2,7 @@
 /** Справочник цен (P2-0006c, этап 3): колонки цен, предпросмотр «Взять цены из ВОР», конфликты двух листов, старые цены, ввод. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { guessPriceColumns, buildImportPreview, previewCounts, applyItems, isStale, parsePriceInput, priceKey, money } from '../estimate/prices.ts';
+import { guessPriceColumns, guessTotalColumns, unitPrice, buildImportPreview, previewCounts, applyItems, isStale, parsePriceInput, priceKey, money } from '../estimate/prices.ts';
 import type { VorRow } from '../vor/vor.service.ts';
 import type { PriceItem } from '../estimate/estimate.service.ts';
 
@@ -78,4 +78,18 @@ test('isStale, parsePriceInput, money', () => {
   assert.ok(Number.isNaN(parsePriceInput('abc')));
   assert.equal(money(1234.5).replace(/\s/g, ' '), '1 234,50');
   assert.equal(money(null), '');
+});
+
+test('цена из суммы (P2-0009, К2): нет цены за единицу, есть сумма строки → сумма ÷ объём; цена есть — берётся она', () => {
+  const labels = ['Стоимость единицы с НДС 22%, руб. / Работа', 'Стоимость единицы с НДС 22%, руб. / Материалы', 'Стоимость единицы с НДС 22%, руб. / Всего',
+    'Стоимость всего с НДС 22%, руб. / Работа', 'Стоимость всего с НДС 22%, руб. / Материалы', 'Стоимость всего с НДС 22%, руб. / Всего'];
+  assert.deepEqual(guessTotalColumns(labels), { labor: 'Стоимость всего с НДС 22%, руб. / Работа', material: 'Стоимость всего с НДС 22%, руб. / Материалы' });
+  assert.deepEqual(guessPriceColumns(labels), { labor: 'Стоимость единицы с НДС 22%, руб. / Работа', material: 'Стоимость единицы с НДС 22%, руб. / Материалы' });
+  assert.equal(unitPrice(null, 848196, 1884.88), 450, 'ламинат из «Спутника»: 848 196 ÷ 1 884,88 = 450');
+  assert.equal(unitPrice(300, 24999, 83.33), 300, 'цена за единицу важнее суммы');
+  assert.equal(unitPrice(0, 100, 10), 0, 'нулевая цена — это цена');
+  assert.equal(unitPrice(null, 100, 3), 33.33, 'до копеек');
+  assert.equal(unitPrice(null, null, 10), null);
+  assert.equal(unitPrice(null, 100, 0), null, 'нет объёма — нет цены');
+  assert.equal(unitPrice(null, -5, 10), null);
 });

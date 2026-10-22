@@ -8,7 +8,9 @@
  *  - корпуса в контексте нет, а в корне проекта ровно один корпус — секция ищется в нём;
  *  - «Этажи 4–12» (диапазон) — позиция на уровне секции, диапазон уходит в пометку позиции («эт. 4–12»);
  *  - «кв. 3, 16…» — позиция на ближайшем узле (секция/этаж), список квартир — в пометке;
- *  - строки без места — на узел «Весь объект» в корне (решение владельца 21.10.2026);
+ *  - строки без места — на узел «Весь объект» в корне (решение владельца 21.10.2026), а если ПТО выбрал «корпус листа»
+ *    (P2-0009, К1; по умолчанию угадывается по названию листа «… корп. 1.1») — на этот корпус; корпус листа подставляется
+ *    и строкам с секцией/этажом без корпуса;
  *  - «блок N» (корпус в файле не указан, номера секций пошли заново) — ПТО выбирает корпус блока; до выбора место не привязано.
  */
 import type { RowContext } from './parse.ts';
@@ -27,9 +29,9 @@ const NONE_KEY = '∅';
 
 /** Шаги места по контексту строки. Диапазон этажей не даёт шага (позиция — на секции). Пустой контекст → «Весь объект».
  *  Блок без корпуса: корпус берётся из выбора ПТО (blocks), иначе место ждёт выбора (pendingBlock). */
-export function placeOf(ctx: RowContext, blocks?: Record<number, BlockChoice>): Place {
+export function placeOf(ctx: RowContext, blocks?: Record<number, BlockChoice>, sheet?: BlockChoice | null): Place {
   const steps: PlaceStep[] = [];
-  const chosen = !ctx.building && ctx.block ? (blocks || {})[ctx.block] : undefined;
+  const chosen = !ctx.building && ctx.block ? (blocks || {})[ctx.block] : !ctx.building && sheet ? sheet : undefined;
   if (ctx.building) steps.push({ type: 'building', value: ctx.building, name: `Корпус ${ctx.building}` });
   else if (chosen) steps.push({ type: 'building', value: chosen.value, name: chosen.name });
   if (ctx.section) steps.push({ type: 'section', value: ctx.section, name: `Секция ${ctx.section}` });
@@ -50,10 +52,18 @@ export function placeNote(ctx: RowContext): string | null {
   return parts.length ? parts.join(' · ') : null;
 }
 
-/** Номер в названии узла: «Секция 2» → «2», «эт. 7» → «7», «Корпус 1А» → «1а». */
+/** Номер в названии узла: «Секция 2» → «2», «эт. 7» → «7», «Корпус 1А» → «1а», «Корпус 1.1» → «1.1». */
 export function nodeNumber(name: string): string | null {
-  const m = String(name).match(/(\d+[\p{L}]?)/u);
+  const m = String(name).match(/(\d+(?:\.\d+)*[\p{L}]?)/u);
   return m ? m[1].toLowerCase() : null;
+}
+
+/** Корпус по названию листа заказчика: «себес уч.2 корп. 1.1» → Корпус 1.1; «Корпус 3А» → Корпус 3А; иначе null. */
+export function sheetBuilding(sheetName: string): BlockChoice | null {
+  const m = String(sheetName || '').match(/корп(?:ус)?\.?\s*№?\s*(\d+(?:[.,]\d+)*[\p{L}]?)/iu);
+  if (!m) return null;
+  const value = m[1].replace(',', '.');
+  return { value: value.toLowerCase(), name: `Корпус ${value}` };
 }
 
 const canon = (s: string): string => s.trim().replace(/\s+/g, ' ').toLowerCase();

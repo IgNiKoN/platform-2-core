@@ -2,7 +2,7 @@
 /** Места ВОР → дерево объекта (P2-0006, этап 4): номера в названиях, дерево генератора, недостающие узлы без дублей, «Этажи N–M», квартиры. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { placeOf, placeNote, nodeNumber, matchChild, bindPlaces, missingList, createMissing, WHOLE_OBJECT } from '../vor/places.ts';
+import { placeOf, placeNote, nodeNumber, matchChild, bindPlaces, missingList, createMissing, sheetBuilding, WHOLE_OBJECT } from '../vor/places.ts';
 import type { TreeNode, PlaceType } from '../vor/places.ts';
 
 /** Дерево в памяти + загрузчик детей (как pf_list_locations) + счётчик вызовов. */
@@ -84,4 +84,21 @@ test('блок без корпуса: ждёт выбора ПТО (не соз�
   const q1 = placeOf({ block: 1, section: '2' }, { 1: { value: '7', name: 'Корпус 7' }, 2: { value: '8', name: 'Корпус 8' } });
   const q2 = placeOf({ block: 2, section: '2' }, { 1: { value: '7', name: 'Корпус 7' }, 2: { value: '8', name: 'Корпус 8' } });
   assert.deepEqual((await bindPlaces([q1, q2], t.load)).map((x) => x.path), ['Корпус 7 · Секция 2', 'Корпус 8 · Секция 2']);
+});
+
+test('корпус листа (P2-0009, К1): угадывается по названию листа; строки без места — на корпус, а не на «Весь объект»', async () => {
+  assert.deepEqual(sheetBuilding('себес уч.2 корп. 1.1'), { value: '1.1', name: 'Корпус 1.1' });
+  assert.deepEqual(sheetBuilding('себес. уч.2 корп. 1.2'), { value: '1.2', name: 'Корпус 1.2' });
+  assert.deepEqual(sheetBuilding('Корпус 3А'), { value: '3а', name: 'Корпус 3А' });
+  assert.equal(sheetBuilding('ЛОС жК Новогорелово'), null);
+  assert.equal(nodeNumber('Корпус 1.1'), '1.1');
+  const t = tree([N('b11', null, 'building', 'Корпус 1.1', 'Корпус 1.1'), N('b12', null, 'building', 'Корпус 1.2', 'Корпус 1.2'),
+    N('s1', 'b11', 'section', 'Секция 1', 'Корпус 1.1 · Секция 1')]);
+  const sh = sheetBuilding('себес уч.2 корп. 1.1');
+  const empty = placeOf({}, {}, sh), sec = placeOf({ section: '1' }, {}, sh), own = placeOf({ building: '1.2' }, {}, sh);
+  assert.deepEqual((await bindPlaces([empty, sec, own], t.load)).map((b) => b.path), ['Корпус 1.1', 'Корпус 1.1 · Секция 1', 'Корпус 1.2'],
+    'без места — корпус листа; секция без корпуса — в корпусе листа; свой корпус в строке важнее листа');
+  assert.equal(placeOf({}, {}, null).steps[0].name, WHOLE_OBJECT, 'корпус листа не выбран — по-старому «Весь объект»');
+  const missing = await bindPlaces([placeOf({}, {}, { value: '2', name: 'Корпус 2' })], t.load);
+  assert.deepEqual(missingList(missing, [placeOf({}, {}, { value: '2', name: 'Корпус 2' })]), ['Корпус 2'], 'корпуса нет в дереве — в «недостающие»');
 });
