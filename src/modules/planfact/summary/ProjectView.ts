@@ -1,5 +1,5 @@
 /**
- * Сводка → объект (P2-0008, этапы 3–4): виды работ (план / факт / % в своих ЕИ, ₽ — при праве) → раскрытие вида → позиции по местам.
+ * Сводка → объект (P2-0008, этапы 3–4; P2-0010 — дашборд сверху, `card`): виды работ (план / факт / % в своих ЕИ, ₽ — при праве) → раскрытие вида → позиции по местам.
  * Разные ЕИ не суммируются: у вида работ по строке на каждую ЕИ. Все числа — с сервера (pf_summary_worktypes / pf_summary_positions).
  */
 import { createElement as h, useEffect, useState } from 'react';
@@ -12,7 +12,7 @@ import { buildSummaryXlsx, summaryFileName } from './xlsx.ts';
 
 type View = 'works' | 'ks2';
 
-export function ProjectView(props: { api: SummaryApi; p: SummaryProject; card: ReactElement; onBack: () => void; ks2?: (p: SummaryProject) => ReactElement;
+export function ProjectView(props: { api: SummaryApi; p: SummaryProject; card: ReactElement; onBack?: () => void; ks2?: (p: SummaryProject) => ReactElement;
   save?: (b: Uint8Array, n: string) => void }): ReactElement {
   const { api, p, card, onBack, ks2 } = props;
   const saveBytes = props.save || saveFile;
@@ -40,7 +40,7 @@ export function ProjectView(props: { api: SummaryApi; p: SummaryProject; card: R
 
   return h('div', { className: 'sm-project', 'data-testid': 'sm-project' },
     h('div', { className: 'pj-actions' },
-      h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-back', onClick: onBack }, '← Все объекты'),
+      onBack ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-back', onClick: onBack }, '← Все объекты') : null,
       h('button', { type: 'button', className: 'pf-btn', disabled: busy, 'data-testid': 'sm-xlsx', onClick: () => { void download(); } }, busy ? 'Готовлю файл…' : 'Скачать Excel')),
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
     card,

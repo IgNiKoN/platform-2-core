@@ -51,7 +51,7 @@ ${dark}{
 .p2-chart__toggle{font:inherit;font-size:12px;font-weight:600;color:var(--text-main);background:transparent;border:1px solid var(--card-border);border-radius:var(--rbi-radius-sm,4px);padding:6px 10px;min-height:32px;cursor:pointer}
 .p2-chart__toggle:focus-visible,.p2-chart__hit:focus-visible{outline:2px solid var(--p2-chart-fact);outline-offset:2px}
 .p2-chart__body{overflow-x:auto}
-.p2-chart__svg{display:block;width:100%;height:auto;min-width:300px}
+.p2-chart__svg{display:block;max-width:100%;height:auto}
 .p2-chart__svg text{fill:var(--text-muted);font-size:11px;font-family:inherit}
 .p2-chart__svg .p2-chart__strong{fill:var(--text-main)}
 .p2-chart__hit{fill:transparent;cursor:pointer}

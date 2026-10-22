@@ -1,12 +1,13 @@
 /// <reference types="node" />
-/** Экран «Сводка» (P2-0008, этап 2) на подставном сервере: портфель, светофор и причина, ₽ только при праве (сервер присылает null —
- *  экран не показывает рублёвых показателей), даты проекта (проверка «начало ≤ окончания», сохранение, обновление). */
+/** Экран «Сводка» (P2-0008; P2-0010 — дашборд руководителя) на подставном сервере: плитки, отставание в днях и светофор ТЗ 8.2, графики,
+ *  места, таблица объектов по отставанию, ₽ только при праве (сервер присылает null — экран не показывает рублёвых показателей),
+ *  даты проекта (проверка «начало ≤ окончания», сохранение, обновление). */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 import { settle } from '../../../test-utils/settle.ts';
 import type { SummaryProject } from '../summary/summary.service.ts';
-import { GAP, makeFakeSummary, PTO_PROJECT } from './summary-fake.ts';
+import { GAP, makeFakeSummary, PLACES, PTO_PROJECT } from './summary-fake.ts';
 
 const win = new Window({ url: 'http://localhost/' });
 const g = globalThis as Record<string, unknown>;
@@ -31,49 +32,106 @@ function typeIn(input: N, value: string): void {
   input.dispatchEvent(new win.Event('input', { bubbles: true }));
 }
 const submit = (f: N) => f.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }));
-const metric = (card: N, id: string) => String(card.querySelector(`[data-metric="${id}"] .sm-mvalue`)?.textContent || '');
+const metric = (t: N) => String(t?.querySelector('[data-testid="p2-kpi-value"]')?.textContent || '').replace(/\s/g, ' ').replace(/ ₽$/, '');
 
-test('ПТО: готовность по деньгам, ₽, темп, прогноз, светофор и разрыв КС-2', async () => {
+const tile = (el: N, id: string) => el.querySelector(`[data-metric="${id}"]`);
+
+test('ПТО, один объект: дашборд сразу — плитки, отставание в днях и светофор по ТЗ 8.2, графики, места, крупнейшие не начатые', async () => {
   const f = makeFakeSummary([PTO_PROJECT]);
   const el = mount(f.api);
   await tick();
-  const card = el.querySelector(`[data-project-id="${PTO_PROJECT.project_id}"]`);
-  assert.ok(card);
-  assert.equal(card.querySelector('[data-testid="sm-pct"]').textContent, '14,5 %');
-  assert.match(card.querySelector('[data-testid="sm-done"]').textContent, /7\s725,00 ₽ из 53\s250,00 ₽/);
-  assert.match(metric(card, 'pace7'), /691,07 ₽\/дн\./);
-  assert.match(metric(card, 'pace14'), /433,93/);
-  assert.match(metric(card, 'need'), /379,38/);
-  assert.equal(metric(card, 'forecast'), '03.02.2027');
-  assert.match(metric(card, 'gap'), /300,00 ₽/);
-  assert.equal(card.querySelector('[data-testid="sm-light"]').textContent, 'В срок');
-  assert.ok(card.className.includes('sm-card--green'));
-  assert.match(card.querySelector('[data-testid="sm-unpriced"]').textContent, /без цены в договорной КП: 1/);
-  assert.equal(el.querySelector('[data-testid="sm-nomoney"]'), null);
+  const d = el.querySelector('[data-testid="sm-dashboard"]');
+  assert.ok(d, 'один объект — дашборд открыт сразу');
+  assert.equal(el.querySelector('[data-testid="sm-back"]'), null, 'кнопки «Все объекты» нет');
+  assert.equal(el.querySelector('[data-testid="sm-objects"]'), null, 'таблицы объектов из одного нет');
+  assert.equal(metric(tile(d, 'plan')), '53 тыс.');
+  assert.match(tile(d, 'plan').textContent, /53\s250,00 ₽ · 3 позиций/);
+  assert.equal(el.querySelector('[data-testid="sm-pct"]').textContent, '14,5 % готовности · по плану сегодня 20 %');
+  assert.equal(tile(d, 'done').querySelector('[data-testid="p2-progress-marker"]').getAttribute('style'), 'left: 20%;');
+  assert.equal(metric(tile(d, 'lag')), '8 дн.');
+  assert.match(tile(d, 'lag').textContent, /5,5 п\.п\. от плана на сегодня/);
+  assert.ok(tile(d, 'lag').className.includes('p2-kpi--yellow'));
+  assert.equal(d.querySelector('[data-testid="sm-light"]').textContent, 'Риск');
+  assert.match(d.querySelector('[data-testid="sm-why"]').textContent, /5,5 п\.п\. — между порогами 3 и 10 п\.п\./);
+  assert.equal(metric(tile(d, 'forecast')), '03.02.2027');
+  assert.equal(metric(tile(d, 'gap')), '300');
+  assert.ok(f.calls.some((c) => c.startsWith('weekly:pr1:')), 'недели запрошены');
+  assert.ok(f.calls.includes('places:pr1:null'));
+  const pf = d.querySelector('[data-testid="sm-chart-pf"]');
+  assert.equal(pf.querySelectorAll('polyline').length, 2, 'план и факт');
+  assert.match(pf.textContent, /равномерно от 21\.09\.2026 до 18\.02\.2027 \(графика работ ещё нет/);
+  const wk = d.querySelector('[data-testid="sm-chart-weeks"]');
+  assert.equal(wk.querySelectorAll('path[data-bar]').length, 3);
+  assert.match(wk.querySelector('[data-testid="p2-bars-reference"]').textContent, /нужно 2\s656 в неделю/);
+  assert.match(wk.querySelector('[data-testid="sm-verdict"]').textContent, /^Ускоряемся · за 7 дней 691,07 ₽\/дн\., за 14 дней 433,93 ₽\/дн\., нужно 379,38 ₽\/дн\./);
+  wk.querySelector('[data-testid="p2-chart-toggle"]').click(); await tick();
+  assert.match(wk.querySelector('[data-testid="p2-chart-table"]').textContent, /14\.10\.2026 — 20\.10\.2026.*4\s837,50.*3 м², 3 шт\./);
+  const pl = d.querySelector('[data-location-id="b1"]');
+  assert.match(pl.textContent, /Корпус 1.*14,5 %/);
+  const ns = d.querySelector('[data-testid="sm-not-started"]');
+  assert.match(ns.textContent, /Все виды работ начаты|Грунтовка/);
 });
 
-test('прораб: ₽ не приходят — рублёвых показателей нет, светофор и сроки есть, подсказка про права', async () => {
-  const fore: SummaryProject = { ...PTO_PROJECT, can_money: false, can_manage: false, plan_money: null, done_money: null, issued_money: null, gap_money: null,
-    pct_money: null, pace7: null, pace14: null, need_pace: null, forecast_finish: null };
-  const el = mount(makeFakeSummary([fore]).api);
+test('недели для графика: от плановой даты начала до сегодня, не меньше периода, не больше 52', async () => {
+  const { weeksFor } = await import('../summary/Dashboard.ts');
+  assert.equal(weeksFor({ planned_start: '2026-09-01' }, '2026-10-22', 8), 8);
+  assert.equal(weeksFor({ planned_start: '2026-06-01' }, '2026-10-22', 8), 21);
+  assert.equal(weeksFor({ planned_start: '2024-01-01' }, '2026-10-22', 4), 52);
+  assert.equal(weeksFor({ planned_start: null }, '2026-10-22', 12), 12);
+});
+
+test('прораб: ₽, % и отставание не приходят — рублёвых плиток и графиков нет; светофор, план на сегодня, сроки, объёмы недель есть', async () => {
+  const fore: SummaryProject = { ...PTO_PROJECT, can_money: false, can_manage: false, can_thresholds: false, plan_money: null, done_money: null, issued_money: null,
+    gap_money: null, pct_money: null, pace7: null, pace14: null, need_pace: null, forecast_finish: null, lag_pp: null, lag_days: null };
+  const el = mount(makeFakeSummary([fore], { places: { root: PLACES.map((x) => ({ ...x, plan_money: null, done_money: null, pct_money: null })) } }).api);
   await tick();
-  const card = el.querySelector('.sm-card');
-  assert.equal(card.querySelector('[data-testid="sm-pct"]'), null);
-  for (const id of ['pace7', 'pace14', 'need', 'forecast', 'gap']) assert.equal(card.querySelector(`[data-metric="${id}"]`), null, id);
-  assert.equal(card.querySelector('[data-testid="sm-unpriced"]'), null);
-  assert.ok(!/₽/.test(card.textContent), 'на карточке прораба нет рублей');
-  assert.equal(card.querySelector('[data-testid="sm-light"]').textContent, 'В срок');
-  assert.equal(metric(card, 'dates'), '21.09.2026 — 18.02.2027');
+  const d = el.querySelector('[data-testid="sm-dashboard"]');
+  for (const id of ['plan', 'done', 'issued', 'gap', 'lag', 'forecast']) assert.equal(tile(d, id), null, id);
+  assert.equal(el.querySelector('[data-testid="sm-pct"]'), null);
+  assert.equal(d.querySelector('[data-testid="sm-chart-pf"]'), null);
+  assert.equal(d.querySelector('[data-testid="sm-chart-weeks"]'), null);
+  assert.ok(!/₽/.test(d.textContent), 'на дашборде прораба нет рублей');
+  assert.equal(d.querySelector('[data-testid="sm-light"]').textContent, 'Риск');
+  assert.match(d.querySelector('[data-testid="sm-why"]').textContent, /между порогами 3 и 10/);
+  assert.equal(metric(tile(d, 'plan-today')), '20 %');
+  assert.equal(metric(tile(d, 'dates')), '21.09.2026 — 18.02.2027');
+  assert.equal(metric(tile(d, 'verdict')), 'Ускоряемся');
+  assert.match(d.querySelector('[data-testid="sm-weeks-volume"]').textContent, /3 м², 3 шт\./);
+  assert.match(d.querySelector('[data-location-id="b1"]').textContent, /10 из 150 м² · 3 из 10 шт\./);
   assert.ok(el.querySelector('[data-testid="sm-nomoney"]'));
-  assert.equal(card.querySelector('[data-testid="sm-dates-btn"]'), null, 'прораб не правит даты');
+  assert.equal(el.querySelector('[data-testid="sm-dates-btn"]'), null, 'прораб не правит даты');
 });
 
 test('серый светофор: без договорной КП — причина и подсказка, куда идти', async () => {
-  const el = mount(makeFakeSummary([{ ...PTO_PROJECT, light: 'grey', light_reason: 'no_kp', has_kp: false, pct_money: null, plan_money: null, done_money: null }]).api);
+  const el = mount(makeFakeSummary([{ ...PTO_PROJECT, light: 'grey', light_reason: 'no_kp', has_kp: false, pct_money: null, plan_money: null, done_money: null,
+    lag_pp: null, lag_days: null, pace_verdict: null }]).api);
   await tick();
   assert.equal(el.querySelector('[data-testid="sm-light"]').textContent, 'Нет данных');
   assert.match(el.querySelector('[data-testid="sm-why"]').textContent, /Нет договорной КП.*КС-2/);
-  assert.equal(el.querySelector('[data-testid="sm-pct"]'), null);
+  assert.equal(metric(tile(el, 'lag')), '—');
+});
+
+test('несколько объектов: таблица по отставанию (сверху самые отстающие), выбор объекта чипом и из таблицы, период', async () => {
+  const a: SummaryProject = { ...PTO_PROJECT, project_id: 'a', name: 'ЖК А', lag_days: 2, light: 'green', light_reason: 'on_track' };
+  const b: SummaryProject = { ...PTO_PROJECT, project_id: 'b', name: 'ЖК Б', lag_days: 45.9, light: 'red', light_reason: 'lag_red' };
+  const c: SummaryProject = { ...PTO_PROJECT, project_id: 'c', name: 'ЖК В', lag_days: null, light: 'grey', light_reason: 'no_dates' };
+  const f = makeFakeSummary([a, c, b]);
+  const el = mount(f.api);
+  await tick();
+  assert.equal(el.querySelector('[data-testid="sm-dashboard"]'), null, '«Все объекты» — без дашборда');
+  assert.deepEqual([...el.querySelectorAll('[data-testid="sm-objects"] tbody tr')].map((r: N) => r.getAttribute('data-project-id')), ['b', 'a', 'c']);
+  assert.equal(el.querySelector('[data-project-id="b"] [data-testid="sm-olag"]').textContent, '46 дн.');
+  assert.equal(el.querySelector('[data-project-id="b"] [data-testid="sm-olight"]').textContent, 'Отставание');
+  assert.equal(el.querySelector('[data-testid="sm-chip-all"]').textContent, 'Все объекты (3)');
+  el.querySelector('[data-project-id="b"] [data-testid="sm-open"]').click(); await tick();
+  assert.equal(el.querySelector('[data-testid="sm-dashboard"]').getAttribute('data-project-id'), 'b');
+  assert.ok(f.calls.includes('weekly:b:8'));
+  [...el.querySelectorAll('[data-testid="sm-chip-period"]')].find((x: N) => x.textContent === '12 недель').click(); await tick();
+  assert.ok(f.calls.includes('weekly:b:12'), 'период 12 недель — новый запрос');
+  [...el.querySelectorAll('[data-testid="sm-chip-project"]')].find((x: N) => x.textContent === 'ЖК А').click(); await tick();
+  assert.equal(el.querySelector('[data-testid="sm-dashboard"]').getAttribute('data-project-id'), 'a');
+  el.querySelector('[data-testid="sm-back"]').click(); await tick();
+  assert.equal(el.querySelector('[data-testid="sm-dashboard"]'), null);
 });
 
 test('даты проекта: начало позже окончания — отказ без запроса; сохранение — запрос и обновление сводки', async () => {
@@ -110,9 +168,8 @@ test('объект → виды работ: 10 из 100 м² = 10 %, 3 из 10 �
   const f = makeFakeSummary([PTO_PROJECT]);
   const el = mount(f.api);
   await tick();
-  el.querySelector('[data-testid="sm-open"]').click(); await tick(); await tick();
   assert.ok(el.querySelector('[data-testid="sm-project"]'));
-  assert.equal(el.querySelector('[data-testid="sm-pct"]').textContent, '14,5 %', 'общий % объекта — по деньгам КП');
+  assert.match(el.querySelector('[data-testid="sm-pct"]').textContent, /^14,5 % готовности/, 'общий % объекта — по деньгам КП');
   const plas = el.querySelector('[data-wt="wt1"]');
   assert.equal(plas.querySelector('[data-testid="sm-unit-fact"]').textContent, 'факт 10 из 100 м²');
   assert.equal(plas.querySelector('[data-testid="sm-unit-pct"]').textContent, '10 %');
@@ -127,9 +184,6 @@ test('объект → виды работ: 10 из 100 м² = 10 %, 3 из 10 �
   const pos = door.querySelector('[data-position-id="p14"]');
   assert.match(pos.textContent, /5 этаж · Кв\. 1/);
   assert.equal(pos.querySelector('[data-testid="sm-pos-pct"]').textContent, '30 %');
-  el.querySelector('[data-testid="sm-back"]').click(); await tick();
-  assert.equal(el.querySelector('[data-testid="sm-project"]'), null);
-  assert.ok(el.querySelector('[data-testid="sm-open"]'));
 });
 
 test('вид работ в двух ЕИ — две строки, без суммы; без права — ₽ вида работ не показаны', async () => {
@@ -138,7 +192,6 @@ test('вид работ в двух ЕИ — две строки, без сум�
   const fore: SummaryProject = { ...PTO_PROJECT, can_money: false, plan_money: null, done_money: null, pct_money: null };
   const el = mount(makeFakeSummary([fore], { workTypes: two }).api);
   await tick();
-  el.querySelector('[data-testid="sm-open"]').click(); await tick(); await tick();
   const wt = el.querySelector('[data-wt="wt1"]');
   assert.equal(wt.querySelectorAll('[data-unit]').length, 2);
   assert.deepEqual([...wt.querySelectorAll('[data-testid="sm-unit-fact"]')].map((x: N) => x.textContent), ['факт 10 из 100 м²', 'факт 0 из 5 шт.']);
@@ -147,7 +200,6 @@ test('вид работ в двух ЕИ — две строки, без сум�
 });
 
 async function openGap(el: N): Promise<void> {
-  el.querySelector('[data-testid="sm-open"]').click(); await tick(); await tick();
   el.querySelector('[data-view="ks2"]').click(); await tick(); await tick();
 }
 
@@ -189,7 +241,6 @@ test('«Скачать Excel»: берёт с сервера виды работ
   win.document.body.appendChild(el);
   flushSync(() => createRoot(el as unknown as HTMLElement).render(createElement(SummaryTab, { api: f.api, save: (b: Uint8Array, n: string) => saved.push({ n, size: b.length }) } as N)));
   await tick();
-  (el as N).querySelector('[data-testid="sm-open"]').click(); await tick(); await tick();
   (el as N).querySelector('[data-testid="sm-xlsx"]').click();
   for (let i = 0; i < 20 && !saved.length; i++) await tick();
   assert.equal(saved.length, 1);
