@@ -46,6 +46,27 @@ export function routeFromHash(hash: string): { page: Page; sub: Sub } {
   return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'fact' ? 'fact' : parts[0] === 'ks2' ? 'ks2' : parts[0] === 'summary' ? 'summary' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'summary', sub: parts[1] === 'units' ? 'units' : parts[1] === 'brigades' ? 'brigades' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
 }
 
+/** Что доступно вошедшему (то же правило, что выбор экрана ниже). */
+export interface RouteAccess { company: boolean; estimate: boolean; ks2: boolean; fact: boolean; brigades: boolean }
+
+/** P2-0011: адрес = то, что открыто (единый источник — маршрут оболочки). Раздел без права и неизвестный адрес показывают
+ *  «Сводку» → адрес #/planfact; вкладка справочников без права («Цены», «Надбавки», «Бригады») или неизвестная → «Объекты».
+ *  null — адрес уже верный (или нет доступа к компании: тогда экран-подсказка, адрес не трогаем). */
+export function canonicalHash(hash: string, a: RouteAccess): string | null {
+  // Экран модуля остаётся смонтированным, пока открыт другой раздел, — чужие адреса не трогаем.
+  if (!a.company || !/^#\/planfact(\/|$)/.test(String(hash || ''))) return null;
+  const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
+  const r = routeFromHash(hash);
+  const known = ['', 'summary', 'vor', 'fact', 'estimate', 'ks2', 'directories'];
+  const pageOk = known.indexOf(parts[0]) >= 0 && (r.page !== 'estimate' || a.estimate) && (r.page !== 'ks2' || a.ks2) && (r.page !== 'fact' || a.fact);
+  if (!pageOk) return BASE;
+  if (r.page === 'directories' && parts.length > 1 && parts[1] !== '') {
+    const subOk = parts[1] === r.sub && !((r.sub === 'prices' || r.sub === 'overheads') && !a.estimate) && !(r.sub === 'brigades' && !a.brigades);
+    if (!subOk) return `${BASE}/directories/objects`;
+  }
+  return null;
+}
+
 function accessLabel(entries: AccessEntry[]): string {
   if (!entries.length) return 'нет назначенных ролей';
   const parts = entries.map((e) => `${e.company} · ${e.role}`);
@@ -92,6 +113,17 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   useEffect(() => {
     if (auth) void enter(auth);
   }, []);
+
+  // Адрес без права / неизвестный — заменить на открытый экран (replace: «назад» не возвращает на недоступный адрес).
+  const fix = mode === 'authed' && projects && summaryApi
+    ? canonicalHash(window.location.hash, { company: companies.length > 0, estimate: canEstimate && !!estimate && !!vorApi, ks2: canKs2 && !!ks2Api && !!vorApi,
+        fact: !!factApi && !!vorApi, brigades: !!factApi })
+    : null;
+  useEffect(() => {
+    if (!fix) return;
+    const r = (window as unknown as { AppRouter?: { navigate?: (p: string, replace?: boolean) => void } }).AppRouter;
+    if (r && typeof r.navigate === 'function') r.navigate(fix, true); else { window.history.replaceState(null, '', fix); setRoute(routeFromHash(fix)); }
+  }, [fix]);
 
   async function logout(): Promise<void> {
     if (auth) await auth.signOut();

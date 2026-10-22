@@ -1,6 +1,7 @@
 /**
  * Раздел платформы «Компания» (администратор компании): вход — общая форма платформы, вкладки «Роли» / «Сотрудники» / «Журнал».
  * Доступ решает сервер (pf_my_admin_companies → security.roles.assign); без права — понятное сообщение.
+ * P2-0011: открытая вкладка — только адрес оболочки #/settings/company/<roles|members|audit> (назад/вперёд, F5, ссылка).
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -14,6 +15,15 @@ import type { CompanyApi, CompanyRef } from './company.service.ts';
 type Mode = 'loading' | 'login' | 'noaccess' | 'ready';
 type Tab = 'roles' | 'members' | 'audit';
 
+const BASE = '#/settings/company';
+/** Событие раздела: адрес #/settings/company… показан снова (index.ts — при повторном монтировании в тот же контейнер). */
+export const COMPANY_ROUTE_EVENT = 'company:route';
+/** #/settings/company[/roles|/members|/audit] → вкладка; без вкладки и неизвестная — «Роли». */
+export function tabFromHash(hash: string): Tab {
+  const t = String(hash || '').replace(/^#\/settings\/company\/?/, '').split('/')[0];
+  return t === 'members' || t === 'audit' ? t : 'roles';
+}
+
 const TABS: { id: Tab; label: string }[] = [
   { id: 'roles', label: 'Роли' },
   { id: 'members', label: 'Сотрудники' },
@@ -26,7 +36,19 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
   const [who, setWho] = useState('');
   const [companies, setCompanies] = useState<CompanyRef[]>([]);
   const [companyId, setCompanyId] = useState('');
-  const [tab, setTab] = useState<Tab>('roles');
+  const [tab, setTab] = useState<Tab>(tabFromHash(window.location.hash));
+
+  useEffect(() => {
+    const onRoute = (): void => setTab(tabFromHash(window.location.hash));
+    window.addEventListener('hashchange', onRoute);
+    window.addEventListener('popstate', onRoute);
+    window.addEventListener(COMPANY_ROUTE_EVENT, onRoute);
+    return () => { window.removeEventListener('hashchange', onRoute); window.removeEventListener('popstate', onRoute); window.removeEventListener(COMPANY_ROUTE_EVENT, onRoute); };
+  }, []);
+  const go = (t: Tab): void => {
+    const r = (window as unknown as { AppRouter?: { navigate?: (p: string) => void } }).AppRouter;
+    if (r && typeof r.navigate === 'function') r.navigate(`${BASE}/${t}`); else { window.history.pushState(null, '', `${BASE}/${t}`); setTab(t); }
+  };
 
   async function enter(): Promise<void> {
     if (!auth || !api) return;
@@ -70,7 +92,7 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
       h('div', { className: 'co-head' },
         h('div', { className: 'co-tabs', role: 'tablist', 'data-testid': 'co-tabs' },
           TABS.map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': tab === t.id, 'data-tab': t.id,
-            className: 'co-tab' + (tab === t.id ? ' co-tab--active' : ''), onClick: () => setTab(t.id) }, t.label)))),
+            className: 'co-tab' + (tab === t.id ? ' co-tab--active' : ''), onClick: () => go(t.id) }, t.label)))),
       tab === 'roles' ? h(CompanyRoles, { api, companyId, key: companyId }) : null,
       tab === 'members' ? h(CompanyMembers, { api, companyId, me: who, key: companyId }) : null,
       tab === 'audit' ? h(CompanyAudit, { api, companyId, key: companyId }) : null));

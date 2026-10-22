@@ -301,6 +301,8 @@
         '</button>';
 
       container.innerHTML = html;
+      // P2-0011: подсветка — по текущему маршруту (единое правило роутера), а не только по режиму
+      if (window.AppRouter && typeof window.AppRouter.updateNavHighlight === 'function') window.AppRouter.updateNavHighlight(location.hash);
     },
     renderModuleSelection: function () {
       var container = document.getElementById('platform-entry-modules');

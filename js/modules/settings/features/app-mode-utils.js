@@ -533,10 +533,16 @@ const AppModeManager = {
             }
         }
 
-        // Тот же режим, но открыты Настройки (chrome) — выйти в home модуля.
+        // P2-0011: открыт модуль платформы (План/Факт …, пункт меню из манифеста) — режим прежний, но экран чужой;
+        // без этого клик по «Качество» из План/Факт ничего не делал (переключение «не с первого раза»).
+        const platformItems = (window.RBI && window.RBI.moduleLoader && typeof window.RBI.moduleLoader.getMenuItems === 'function')
+            ? window.RBI.moduleLoader.getMenuItems() : [];
+        const onPlatform = platformItems.some((it) => it && it.path && (hash === it.path || hash.indexOf(it.path + '/') === 0));
+
+        // Тот же режим, но открыты Настройки (chrome) или модуль платформы — выйти в home модуля.
         // Иначе early-return оставлял hash на #/settings и F5 снова открывал настройки.
         if (this.currentMode === newMode) {
-            if (!onSettings && !this._pendingKnowledgeReferencePath) return;
+            if (!onSettings && !onPlatform && !this._pendingKnowledgeReferencePath) return;
             this.renderBottomNav();
             this.updateHeaderVisibility();
             const shellSame = window.RBI?.services?.shell;
@@ -554,16 +560,16 @@ const AppModeManager = {
             }
             switch (newMode) {
                 case 'quality':
-                    window.AppRouter.navigate('#/quality/audit', true);
+                    window.AppRouter.navigate('#/quality/audit', !onPlatform);   // из модуля платформы — новым шагом истории («назад» вернёт)
                     break;
                 case 'construction':
-                    window.AppRouter.navigate('#/construction/defects', true);
+                    window.AppRouter.navigate('#/construction/defects', !onPlatform);
                     break;
                 case 'knowledge':
-                    window.AppRouter.navigate('#/knowledge', true);
+                    window.AppRouter.navigate('#/knowledge', !onPlatform);
                     break;
                 case 'construction-v2':
-                    window.AppRouter.navigate('#/construction-v2', true);
+                    window.AppRouter.navigate('#/construction-v2', !onPlatform);
                     break;
                 default:
                     break;
