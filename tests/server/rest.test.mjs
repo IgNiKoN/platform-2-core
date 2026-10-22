@@ -400,6 +400,37 @@ else {
           check('начало позже окончания — отказ', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: '2030-01-02', p_finish: '2030-01-01' }, tok.alfaPto)).ok);
           check('ПТО задал даты проекта', (await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: '2030-01-01' }, tok.alfaPto)).ok);
           check('anon: pf_summary_portfolio закрыт', !(await rpc('pf_summary_portfolio', {})).ok);
+          // --- P2-0010: дашборд руководителя (миграция 013) — отставание по ТЗ §9, светофор 8.2, недели, «требует внимания», места, пороги. ---
+          const wProbe = await rpc('pf_summary_weekly', { p_project: pv, p_weeks: 4 }, tok.alfaPto);
+          if (wProbe.status === 404) { console.log('NOT RUN: миграция 013 не применена — проверки дашборда пропущены'); fails++; }
+          else {
+            const s2 = (await j(await rpc('pf_summary_portfolio', {}, tok.alfaPto)))?.find((r) => r.project_id === pv);
+            check('013: даты с сегодня — план на сегодня 0 %, отставание отрицательное, зелёный «в графике», пороги 3/10/3',
+              Number(s2?.plan_pct_today) === 0 && Number(s2?.lag_days) < 0 && s2?.light === 'green' && s2?.light_reason === 'on_track'
+              && Number(s2?.light_yellow_pp) === 3 && Number(s2?.light_red_pp) === 10 && Number(s2?.light_overdue_days) === 3 && s2?.can_thresholds === false, JSON.stringify(s2));
+            const f2 = (await j(await rpc('pf_summary_portfolio', {}, tok.alfaForeman)))?.find((r) => r.project_id === pv);
+            check('013: прораб — отставание (п.п., дни) не приходит, план на сегодня и светофор есть', f2?.lag_days === null && f2?.lag_pp === null && Number(f2?.plan_pct_today) === 0 && !!f2?.light, JSON.stringify(f2));
+            const wk = await j(wProbe);
+            const last = Array.isArray(wk) ? wk[wk.length - 1] : null;
+            check('013: недели — 4, нарастающий итог на сегодня = сделано в сводке (220 ₽)', Array.isArray(wk) && wk.length === 4 && last?.week_end === new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10) && Number(last?.done_money_cum) === 220, JSON.stringify(last));
+            const wkf = await j(await rpc('pf_summary_weekly', { p_project: pv, p_weeks: 4 }, tok.alfaForeman));
+            check('013: недели у прораба — без ₽, объёмы есть', Array.isArray(wkf) && wkf.every((w) => w.done_money === null && w.done_money_cum === null && w.issued_money === null) && wkf.some((w) => w.units.length), JSON.stringify(wkf?.[wkf.length - 1]));
+            const at = await j(await rpc('pf_summary_attention', { p_project: pv }, tok.alfaPto));
+            check('013: «требует внимания» у ПТО — не выставлено 220 ₽, полнота посчитана', Number(at?.counts?.gap_money) === 220 && at?.completeness?.dates_pct === 100, JSON.stringify(at?.counts));
+            const atf = await j(await rpc('pf_summary_attention', { p_project: pv }, tok.alfaForeman));
+            check('013: «требует внимания» у прораба — без ₽', atf?.counts?.gap_money === null && (atf?.gap || []).every((g) => g.money === null), JSON.stringify(atf?.counts));
+            const pl = await j(await rpc('pf_summary_places', { p_project: pv }, tok.alfaPto));
+            const plf = await j(await rpc('pf_summary_places', { p_project: pv }, tok.alfaForeman));
+            check('013: места — у ПТО ₽ есть, у прораба нет', Array.isArray(pl) && pl.length > 0 && pl.some((x) => x.plan_money !== null) && Array.isArray(plf) && plf.every((x) => x.plan_money === null && x.done_money === null), JSON.stringify(pl?.[0]));
+            check('013: Бета-ПТО не видит недели Альфы', !(await rpc('pf_summary_weekly', { p_project: pv, p_weeks: 4 }, tok.betaPto)).ok);
+            check('013: Бета-ПТО не видит «требует внимания» Альфы', !(await rpc('pf_summary_attention', { p_project: pv }, tok.betaPto)).ok);
+            check('013: Бета-ПТО не видит места Альфы', !(await rpc('pf_summary_places', { p_project: pv }, tok.betaPto)).ok);
+            check('013: ПТО (без thresholds.edit) не меняет пороги', !(await rpc('pf_project_set_thresholds', { p_project: pv, p_yellow_pp: 4, p_red_pp: 12, p_overdue_days: 5 }, tok.alfaPto)).ok);
+            check('013: прораб не меняет пороги', !(await rpc('pf_project_set_thresholds', { p_project: pv, p_yellow_pp: 4, p_red_pp: 12, p_overdue_days: 5 }, tok.alfaForeman)).ok);
+            check('013: anon — недели, «требует внимания», места, пороги закрыты', !(await rpc('pf_summary_weekly', { p_project: pv, p_weeks: 4 })).ok
+              && !(await rpc('pf_summary_attention', { p_project: pv })).ok && !(await rpc('pf_summary_places', { p_project: pv })).ok
+              && !(await rpc('pf_project_set_thresholds', { p_project: pv, p_yellow_pp: 4, p_red_pp: 12, p_overdue_days: 5 })).ok);
+          }
         }
       }
       // бригаду REST-теста отправляем в архив — активные имена не накапливаются

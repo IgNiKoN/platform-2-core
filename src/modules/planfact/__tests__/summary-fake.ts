@@ -1,11 +1,33 @@
 /** Подставной сервер сводки (P2-0008) для тестов экрана: числа — как их считает сервер (011_summary.sql), экран их только показывает. */
-import type { Ks2GapRow, SummaryApi, SummaryPosition, SummaryProject, SummaryWorkType } from '../summary/summary.service.ts';
+import type { Ks2GapRow, SummaryApi, SummaryAttention, SummaryPlace, SummaryPosition, SummaryProject, SummaryWeek, SummaryWorkType } from '../summary/summary.service.ts';
 
-/** Проект из SQL-теста 011: план 53 250 ₽, сделано 7 725 ₽ (14,5 %), темп 691,07 / 433,93 ₽/дн., нужный 379,38, выставлено 7 425, разрыв 300. */
+/** Проект из SQL-теста 011: план 53 250 ₽, сделано 7 725 ₽ (14,5 %), темп 691,07 / 433,93 ₽/дн., нужный 379,38, выставлено 7 425, разрыв 300;
+ *  P2-0010: план на сегодня 20 %, отставание 5,5 п.п. = 8,3 дн. (между порогами 3 и 10 → жёлтый), темп растёт. */
 export const PTO_PROJECT: SummaryProject = {
   project_id: 'pr1', name: 'ЖК Сводка', code: 'ЖК-1', planned_start: '2026-09-21', planned_finish: '2027-02-18', can_money: true, can_manage: true, has_kp: true,
   plan_money: 53250, done_money: 7725, issued_money: 7425, gap_money: 300, pct_money: 14.5, pace7: 691.07, pace14: 433.93, need_pace: 379.38,
-  days_left: 120, forecast_finish: '2027-02-03', light: 'green', light_reason: 'forecast', unpriced_rows: 1, positions: 3, pending: 0,
+  days_left: 120, forecast_finish: '2027-02-03', light: 'yellow', light_reason: 'lag_yellow', unpriced_rows: 1, positions: 3, pending: 0,
+  plan_pct_today: 20, lag_pp: 5.5, lag_days: 8.3, pace_verdict: 'faster', work_days_left: 85, light_yellow_pp: 3, light_red_pp: 10, light_overdue_days: 3,
+  can_thresholds: true,
+};
+
+/** Недели (pf_summary_weekly): нарастающий итог 7 725 ₽ на сегодня. */
+export const WEEKS: SummaryWeek[] = [
+  { week_start: '2026-09-30', week_end: '2026-10-06', plan_pct: 10.7, plan_money_cum: 5680, done_money: 1650, done_money_cum: 1650, issued_money: 0, issued_money_cum: 0, units: [{ unit: 'м²', qty: 4 }] },
+  { week_start: '2026-10-07', week_end: '2026-10-13', plan_pct: 15.3, plan_money_cum: 8165, done_money: 1237.5, done_money_cum: 2887.5, issued_money: 0, issued_money_cum: 0, units: [{ unit: 'м²', qty: 3 }] },
+  { week_start: '2026-10-14', week_end: '2026-10-20', plan_pct: 20, plan_money_cum: 10650, done_money: 4837.5, done_money_cum: 7725, issued_money: 7425, issued_money_cum: 7425, units: [{ unit: 'м²', qty: 3 }, { unit: 'шт.', qty: 3 }] },
+];
+export const PLACES: SummaryPlace[] = [
+  { location_id: 'b1', name: 'Корпус 1', node_type: 'building', depth: 1, children: 1, positions: 3, here_positions: 0, plan_money: 53250, done_money: 7725, pct_money: 14.5,
+    units: [{ unit: 'м²', plan: 150, fact: 10, pct: 6.7 }, { unit: 'шт.', plan: 10, fact: 3, pct: 30 }] },
+];
+export const ATTENTION: SummaryAttention = {
+  stale_days: 14,
+  counts: { no_kp: false, no_dates: false, gap_rows: 1, gap_money: 300, unpriced_rows: 1, stale_positions: 1, pending_entries: 0 },
+  gap: [{ source_row_id: 's12', number: '1.1', name: 'Штукатурка стен', unit: 'м2', qty: 1, money: 300 }],
+  unpriced: [{ source_row_id: 's16', number: '1.3', name: 'Грунтовка', unit: 'м2', qty: 50 }],
+  stale: [{ position_id: 'p16', work_name: 'Грунтовка', location_path: '5 этаж', unit: 'м²', plan_qty: 50, fact_qty: 0, idle_days: 30 }],
+  completeness: { rows_total: 4, rows_priced: 3, priced_pct: 75, dates_pct: 100, positions_total: 3, positions_placed: 3, placed_pct: 100 },
 };
 
 export const WORK_TYPES: SummaryWorkType[] = [
@@ -35,7 +57,8 @@ export const GAP: Ks2GapRow[] = [
     done_qty: 3, issued_qty: 3, gap_qty: 0, price: 1200, done_money: 3600, issued_money: 3600, gap_money: 0 },
 ];
 
-export function makeFakeSummary(projects: SummaryProject[], opts: { fail?: string; workTypes?: SummaryWorkType[]; positions?: SummaryPosition[]; gap?: Ks2GapRow[] | string } = {}) {
+export function makeFakeSummary(projects: SummaryProject[], opts: { fail?: string; workTypes?: SummaryWorkType[]; positions?: SummaryPosition[]; gap?: Ks2GapRow[] | string;
+  weeks?: SummaryWeek[]; places?: Record<string, SummaryPlace[]>; attention?: SummaryAttention } = {}) {
   const calls: string[] = [];
   const err = (m: string) => ({ ok: false as const, message: m });
   const api: SummaryApi = {
@@ -44,6 +67,10 @@ export function makeFakeSummary(projects: SummaryProject[], opts: { fail?: strin
     async positions(p, wt) { calls.push(`positions:${p}:${wt}`); return { ok: true, value: (opts.positions || POSITIONS).filter((x) => wt === null || x.work_type_id === wt) }; },
     async ks2Gap(p) { calls.push(`ks2Gap:${p}`); const g = opts.gap ?? GAP; return typeof g === 'string' ? err(g) : { ok: true, value: g.map((r) => ({ ...r })) }; },
     async setDates(p, s, f) { calls.push(`setDates:${p}:${s}:${f}`); return { ok: true, value: null }; },
+    async weekly(p, w) { calls.push(`weekly:${p}:${w}`); return { ok: true, value: (opts.weeks || WEEKS).map((x) => ({ ...x })) }; },
+    async places(p, l) { calls.push(`places:${p}:${l}`); const all = opts.places || { root: PLACES }; return { ok: true, value: (all[l || 'root'] || []).map((x) => ({ ...x })) }; },
+    async attention(p) { calls.push(`attention:${p}`); return { ok: true, value: opts.attention || ATTENTION }; },
+    async setThresholds(p, y, r, d) { calls.push(`setThresholds:${p}:${y}:${r}:${d}`); return { ok: true, value: null }; },
   };
   return { api, calls };
 }

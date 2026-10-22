@@ -28,6 +28,21 @@
 
 **Это целевой функциональный контракт, а не указание немедленно писать десять новых компонентов.** Если текущий `.rbi-btn` подходит, использовать его и тонкую обёртку, а не создавать с нуля новую кнопку.
 
+### Реализовано в `src/platform/ui/` (P2-0010, первый потребитель — дашборд руководителя)
+
+| Компонент | API (props) | Классы | Примечания |
+| --- | --- | --- | --- |
+| `KpiTile` | `label`, `value`, `hint?`, `tone?` (`red`/`yellow` — рамка), `metric?` (`data-metric`), `children?` | `.p2-kpi*` | значение — готовая строка с сервера/форматтера |
+| `ProgressBar` | `value` (0…100 или `null`), `label` (aria), `marker?` + `markerLabel?` | `.p2-progress*` | `role="progressbar"`; `null` → «нет данных» |
+| `StatusBadge` | `status` (`green`/`yellow`/`red`/`grey`), `label`, `title?` | `.p2-badge--*` | слово + иконка + цвет |
+| `Legend` | `items: {label, kind: fact/plan/reference/muted, mark?: line/dash/bar}[]` | `.p2-legend*` | рисуется только при ≥ 2 сериях |
+| `ChartCard` | `title`, `legend?`, `table?: {head, rows}`, `note?`, `children` | `.p2-chart*` | кнопка «Таблица / График» — таблица-альтернатива |
+| `LineChart` | `start`, `end`, `today?`, `series[]`, `yFormat`, `hoverX[]`, `tipAt(x)`, `defaultTip?`, `ariaLabel` | `.p2-chart__svg` | нарастающий итог; подсказка при наведении, фокусе (Tab), нажатии — строка `aria-live` под графиком |
+| `BarChart` | `bars: {key,label,value,tip}[]`, `yFormat`, `reference?: {value,label}`, `trend?`, `ariaLabel` | `.p2-chart__svg` | линия «нужно» (пунктир плана), тренд — наименьшие квадраты по столбцам |
+| форматы | `compactNumber`, `compactRub`, `dayMonth`, `monthLabel`, `daysBetween`, `niceStep` | — | только подписи; деньги в таблицах — форматтер модуля |
+
+Без внешних библиотек графиков; цвета — только токены `--p2-*`. Компоненты не вызывают бизнес-API и не считают показателей.
+
 ### По мере появления спроса
 
 `DatePicker`, `FileUpload`, `Tree/LocationPicker`, `Breadcrumbs`, `Toolbar`, `FilterPanel`, `Pagination`, `Chart`, `Progress`, `Drawer`, `DataGrid` для больших объёмов, `MobileActionBar`, `DocumentPreview`, `TableColumnSettings`, `ThemePreview` и др. Добавляются только под конкретное утверждённое применение.
