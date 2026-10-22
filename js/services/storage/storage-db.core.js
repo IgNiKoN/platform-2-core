@@ -1,7 +1,8 @@
 /* Файл: js/services/storage/storage-db.core.js — перенесено из js/storage.js без изменения логики */
 /* Файл: js/storage.js */
 
-const DB_NAME = 'PLATFORM2_DB';
+// P2-0013: имя локальной базы — из переключателя сборки (config.service.js): выпуск — RBI_QUALITY_DB, разработка — PLATFORM2_DB.
+const DB_NAME = (window.APP_CONFIG && window.APP_CONFIG.LOCAL_DB_NAME) || 'PLATFORM2_DB';
 // Повышаем версию только при изменении структуры IndexedDB
 const DB_VERSION = 29; // БЫЛО 28, СТАЛО 29 — units_v2 + паритет с self-heal bump (локально уже 29)
 

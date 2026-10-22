@@ -3,27 +3,12 @@
  *  обёртка «Компании» — бандл только при праве). */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
 import { Window } from 'happy-dom';
+import { loadSw } from './sw-harness.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
 const BASE = 'https://ignikon.github.io/platform-2-core';
-
-function loadSw(cached: string[]) {
-  const store = new Map(cached.map((u) => [u, true]));
-  const handlers: Record<string, (e: N) => void> = {};
-  const cache = { keys: async () => [...store.keys()].map((url) => ({ url })), delete: async (r: N) => store.delete(r.url), put: async () => {}, addAll: async () => {} };
-  const ctx: N = {
-    self: { addEventListener: (t: string, fn: (e: N) => void) => { handlers[t] = fn; }, skipWaiting: () => {}, clients: { claim: async () => {} } },
-    caches: { open: async () => cache, keys: async () => [], delete: async () => true, match: async () => undefined },
-    console: { log: () => {}, warn: () => {}, error: () => {} }, URL, Promise, fetch: async () => ({})
-  };
-  runInNewContext(readFileSync(new URL('../../../../sw.js', import.meta.url), 'utf8'), ctx);
-  const message = async (data: unknown): Promise<void> => { let p: Promise<unknown> = Promise.resolve(); handlers.message({ data, waitUntil: (x: Promise<unknown>) => { p = x; } }); await p; };
-  return { ctx, store, message };
-}
 
 test('sw.js: до решения входа файлы модулей можно кэшировать; после — только положенные', async () => {
   const sw = loadSw([]);
