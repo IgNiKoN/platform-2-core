@@ -101,6 +101,7 @@ window.AppRouter = {
             slugToId: {
                 platform: 'platform',
                 company: 'company',
+                'platform-admin': 'platform-admin',
                 admin: 'admin',
                 quality: 'quality',
                 construction: 'construction'
@@ -108,6 +109,7 @@ window.AppRouter = {
             idToSlug: {
                 platform: 'platform',
                 company: 'company',
+                'platform-admin': 'platform-admin',
                 admin: 'admin',
                 quality: 'quality',
                 construction: 'construction'

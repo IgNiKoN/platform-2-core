@@ -62,6 +62,8 @@ var SettingsRender = {
                             class="settings-subnav-btn flex-1 min-w-[4.75rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Платформа</button>
                         <button type="button" data-settings-subsection="company" role="tab" id="settings-subnav-company" hidden
                             class="settings-subnav-btn flex-1 min-w-[5.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Компания</button>
+                        <button type="button" data-settings-subsection="platform-admin" role="tab" id="settings-subnav-platform-admin" hidden
+                            class="settings-subnav-btn flex-1 min-w-[7.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate">Администрирование платформы</button>
                         <button type="button" data-settings-subsection="admin" role="tab" id="settings-subnav-admin"
                             class="settings-subnav-btn flex-1 min-w-[5.5rem] px-2.5 py-2 rounded-lg text-rbi-caption font-black uppercase tracking-widest transition-colors truncate inline-flex items-center justify-center gap-1">
                             <svg class="w-3 h-3 shrink-0 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
@@ -903,6 +905,7 @@ var SettingsRender = {
                 </div>
             </div>
             <div id="settings-panel-company" data-settings-panel="company" hidden></div>
+            <div id="settings-panel-platform-admin" data-settings-panel="platform-admin" hidden></div>
             <div id="settings-panel-admin" data-settings-panel="admin" class="space-y-3" hidden>
                 <p class="text-rbi-caption text-[var(--text-muted)] leading-snug px-1" data-i18n="settings.admin.intro">
                     Единая админка платформы: справочники, очереди заявок, команда и права.
@@ -1713,19 +1716,41 @@ console.log('[SettingsRender] settings.render.js markup mounted');
     }
 
     var SETTINGS_SUBSECTION_KEY = 'rbi.settings.subsection';
-    var SETTINGS_SUBSECTIONS = ['platform', 'company', 'admin', 'quality', 'construction'];
+    var SETTINGS_SUBSECTIONS = ['platform', 'company', 'platform-admin', 'admin', 'quality', 'construction'];
 
     /** Platform 2.0: «Компания» (роли, сотрудники, журнал) — подраздел Настроек; виден, когда сервер подтвердил право (RBI.platformMenuAccess.company). */
     function _companyAllowed() {
         return !!(window.RBI && window.RBI.platformMenuAccess && window.RBI.platformMenuAccess.company === true);
     }
+    /** P2-0013: «Администрирование платформы» — только администратору платформы (флаг по ответу сервера pf_my_platform; сервер проверяет каждый вызов). */
+    function _platformAdminAllowed() {
+        return !!(window.RBI && window.RBI.platformMenuAccess && window.RBI.platformMenuAccess.platformAdmin === true);
+    }
+    /** P2-0013: вошедшему почтой подразделы старого Quality (Админ, Качество, Стройконтроль) не показываются — они по старому входу. */
+    function _legacyAllowed() {
+        var sh = window.RBI && window.RBI.services && window.RBI.services.shell;
+        return !(sh && typeof sh.platformEntryMode === 'function' && sh.platformEntryMode() === 'email');
+    }
+    function _subsectionAllowed(key) {
+        if (key === 'company') return _companyAllowed();
+        if (key === 'platform-admin') return _platformAdminAllowed();
+        if (key === 'admin' || key === 'quality' || key === 'construction') return _legacyAllowed();
+        return true;
+    }
     function _syncCompanyTab() {
         var btn = document.getElementById('settings-subnav-company');
         if (btn) btn.hidden = !_companyAllowed();
-        if (!_companyAllowed()) {
-            var panel = document.getElementById('settings-panel-company');
-            if (panel && !panel.hidden) _setSettingsSubsection('platform', { skipGate: true, fromRouter: true });
-        }
+        var pa = document.getElementById('settings-subnav-platform-admin');
+        if (pa) pa.hidden = !_platformAdminAllowed();
+        ['quality', 'construction'].forEach(function (k) {
+            var b = document.querySelector('[data-settings-subsection="' + k + '"]');
+            if (b) b.hidden = !_legacyAllowed();
+        });
+        var adm = document.getElementById('settings-subnav-admin');
+        if (adm && !_legacyAllowed()) adm.hidden = true;
+        var cur = _getSettingsSubsection();
+        var curPanel = document.getElementById('settings-panel-' + cur);
+        if (curPanel && !curPanel.hidden && !_subsectionAllowed(cur)) _setSettingsSubsection('platform', { skipGate: true, fromRouter: true });
     }
     window.addEventListener('rbi:platform-access', _syncCompanyTab);
 
@@ -1753,6 +1778,21 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         }
     }
     window.addEventListener('rbi:platform-access', _syncP2Account);
+    /** «Администрирование платформы» — файл раздела скачивается только администратору платформы (js/dist/platform-admin/). */
+    var _platformAdminBundle = null;
+    function _mountPlatformAdminPanel(on) {
+        var panel = document.getElementById('settings-panel-platform-admin');
+        if (!panel) return;
+        if (!on || !_platformAdminAllowed()) {
+            if (_platformAdminBundle) _platformAdminBundle.then(function (m) { m.unmount(); }).catch(function () {});
+            return;
+        }
+        if (!_platformAdminBundle) {
+            _platformAdminBundle = import('../../dist/platform-admin/platform-admin.js').catch(function (e) { _platformAdminBundle = null; throw e; });
+        }
+        _platformAdminBundle.then(function (m) { if (_platformAdminAllowed() && panel.isConnected && !panel.hidden) m.mount(panel); })
+            .catch(function (e) { console.error('[settings] администрирование платформы не загрузилось', e); });
+    }
     function _mountCompanyPanel(on) {
         var host = window.RBI && window.RBI.platformPanels && window.RBI.platformPanels.company;
         var panel = document.getElementById('settings-panel-company');
@@ -1834,7 +1874,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         key = _normalizeSettingsSubsection(key);
         if (SETTINGS_SUBSECTIONS.indexOf(key) === -1) key = 'platform';
 
-        if (key === 'company' && !_companyAllowed()) key = 'platform';
+        if (!_subsectionAllowed(key)) key = 'platform';
 
         if (key === 'admin' && !opts.skipGate) {
             if (!_isAdminGateOk()) {
@@ -1870,6 +1910,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
             _mountAdminOpsContent();
         }
         _mountCompanyPanel(key === 'company');
+        _mountPlatformAdminPanel(key === 'platform-admin');
         if (!opts.fromRouter && window.AppRouter && typeof window.AppRouter.navigateSub === 'function') {
             window.AppRouter.navigateSub('#/settings', key);
         }
@@ -1923,6 +1964,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         }
         var companyBtn = document.getElementById('settings-subnav-company');
         if (companyBtn) companyBtn.hidden = !_companyAllowed();
+        _syncCompanyTab();
         _syncP2Account();
         var initial = null;
         if (window.AppRouter && typeof window.AppRouter.subTabIdFromPath === 'function') {

@@ -161,5 +161,13 @@ export const api = {
   /** «Выйти» (Настройки → Платформа, полоса раздела): сессия завершается, экран «Вход». */
   signOut: async (): Promise<void> => { await getPlatform().signOut(); },
   showLogin,
-  renderCompanySwitch
+  renderCompanySwitch,
+  /** Вызов функции сервера от имени вошедшего (одно соединение платформы; раздел администрирования своего клиента не создаёт). */
+  rpc: async (fn: string, args?: Record<string, unknown>): Promise<{ data: unknown; error: { message: string; code?: string } | null }> => {
+    getPlatform();
+    const c = getClient();
+    if (!c) return { data: null, error: { message: 'Сервер не настроен' } };
+    const r = await c.rpc(fn, args || {});
+    return { data: r.data, error: r.error ? { message: r.error.message, code: r.error.code } : null };
+  }
 };
