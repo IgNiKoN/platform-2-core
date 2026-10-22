@@ -415,6 +415,7 @@ else {
           check('прораб не меняет даты проекта', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: today }, tok.alfaForeman)).ok);
           check('начало позже окончания — отказ', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: '2030-01-02', p_finish: '2030-01-01' }, tok.alfaPto)).ok);
           check('ПТО задал даты проекта', (await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: '2030-01-01' }, tok.alfaPto)).ok);
+          check('013a: дата окончания 9999-12-31 — отказ (даты 2000…2100)', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: '9999-12-31' }, tok.alfaPto)).ok);
           check('anon: pf_summary_portfolio закрыт', !(await rpc('pf_summary_portfolio', {})).ok);
           // --- P2-0010: дашборд руководителя (миграция 013) — отставание по ТЗ §9, светофор 8.2, недели, «требует внимания», места, пороги. ---
           const wProbe = await rpc('pf_summary_weekly', { p_project: pv, p_weeks: 4 }, tok.alfaPto);
