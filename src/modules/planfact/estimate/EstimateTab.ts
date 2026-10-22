@@ -11,6 +11,7 @@ import { EstimateView } from './EstimateView.ts';
 import { EstimateOverheads } from './OverheadsEditor.ts';
 import { KpBlock } from './KpBlock.ts';
 import { parsePriceInput } from './prices.ts';
+import { firstProjectId, ProjectPicker } from '../ProjectPicker.ts';
 
 const dateFmt = (iso: string): string => { try { return new Date(iso).toLocaleDateString('ru-RU'); } catch { return iso; } };
 
@@ -32,7 +33,7 @@ export function EstimateTab(props: { api: EstimateApi; vor: VorApi }): ReactElem
       const ok: VorProject[] = [];
       for (const p of all) if ((await vor.permissions(p.id)).includes(ESTIMATE_MANAGE)) ok.push(p);
       setProjects(ok);
-      if (ok.length) setProjectId(ok[0].id);
+      if (ok.length) setProjectId(firstProjectId(ok));
     })();
   }, []);
 
@@ -65,10 +66,7 @@ export function EstimateTab(props: { api: EstimateApi; vor: VorApi }): ReactElem
   const open = list?.find((e) => e.id === openId);
 
   return h('div', { className: 'pj-tab es-tab', 'data-testid': 'es-tab' },
-    projects.length > 1
-      ? h('select', { className: 'pj-input pj-company', 'aria-label': 'Проект', value: projectId, onChange: (e) => setProjectId((e.target as HTMLSelectElement).value) },
-          projects.map((p) => h('option', { key: p.id, value: p.id }, p.name)))
-      : h('div', { className: 'pf-muted' }, 'Проект: ', h('b', null, projects[0].name)),
+    h(ProjectPicker, { list: projects, value: projectId, onChange: setProjectId }),
     open
       ? h(EstimateView, { key: open.id, api, vor, estimate: open, imports, companyId: projects.find((p) => p.id === projectId)?.company_id || '',
           extra: (rows, totals, area) => h('div', { className: 'pj-tab' },

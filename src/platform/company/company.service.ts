@@ -10,7 +10,7 @@ export interface MemberRow {
   user_id: string; email: string | null; assignment_id: string | null; role_id: string | null; role_name: string | null;
   project_id: string | null; project_name: string | null; valid_from: string | null; valid_to: string | null; is_active: boolean | null;
 }
-export interface ProjectRef { id: string; name: string; company_id: string }
+export interface ProjectRef { id: string; name: string; company_id: string; archived_at?: string | null }
 export interface CompanyAuditRow {
   at: string; actor_email: string | null; action: string; record_id: string; subject_email: string | null;
   old_data: Record<string, unknown> | null; new_data: Record<string, unknown> | null;

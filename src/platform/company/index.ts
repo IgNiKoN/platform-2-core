@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
-import { CompanyApp, COMPANY_CSS } from './CompanyApp.ts';
+import { CompanyApp, COMPANY_CSS, COMPANY_ROUTE_EVENT } from './CompanyApp.ts';
 import { createCompanyService } from './company.service.ts';
 import type { CompanyApi } from './company.service.ts';
 import { createAuthService, readAuthConfig } from '../auth/auth.service.ts';
@@ -44,6 +44,9 @@ function ensureStyle(doc: Document): void {
 }
 
 export function mount(el: HTMLElement): void {
+  // Настройки монтируют панель при каждом показе маршрута #/settings/company… — тот же контейнер не пересоздаём
+  // (выбор компании и загруженные данные сохраняются), а сообщаем экрану новый адрес (P2-0011).
+  if (root && mountedEl === el && el.isConnected) { window.dispatchEvent(new Event(COMPANY_ROUTE_EVENT)); return; }
   if (root) unmount();
   ensureStyle(el.ownerDocument);
   mountedEl = el;

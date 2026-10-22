@@ -13,6 +13,7 @@ import { money } from '../estimate/prices.ts';
 import { todayMoscow } from '../fact/fact.ts';
 import { Ks2Act } from './Ks2Act.ts';
 import { Ks2Template } from './Ks2Template.ts';
+import { firstProjectId, ProjectPicker } from '../ProjectPicker.ts';
 
 export function Ks2Tab(props: { api: Ks2Api; vor: VorApi }): ReactElement {
   const { api, vor } = props;
@@ -31,7 +32,7 @@ export function Ks2Tab(props: { api: Ks2Api; vor: VorApi }): ReactElement {
       const ok: VorProject[] = [];
       for (const p of all) { const pr = await vor.permissions(p.id); if (pr.includes(KS2_VIEW) || pr.includes(KS2_EDIT)) ok.push(p); }
       setList(ok);
-      if (ok.length) setProjectId(ok[0].id);
+      if (ok.length) setProjectId(firstProjectId(ok));
     })();
   }, []);
 
@@ -56,9 +57,7 @@ export function Ks2Tab(props: { api: Ks2Api; vor: VorApi }): ReactElement {
   if (list === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   if (!list.length) return h('div', { className: 'pf-muted', 'data-testid': 'k2-noaccess' }, 'Нет доступа к КС-2: раздел доступен ПТО, руководителю проекта, экономисту (правка) и руководству (просмотр).');
 
-  const picker = list.length > 1
-    ? h('select', { className: 'pj-input pj-company', 'aria-label': 'Проект', value: projectId, 'data-testid': 'k2-project', onChange: (e) => setProjectId((e.target as HTMLSelectElement).value) }, list.map((p) => h('option', { key: p.id, value: p.id }, p.name)))
-    : h('div', { className: 'pf-muted' }, 'Проект: ', h('b', null, list[0].name));
+  const picker = h(ProjectPicker, { list, value: projectId, onChange: setProjectId, testId: 'k2-project' });
 
   if (actId) {
     return h('div', { className: 'pj-tab k2-tab', 'data-testid': 'k2-tab' }, picker,

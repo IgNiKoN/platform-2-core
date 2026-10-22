@@ -172,9 +172,14 @@ function showView(): void {
 
 export async function init(ctx?: ShellCtx): Promise<void> {
   if (ctx && Array.isArray(ctx.nav)) navItems = ctx.nav;
-  window.addEventListener('hashchange', () => {
-    if (navActive && String(location.hash || '').indexOf(ROUTE) !== 0) { navActive = false; syncPlatformNav(); }
-  });
+  // Ушли из модуля — убрать его подвкладки из таббара/nav2. Роутер переходит через pushState (hashchange нет) и шлёт rbi:route (P2-0011).
+  // Настройки — служебный раздел текущего модуля (как у Quality): подвкладки План/Факт остаются, чтобы вернуться одним нажатием.
+  const onLeave = (): void => {
+    const hash = String(location.hash || '');
+    if (navActive && hash.indexOf(ROUTE) !== 0 && !/^#\/settings(\/|$)/.test(hash)) { navActive = false; syncPlatformNav(); }
+  };
+  window.addEventListener('hashchange', onLeave);
+  window.addEventListener('rbi:route', onLeave);
   const router = (window as unknown as { AppRouter?: { addRoute?: (p: string, fn: () => void) => void } }).AppRouter;
   if (router && typeof router.addRoute === 'function') {
     router.addRoute(ROUTE, showView);

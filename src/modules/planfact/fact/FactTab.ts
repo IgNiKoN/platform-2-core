@@ -14,6 +14,7 @@ import type { HintRow } from './fact.ts';
 import { FactHistory } from './FactHistory.ts';
 import { FactPending } from './FactPending.ts';
 import { FloorClose } from './FloorClose.ts';
+import { firstProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';
 
 const PAGE = 100;
 const NODE_LABEL: Record<string, string> = { building: 'Корпус', section: 'Секция', floor: 'Этаж', apartment: 'Квартира', other: 'Место' };
@@ -43,7 +44,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
 
   const project = list?.find((p) => p.id === projectId);
   const myPerms = perms[projectId] || [];
-  const canCreate = myPerms.includes(FACT_CREATE);
+  const canCreate = myPerms.includes(FACT_CREATE) && !isArchived(project);   // архивный объект — только просмотр
   const canApprove = myPerms.includes(FACT_APPROVE);
   const place = path.length ? path[path.length - 1] : null;
 
@@ -53,7 +54,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
       const ok: VorProject[] = []; const map: Record<string, string[]> = {};
       for (const p of all) { const pr = await vor.permissions(p.id); if (pr.includes(FACT_VIEW)) { ok.push(p); map[p.id] = pr; } }
       setPerms(map); setList(ok);
-      if (ok.length) setProjectId(ok[0].id);
+      if (ok.length) setProjectId(firstProjectId(ok));
     })();
   }, []);
 
@@ -162,9 +163,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
         rows.length > shown ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'ft-more', onClick: () => setShown(shown + PAGE) }, `Показать ещё (${rows.length - shown})`) : null);
 
   return h('div', { className: 'pj-tab ft-tab', 'data-testid': 'ft-tab' },
-    list.length > 1
-      ? h('select', { className: 'pj-input pj-company', 'aria-label': 'Проект', value: projectId, onChange: (e) => setProjectId((e.target as HTMLSelectElement).value) }, list.map((p) => h('option', { key: p.id, value: p.id }, p.name)))
-      : h('div', { className: 'pf-muted' }, 'Проект: ', h('b', null, list[0].name)),
+    h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
     canApprove
       ? h('div', { className: 'pf-seg ft-seg', role: 'tablist' },
           h('button', { type: 'button', role: 'tab', 'aria-selected': view === 'entry', className: 'pf-seg-btn' + (view === 'entry' ? ' pf-seg-btn--active' : ''), 'data-testid': 'ft-view-entry', onClick: () => setView('entry') }, 'Ввод'),

@@ -5,6 +5,7 @@ if (!existsSync(envFile)) { console.log('SKIP: нет .env.local (NOT RUN)'); pr
 const env = Object.fromEntries(readFileSync(envFile, 'utf8').split('\n').filter(l => l.includes('=')).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
 const URL_ = env.P2_SUPABASE_URL, ANON = env.P2_SUPABASE_ANON_KEY;
 let fails = 0;
+const REST_PROJECT = 'REST-автопроверки';   // P2-0011: единственный объект автопроверок в «Альфе» (не архивируется; уборка — scripts/cleanup-test-projects.sql)
 const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`); if (!ok) fails++; };
 const rpc = (fn, body, token) => fetch(`${URL_}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: ANON, Authorization: `Bearer ${token || ANON}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 async function login(email, password) {
@@ -123,17 +124,27 @@ else {
   const accB = await j(await rpc('pf_my_company_access', {}, tok.betaPto));
   check('Бета-ПТО видит только свою компанию', accB.length === 1 && accB[0].company_name === 'Бета');
   check('anon: pf_my_company_access закрыт', !(await rpc('pf_my_company_access', {})).ok);
-  const stamp5 = 'REST-проект ' + new Date().toISOString();
+  // P2-0011: один постоянный объект автопроверок на компанию (создаётся при первом прогоне, дальше переиспользуется) — список объектов
+  // «Альфы» не растёт. Данные прогона помечены меткой времени (виды работ, сметы, бригады, номера актов) и сверяются только по этому прогону.
   let pid = null, bld5 = null, unitId = null;
   try {
     check('прораб: создать проект нельзя', !(await rpc('pf_create_project', { p_company: cA5, p_name: 'ВЗЛОМ-прораб' }, tok.alfaForeman)).ok);
     check('Бета-ПТО: создать проект в Альфе нельзя', !(await rpc('pf_create_project', { p_company: cA5, p_name: 'ВЗЛОМ-бета' }, tok.betaPto)).ok);
-    const cp5 = await rpc('pf_create_project', { p_company: cA5, p_name: stamp5, p_code: 'REST' }, tok.alfaAdmin);
-    pid = await j(cp5);
-    check('админ создал проект', cp5.ok && typeof pid === 'string', `статус ${cp5.status}`);
+    const before = await j(await rpc('pf_company_projects', { p_company: cA5 }, tok.alfaAdmin));
+    pid = before.find((x) => x.name === REST_PROJECT && !x.archived_at)?.id ?? null;
+    if (!pid) {
+      const cp5 = await rpc('pf_create_project', { p_company: cA5, p_name: REST_PROJECT, p_code: 'REST' }, tok.alfaAdmin);
+      pid = await j(cp5);
+      check('админ создал постоянный объект автопроверок', cp5.ok && typeof pid === 'string', `статус ${cp5.status}`);
+    }
+    check('админ правит объект (журнал «projects»)', (await rpc('pf_update_project', { p_project: pid, p_name: REST_PROJECT, p_code: 'REST', p_archived: false }, tok.alfaAdmin)).ok);
     const pl = await j(await rpc('pf_company_projects', { p_company: cA5 }, tok.alfaAdmin));
-    check('проект в списке, can_manage = true', pl.some((x) => x.id === pid && x.name === stamp5 && x.can_manage));
+    check('объект в списке, can_manage = true', pl.some((x) => x.id === pid && x.name === REST_PROJECT && x.can_manage));
+    check('прогон не добавил объектов в компанию', pl.length === before.length + (before.some((x) => x.id === pid) ? 0 : 1), `${before.length} → ${pl.length}`);
     check('Бета-ПТО не видит проектов Альфы', (await j(await rpc('pf_company_projects', { p_company: cA5 }, tok.betaPto))).length === 0);
+    // остаток упавшего прогона: корпус генератора удаляем, чтобы повторная генерация не упала на дубле имени
+    const left = (await j(await rpc('pf_list_locations', { p_project: pid, p_parent: null }, tok.alfaAdmin))).find((x) => x.name === 'Корпус REST');
+    if (left) await rpc('pf_delete_location', { p_location: left.id, p_cascade: true }, tok.alfaAdmin);
     const gb = await rpc('pf_generate_building', { p_project: pid, p_parent: null, p_name: 'Корпус REST', p_sections: 2, p_floors: 5, p_apartments_per_floor: 4, p_first_floor: 1 }, tok.alfaAdmin);
     bld5 = await j(gb);
     check('генератор 2×5×4 выполнен', gb.ok && typeof bld5 === 'string', `статус ${gb.status}`);
@@ -169,7 +180,6 @@ else {
   } finally {
     if (bld5) check('ветка корпуса удалена (53 узла)', (await j(await rpc('pf_delete_location', { p_location: bld5, p_cascade: true }, tok.alfaAdmin))) === 53);
     if (unitId) check('своя единица удалена', (await rpc('pf_delete_unit', { p_unit: unitId }, tok.alfaAdmin)).ok);
-    if (pid) check('проект отправлен в архив', (await rpc('pf_update_project', { p_project: pid, p_name: stamp5, p_code: 'REST', p_archived: true }, tok.alfaAdmin)).ok);
   }
 }
 // --- P2-0006: ВОР (миграция 007) — права, изоляция компаний, подтверждение, неизменяемость. Данные помечены «REST-ВОР …». ---
@@ -181,16 +191,20 @@ else {
   const cV = accV[0]?.company_id;
   const stampV = 'REST-ВОР ' + new Date().toISOString();
   let pv = null, imp = null; const asgV = [];
+  const actNo = (n) => 'R' + Date.now().toString(36) + '-' + n;   // номера актов прогона — свои: черновики прошлых прогонов не мешают
   try {
-    pv = await j(await rpc('pf_create_project', { p_company: cV, p_name: stampV }, tok.alfaAdmin));
-    const sec = await j(await rpc('pf_add_location', { p_project: pv, p_parent: null, p_type: 'section', p_name: 'Секция 1' }, tok.alfaAdmin));
-    // Тестовые ПТО и прораб назначены на основной проект Альфы — на время теста назначаем их и на проект REST-ВОР (в конце — отзыв).
+    pv = (await j(await rpc('pf_company_projects', { p_company: cV }, tok.alfaAdmin))).find((x) => x.name === REST_PROJECT && !x.archived_at)?.id ?? null;
+    check('постоянный объект автопроверок найден', typeof pv === 'string');
+    const roots = await j(await rpc('pf_list_locations', { p_project: pv, p_parent: null }, tok.alfaAdmin));
+    const sec = roots.find((x) => x.name === 'Секция 1')?.id
+      ?? await j(await rpc('pf_add_location', { p_project: pv, p_parent: null, p_type: 'section', p_name: 'Секция 1' }, tok.alfaAdmin));
+    // Тестовые ПТО и прораб назначены на основной проект Альфы — на время теста назначаем их и на объект автопроверок (в конце — отзыв).
     const rolesV = await j(await rpc('pf_list_company_roles', { p_company: cV }, tok.alfaAdmin));
     const membersV = await j(await rpc('pf_list_company_members', { p_company: cV }, tok.alfaAdmin));
     for (const [email, tpl] of [['alfa-pto@test.invalid', 'pto'], ['alfa-foreman@test.invalid', 'foreman']]) {
       const u = membersV.find((m) => m.email === email)?.user_id, r = rolesV.find((x) => x.template_code === tpl)?.id;
       const a = await rpc('pf_assign_role', { p_user: u, p_role: r, p_project: pv }, tok.alfaAdmin);
-      check(`назначение ${tpl} на проект REST-ВОР`, a.ok, `статус ${a.status}`);
+      check(`назначение ${tpl} на объект автопроверок`, a.ok, `статус ${a.status}`);
       if (a.ok) asgV.push(await j(a));
     }
     check('ПТО: право planfact.vor.manage в проекте', (await perms('alfaPto', pv)).includes('planfact.vor.manage'));
@@ -231,7 +245,7 @@ else {
     check('прораб не подтверждает ВОР', !(await rpc('pf_vor_confirm', { p_import: imp }, tok.alfaForeman)).ok);
     const cf = await rpc('pf_vor_confirm', { p_import: imp }, tok.alfaPto);
     check('ВОР подтверждён: 1 позиция', cf.ok && (await j(cf)) === 1, `статус ${cf.status}`);
-    const pos = await j(await rpc('pf_vor_positions', { p_project: pv, p_location: null }, tok.alfaForeman));
+    const pos = (await j(await rpc('pf_vor_positions', { p_project: pv, p_location: null }, tok.alfaForeman))).filter((x) => x.import_id === imp);
     check('прораб видит позицию «Секция 1 · вид работ · м² · 399,89 · кв.»', pos.length === 1 && pos[0].location_path === 'Секция 1' && pos[0].unit_code === 'м²' && Number(pos[0].qty) === 399.89 && pos[0].apartments_note === 'кв. 3, 16');
     check('подтверждённый: строки не дописать', !(await rpc('pf_vor_add_rows', { p_import: imp, p_rows: [{ row_no: 60, kind: 'work', name: 'x' }] }, tok.alfaPto)).ok);
     check('подтверждённый: не удалить', !(await rpc('pf_vor_delete_import', { p_import: imp }, tok.alfaPto)).ok);
@@ -342,12 +356,14 @@ else {
         check('прораб не видит КС-2', !(await rpc('pf_ks2_settings', { p_project: pv }, tok.alfaForeman)).ok);
         check('администратор без ks2.* не видит акты', !(await rpc('pf_ks2_acts', { p_project: pv }, tok.alfaAdmin)).ok);
         check('Бета-ПТО не видит акты Альфы', !(await rpc('pf_ks2_acts', { p_project: pv }, tok.betaPto)).ok);
-        check('без договорной КП акт не создаётся', !(await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: '1', p_act_date: today, p_from: today, p_to: today }, tok.alfaPto)).ok);
+        const s0 = await j(await rpc('pf_ks2_settings', { p_project: pv }, tok.alfaPto));
+        if (!s0?.contract_kp_revision_id) check('без договорной КП акт не создаётся', !(await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: actNo(0), p_act_date: today, p_from: today, p_to: today }, tok.alfaPto)).ok);
         const kk = await j(await rpc('pf_kp_create', { p_estimate: est, p_file_sha256: sha, p_snapshot: { version: 1, rows: [
           { import_id: imp, row_no: 11, kind: 'work', price_labor: 11, price_material: 1.5 }, { import_id: imp, row_no: 12, kind: 'material', price_labor: null, price_material: 2 }] }, p_total: 1, p_note: 'REST-КС-2' }, tok.alfaPto));
         check('Бета-ПТО не выбирает договорную КП Альфы', !(await rpc('pf_ks2_set_contract', { p_project: pv, p_kp_revision: kk?.id }, tok.betaPto)).ok);
         check('ПТО выбрал договорную КП', (await rpc('pf_ks2_set_contract', { p_project: pv, p_kp_revision: kk?.id }, tok.alfaPto)).ok);
-        const ac = await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: '1', p_act_date: today, p_from: today, p_to: today }, tok.alfaPto);
+        const no1 = actNo(1), no2 = actNo(2);
+        const ac = await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: no1, p_act_date: today, p_from: today, p_to: today }, tok.alfaPto);
         const act1 = await j(ac);
         check('ПТО создал акт № 1', ac.ok && typeof act1 === 'string', `статус ${ac.status}`);
         const a1 = await j(await rpc('pf_ks2_act', { p_act: act1 }, tok.alfaPto));
@@ -366,7 +382,7 @@ else {
         check('ПТО выдал акт № 1', (await rpc('pf_ks2_issue', { p_act: act1 }, tok.alfaPto)).ok);
         check('повторная выдача отклонена', !(await rpc('pf_ks2_issue', { p_act: act1 }, tok.alfaPto)).ok);
         check('выданный акт не правится', !(await rpc('pf_ks2_save', { p_act: act1, p_header: {}, p_rows: [], p_note: null }, tok.alfaPto)).ok);
-        const act2 = await j(await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: '2', p_act_date: today, p_from: today, p_to: today }, tok.alfaPto));
+        const act2 = await j(await rpc('pf_ks2_act_create', { p_project: pv, p_act_no: no2, p_act_date: today, p_from: today, p_to: today }, tok.alfaPto));
         const a2 = await j(await rpc('pf_ks2_act', { p_act: act2 }, tok.alfaPto));
         const w2 = a2?.proposal?.find((r) => r.row_no === 11);
         check('акт № 2: выставлено ранее 7, по системе 1', Number(w2?.prev_qty) === 7 && Number(w2?.sys_qty) === 1, JSON.stringify(w2));
@@ -375,7 +391,7 @@ else {
         const w3 = (await j(await rpc('pf_ks2_act', { p_act: act2 }, tok.alfaPto)))?.proposal?.find((r) => r.row_no === 11);
         check('после аннулирования объём снова доступен (по системе 8)', Number(w3?.sys_qty) === 8, JSON.stringify(w3));
         const lst = await j(await rpc('pf_ks2_acts', { p_project: pv }, tok.alfaPto));
-        check('список актов: № 1 аннулирован, № 2 черновик', lst.some((a) => a.act_no === '1' && a.status === 'annulled') && lst.some((a) => a.act_no === '2' && a.status === 'draft'));
+        check('список актов: № 1 аннулирован, № 2 черновик', lst.some((a) => a.act_no === no1 && a.status === 'annulled') && lst.some((a) => a.act_no === no2 && a.status === 'draft'));
         const audK = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
         check('журнал компании: КС-2', ['ks2_acts', 'ks2_settings'].every((t) => audK.some((r) => r.table_name === t)));
         check('anon: pf_ks2_acts закрыт', !(await rpc('pf_ks2_acts', { p_project: pv })).ok);
@@ -399,6 +415,7 @@ else {
           check('прораб не меняет даты проекта', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: today }, tok.alfaForeman)).ok);
           check('начало позже окончания — отказ', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: '2030-01-02', p_finish: '2030-01-01' }, tok.alfaPto)).ok);
           check('ПТО задал даты проекта', (await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: '2030-01-01' }, tok.alfaPto)).ok);
+          check('013a: дата окончания 9999-12-31 — отказ (даты 2000…2100)', !(await rpc('pf_project_set_dates', { p_project: pv, p_start: today, p_finish: '9999-12-31' }, tok.alfaPto)).ok);
           check('anon: pf_summary_portfolio закрыт', !(await rpc('pf_summary_portfolio', {})).ok);
           // --- P2-0010: дашборд руководителя (миграция 013) — отставание по ТЗ §9, светофор 8.2, недели, «требует внимания», места, пороги. ---
           const wProbe = await rpc('pf_summary_weekly', { p_project: pv, p_weeks: 4 }, tok.alfaPto);
@@ -442,8 +459,7 @@ else {
     check('таблицы ВОР не открыты через REST напрямую', !directV.ok, `статус ${directV.status}`);
     check('anon: pf_vor_list_imports закрыт', !(await rpc('pf_vor_list_imports', { p_project: pv })).ok);
   } finally {
-    for (const a of asgV) check('назначение на проект REST-ВОР отозвано', (await rpc('pf_revoke_assignment', { p_assignment: a }, tok.alfaAdmin)).ok);
-    if (pv) check('проект REST-ВОР отправлен в архив', (await rpc('pf_update_project', { p_project: pv, p_name: stampV, p_code: null, p_archived: true }, tok.alfaAdmin)).ok);
+    for (const a of asgV) check('назначение на объект автопроверок отозвано', (await rpc('pf_revoke_assignment', { p_assignment: a }, tok.alfaAdmin)).ok);
   }
 }
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');

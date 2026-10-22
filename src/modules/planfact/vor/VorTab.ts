@@ -13,6 +13,7 @@ import { VorPositions } from './VorPositions.ts';
 import type { ProjectsApi } from '../../../platform/company/projects.service.ts';
 import { VOR_MANAGE } from './vor.service.ts';
 import type { VorApi, VorImport, VorProfile, VorProject } from './vor.service.ts';
+import { firstProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';
 
 const KIND_LABEL: Record<RowKind, string> = { work: 'Работа', material: 'Материал', group: 'Группа', context: 'Место', skip: 'Пропуск' };
 type Filter = 'all' | RowKind;
@@ -106,7 +107,7 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
   }, [file, profiles, overrides]);
   const cur = sheet ? results[sheet] : null;
   const res = cur ? cur.r : null;
-  const canManage = perms.includes(VOR_MANAGE);
+  const canManage = perms.includes(VOR_MANAGE) && !isArchived((projects || []).find((p) => p.id === projectId));   // архивный объект — только просмотр
   const canProjects = perms.includes('planfact.projects.manage');
   const opened = openId && imports ? imports.find((i) => i.id === openId) || null : null;
   const edited = !!(sheet && overrides[sheet]);
@@ -123,7 +124,7 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
 
   useEffect(() => {
     if (!api) return;
-    void api.listProjects().then((list) => { setProjects(list); if (list.length) setProjectId(list[0].id); });
+    void api.listProjects().then((list) => { setProjects(list); if (list.length) setProjectId(firstProjectId(list)); });
   }, []);
 
   async function reloadImports(p: string): Promise<void> {
@@ -205,9 +206,8 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
   return h('div', { className: 'pj-tab vor-tab', 'data-testid': 'vor-tab' },
     api && projects
       ? h('div', { className: 'pf-card pj-form' },
-          h('label', { className: 'pf-field pj-grow' }, 'Проект',
-            h('select', { className: 'pj-input', value: projectId, 'data-testid': 'vor-project', onChange: (e: ChangeEvent<HTMLSelectElement>) => setProjectId(e.currentTarget.value) },
-              projects.map((p) => h('option', { key: p.id, value: p.id }, p.name)))),
+          h('div', { className: 'pf-field pj-grow' }, 'Проект',
+            h(ProjectPicker, { list: projects, value: projectId, onChange: setProjectId, testId: 'vor-project', alwaysSelect: true })),
           !canManage && perms.length ? h('span', { className: 'pf-muted', 'data-testid': 'vor-readonly' }, 'Только просмотр: загрузка ВОР доступна ПТО, РП и администратору.') : null)
       : null,
     api ? h('h3', { className: 'pf-title un-title' }, 'Загрузки проекта') : null,
