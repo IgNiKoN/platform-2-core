@@ -507,7 +507,13 @@ const AppModeManager = {
         this.updateHeaderVisibility();
     },
 
-    changeMode(newMode) {
+    /**
+     * opts.fromRoute — режим меняет показ маршрута (назад/вперёд, прямой адрес): экран уже нужный, никуда не переходить (P2-0011;
+     * раньше переход на главную модуля уводил «назад» с «Инженера» на «Осмотр»). Переключение пользователем — новым шагом
+     * истории (раньше replace: «назад» пропускал предыдущий экран); из Настроек — по-прежнему replace.
+     */
+    changeMode(newMode, opts) {
+        const fromRoute = !!(opts && opts.fromRoute);
         const hash = window.location.hash || '';
         const onSettings = /^#\/settings(\/|$)/i.test(hash)
             || /^#\/quality\/settings(\/|$)/i.test(hash);
@@ -613,31 +619,33 @@ const AppModeManager = {
         const knowledgeRef = this._pendingKnowledgeReferencePath;
         this._pendingKnowledgeReferencePath = null;
 
+        // тот же адрес (переход вызван показом маршрута, как у «Базы знаний») — replace, без дубля шага истории
+        const go = (p) => { if (!fromRoute) window.AppRouter.navigate(p, onSettings || p === hash); };
         switch (newMode) {
             case 'quality':
                 document.getElementById('construction-warning-banner').style.display = 'none';
-                window.AppRouter.navigate(knowledgeRef || '#/quality/audit', true);
+                go(knowledgeRef || '#/quality/audit');
                 break;
             case 'construction':
                 document.getElementById('construction-warning-banner').style.display = 'flex';
-                window.AppRouter.navigate(knowledgeRef || '#/construction/defects', true);
+                go(knowledgeRef || '#/construction/defects');
                 break;
             case 'knowledge':
                 document.getElementById('construction-warning-banner').style.display = 'none';
-                window.AppRouter.navigate('#/knowledge', true);
+                go('#/knowledge');
                 break;
             case 'construction-v2':
                 document.getElementById('construction-warning-banner').style.display = 'none';
-                window.AppRouter.navigate('#/construction-v2', true);
+                go('#/construction-v2');
                 break;
             case 'safety':
-                window.AppRouter.navigate('#/safety/placeholder', true);
+                go('#/safety/placeholder');
                 break;
             case 'warranty':
-                window.AppRouter.navigate('#/warranty/placeholder', true);
+                go('#/warranty/placeholder');
                 break;
             case 'uk':
-                window.AppRouter.navigate('#/uk/placeholder', true);
+                go('#/uk/placeholder');
                 break;
         }
 
@@ -838,6 +846,20 @@ const AppModeManager = {
 function changeAppMode(mode) {
     AppModeManager.changeMode(mode);
 }
+
+// P2-0011: режим = адрес. Показан экран другого бизнес-модуля (назад/вперёд, ссылка, F5) — переключить режим без перехода,
+// чтобы меню (таббар, nav2, боковое) было от открытого модуля. «База знаний» (#/knowledge) — своя логика в renderKnowledge.
+function modeFromPath(path) {
+    const p = String(path || '');
+    if (/^#\/quality(\/|$)/.test(p)) return 'quality';
+    if (/^#\/construction-v2(\/|$)/.test(p)) return 'construction-v2';
+    if (/^#\/construction(\/|$)/.test(p)) return 'construction';
+    return null;
+}
+window.addEventListener('rbi:route', function (e) {
+    const m = modeFromPath(e && e.detail && e.detail.path);
+    if (m && AppModeManager.currentMode !== m) AppModeManager.changeMode(m, { fromRoute: true });
+});
 
 function revertToPreviousMode() {
     AppModeManager.revertToPrevious();
