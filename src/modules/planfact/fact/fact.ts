@@ -75,28 +75,29 @@ export function todayMoscow(now: Date = new Date()): string {
 }
 
 /** Строка ВОР, нужная для подсказки (номер, тип, наименование). */
-export interface HintRow { row_no: number; kind: string; number: string | null; name: string | null }
+export interface HintRow { row_no: number; kind: string; number: string | null; name: string | null; context?: { note?: string } | null }
 /** Позиция ВОР: из какой строки какой загрузки. */
 export interface HintPosition { id: string; import_id: string; source_row_no: number | null }
 
 /** Подсказка к позиции факта: «№ 21.2 · Двери» — номер строки заказчика и ближайший раздел над ней (P2-0009, К3:
- *  одинаковые наименования на одном месте иначе не различить). Позиции без строки — без подсказки. */
+ *  одинаковые наименования на одном месте иначе не различить). Пояснение строки Номенклатуры (P2-0012) — в конце: «… · гипсовая, жилые».
+ *  Позиции без строки — без подсказки. */
 export function vorHints(positions: HintPosition[], rowsByImport: Map<string, HintRow[]>): Map<string, string> {
   const out = new Map<string, string>();
-  const index = new Map<string, Map<number, { number: string | null; group: string | null }>>();
+  const index = new Map<string, Map<number, { number: string | null; group: string | null; note: string | null }>>();
   for (const [imp, rows] of rowsByImport) {
-    const m = new Map<number, { number: string | null; group: string | null }>();
+    const m = new Map<number, { number: string | null; group: string | null; note: string | null }>();
     let group: string | null = null;
     for (const r of [...rows].sort((a, b) => a.row_no - b.row_no)) {
       if (r.kind === 'group') group = String(r.name || '').replace(/^\s*[\d.]+\s*/, '').trim() || null;
-      m.set(r.row_no, { number: r.number ? String(r.number).trim() : null, group });
+      m.set(r.row_no, { number: r.number ? String(r.number).trim() : null, group, note: (r.context && r.context.note) || null });
     }
     index.set(imp, m);
   }
   for (const p of positions) {
     const r = p.source_row_no === null ? undefined : index.get(p.import_id)?.get(p.source_row_no);
     if (!r) continue;
-    const label = [r.number ? `№ ${r.number}` : '', r.group || ''].filter(Boolean).join(' · ');
+    const label = [r.number ? `№ ${r.number}` : '', r.group || '', r.note || ''].filter(Boolean).join(' · ');
     if (label) out.set(p.id, label);
   }
   return out;

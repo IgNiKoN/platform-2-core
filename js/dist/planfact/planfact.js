@@ -31219,6 +31219,7 @@ function Gx(n) {
           { className: "vor-c-name" },
           o.createElement("span", null, T.row.name),
           o.createElement("span", { className: "vor-place" }, `стр. ${T.row.row_no} · ${T.row.unit_text || "нет ЕИ"} · ${T.row.qty === null ? "нет объёма" : T.row.qty.toLocaleString("ru-RU")}`),
+          T.row.context && T.row.context.note ? o.createElement("span", { className: "pf-muted vor-wnote", "data-testid": "vor-wnote" }, T.row.context.note) : null,
           T.v.workTypeId ? o.createElement("span", { className: "pf-muted" }, `→ ${R(T.v.workTypeId)}${T.v.light === "yellow" ? ` (сходство ${Math.round(T.v.score * 100)} %)` : ""}`) : null
         ),
         f && T.v.light !== "green" && T.v.unitId ? o.createElement(
@@ -31285,6 +31286,7 @@ const Vx = `
 .vor-wrow--yellow .vor-light{color:var(--color-yellow)}
 .vor-wrow--red .vor-light{color:var(--color-red)}
 .vor-light{font-size:11px;font-weight:700;white-space:nowrap}
+.vor-wnote{font-size:11px}
 .vor-wrow-act{display:flex;flex-wrap:wrap;gap:6px}
 .vor-wrow-act select{flex:1 1 200px;min-width:0;min-height:40px}
 .vor-more{margin:10px 14px}
@@ -32297,13 +32299,13 @@ function yN(n, a) {
     const h = /* @__PURE__ */ new Map();
     let p = null;
     for (const g of [...f].sort((y, v) => y.row_no - v.row_no))
-      g.kind === "group" && (p = String(g.name || "").replace(/^\s*[\d.]+\s*/, "").trim() || null), h.set(g.row_no, { number: g.number ? String(g.number).trim() : null, group: p });
+      g.kind === "group" && (p = String(g.name || "").replace(/^\s*[\d.]+\s*/, "").trim() || null), h.set(g.row_no, { number: g.number ? String(g.number).trim() : null, group: p, note: g.context && g.context.note || null });
     s.set(u, h);
   }
   for (const u of n) {
     const f = u.source_row_no === null || (c = s.get(u.import_id)) == null ? void 0 : c.get(u.source_row_no);
     if (!f) continue;
-    const h = [f.number ? `№ ${f.number}` : "", f.group || ""].filter(Boolean).join(" · ");
+    const h = [f.number ? `№ ${f.number}` : "", f.group || "", f.note || ""].filter(Boolean).join(" · ");
     h && l.set(u.id, h);
   }
   return l;

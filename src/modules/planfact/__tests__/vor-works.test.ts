@@ -133,3 +133,14 @@ test('пустая ЕИ: ПТО выбирает ЕИ у строки → сох
   assert.deepEqual(s.createdTypes, [{ name: 'Монтаж межкомнатных дверей', unit_id: 'sht' }]);
   assert.equal(s.learned[0].unit_text, '', 'словарь запоминает строку «без ЕИ»');
 });
+
+test('КВР / Номенклатура (P2-0012): в «Видах работ» только строки Номенклатуры, у каждой — пояснение; КВР не в списке', async () => {
+  const kvr: VorRow = { ...W(1, 'КВР-группа 8', 'м2'), kind: 'group', qty: 41412.7 };
+  const rows = [kvr, { ...W(2, 'Работа «Вид 13»', 'м2'), context: { kvr: 1, note: 'Пояснение 17' } }, { ...W(3, 'Работа «Вид 13»', 'м2'), context: { kvr: 1, note: 'Пояснение 18' } }];
+  const s = setup(rows, [], []);
+  const { el } = mount({ api: s.api, projects: s.projects, rows, save: s.save });
+  await tick(); await tick();
+  assert.deepEqual(lights(el)[0], 'Все 2');
+  assert.deepEqual(Array.from(el.querySelectorAll('[data-testid="vor-wnote"]') as N[]).map((n: N) => n.textContent), ['Пояснение 17', 'Пояснение 18']);
+  assert.equal(el.querySelector('[data-row="1"]'), null);
+});
