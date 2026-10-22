@@ -1,5 +1,5 @@
 -- P2-0014: проверка сторожа создания профиля Качества (015). Всё внутри одной транзакции и ОТКАТЫВАЕТСЯ:
--- отчёт приходит как ERROR P0001 «… FAIL всего: N». Тестовые профили — только с метками p2-0014-*, проект TEST-P2.
+-- отчёт приходит как ERROR P0001 «… FAIL всего: N». Тестовые профили — только с метками p2-0014-*, проект TEST-P2; тестовые учётки auth.users @p2-0014.invalid — тоже откатываются.
 -- PGlite: 015_rbi_model.pglite.sql → (015_rbi_guard_up.sql) → этот файл. До 015 ожидаются FAIL (дыра), после — FAIL 0.
 create or replace function pg_temp.t(c boolean, l text) returns text language sql as $f$
   select case when coalesce(c, false) then 'OK ' || l else 'FAIL ' || l end || E'\n' $f$;
@@ -18,6 +18,10 @@ declare
   s2 uuid := 'f0140000-0000-4000-8000-000000000052';
   s3 uuid := 'f0140000-0000-4000-8000-000000000053';
 begin
+  -- тестовые учётки Auth (только внутри этой транзакции, откатываются)
+  insert into auth.users (id, email, aud, role)
+  select u, 'p2-0014-' || right(u::text, 2) || '@p2-0014.invalid', 'authenticated', 'authenticated'
+  from unnest(array[mgr, eng, s1, s2, s3]) as u;
   -- свои руководитель и инженер TEST-P2 (служебной ролью, как одобряет администратор)
   insert into public.rbi_engineer_profiles (inspector_id, engineer_name, project_code, role, cloud_status, assigned_projects, auth_user_id, settings)
   values ('p2-0014-mgr', 'P2-0014 руководитель', 'TEST-P2', 'manager', 'approved', '{TEST-P2}', mgr, '{}'),

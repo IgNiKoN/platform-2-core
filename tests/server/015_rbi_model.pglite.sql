@@ -27,6 +27,11 @@ create unique index if not exists idx_rbi_profiles_inspector_id on public.rbi_en
 create unique index if not exists idx_rbi_profiles_project_engineer on public.rbi_engineer_profiles (project_code, engineer_name);
 create unique index if not exists rbi_engineer_profiles_auth_email_uidx on public.rbi_engineer_profiles (lower(auth_email)) where auth_email is not null;
 create unique index if not exists rbi_engineer_profiles_auth_user_id_uidx on public.rbi_engineer_profiles (auth_user_id) where auth_user_id is not null;
+create table if not exists auth.users (id uuid primary key, email text, aud text, role text);
+insert into auth.users (id) values ('00000000-0000-0000-0000-0000000000a1'), ('00000000-0000-0000-0000-0000000000e1') on conflict do nothing;
+alter table public.rbi_engineer_profiles drop constraint if exists rbi_engineer_profiles_auth_user_id_fkey;
+alter table public.rbi_engineer_profiles add constraint rbi_engineer_profiles_auth_user_id_fkey
+  foreign key (auth_user_id) references auth.users(id) on delete set null;
 grant all on public.rbi_engineer_profiles to anon, authenticated, service_role;
 alter table public.rbi_engineer_profiles enable row level security;
 
