@@ -10,7 +10,7 @@ import type { ParsedRow, RowContext } from './parse.ts';
 export const VOR_MANAGE = 'planfact.vor.manage';
 export const ROWS_CHUNK = 1000;
 
-export interface VorProject { id: string; name: string; company_id: string }
+export interface VorProject { id: string; name: string; company_id: string; archived_at?: string | null }
 export interface VorImport {
   id: string; file_name: string; sheet_name: string; status: 'draft' | 'confirmed'; row_count: number; works: number; positions: number;
   created_at: string; created_by_email: string | null; confirmed_at: string | null; profile_id: string | null;

@@ -91,7 +91,7 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
       h('label', { className: 'pf-field co-grow' }, 'Проект',
         h('select', { name: 'project', className: 'co-input', defaultValue: '' },
           h('option', { value: '' }, 'Все проекты компании'),
-          projects.map((p) => h('option', { key: p.id, value: p.id }, p.name)))),
+          projects.filter((p) => !p.archived_at).map((p) => h('option', { key: p.id, value: p.id }, p.name)))),   // архивные — не назначаем (P2-0011)
       h('label', { className: 'pf-field' }, 'Срок до (необязательно)', h('input', { name: 'until', type: 'date', className: 'co-input' })),
       h('button', { type: 'submit', className: 'pf-btn', disabled: busy }, 'Назначить роль')),
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,

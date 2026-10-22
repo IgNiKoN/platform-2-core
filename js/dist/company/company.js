@@ -12366,9 +12366,10 @@ function Ib(r) {
           "select",
           { name: "project", className: "co-input", defaultValue: "" },
           U.createElement("option", { value: "" }, "Все проекты компании"),
-          g.map((K) => U.createElement("option", { key: K.id, value: K.id }, K.name))
+          g.filter((K) => !K.archived_at).map((K) => U.createElement("option", { key: K.id, value: K.id }, K.name))
         )
       ),
+      // архивные — не назначаем (P2-0011)
       U.createElement("label", { className: "pf-field" }, "Срок до (необязательно)", U.createElement("input", { name: "until", type: "date", className: "co-input" })),
       U.createElement("button", { type: "submit", className: "pf-btn", disabled: D }, "Назначить роль")
     ),
