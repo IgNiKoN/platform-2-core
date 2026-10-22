@@ -1,5 +1,5 @@
 /**
- * Вкладка «Проекты»: список проектов компании, создать, переименовать, архивировать / вернуть.
+ * Вкладка «Объекты» (подписи — «объект», P2-0009; в данных — проект): список проектов компании, создать, переименовать, архивировать / вернуть.
  * Без права planfact.projects.manage (can_manage) — только чтение. Адаптивно: строки переносятся на узком экране.
  */
 import { createElement as h, useEffect, useState } from 'react';
@@ -34,8 +34,8 @@ export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess })
     const form = ev.currentTarget as HTMLFormElement;
     const name = (form.elements.namedItem('name') as HTMLInputElement).value.trim();
     const code = (form.elements.namedItem('code') as HTMLInputElement).value.trim();
-    if (!name) { setError('Введите название проекта'); return; }
-    if (await run(api.createProject(company.company_id, name, code), 'Проект создан')) form.reset();
+    if (!name) { setError('Введите название объекта'); return; }
+    if (await run(api.createProject(company.company_id, name, code), 'Объект создан')) form.reset();
   }
 
   async function rename(ev: FormEvent, p: ProjectItem): Promise<void> {
@@ -44,8 +44,8 @@ export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess })
     const form = ev.currentTarget as HTMLFormElement;
     const name = (form.elements.namedItem('name') as HTMLInputElement).value.trim();
     const code = (form.elements.namedItem('code') as HTMLInputElement).value.trim();
-    if (!name) { setError('Введите название проекта'); return; }
-    if (await run(api.updateProject(p.id, name, code, null), 'Проект сохранён')) setEditing('');
+    if (!name) { setError('Введите название объекта'); return; }
+    if (await run(api.updateProject(p.id, name, code, null), 'Объект сохранён')) setEditing('');
   }
 
   if (opened) return h(LocationsTree, { api, project: opened, canManage: company.can_manage_projects, onBack: () => { setOpened(null); void load(); } });
@@ -57,9 +57,9 @@ export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess })
   return h('div', { className: 'pj-tab', 'data-testid': 'pj-projects' },
     company.can_manage_projects
       ? h('form', { className: 'pf-card pj-form', onSubmit: create, 'data-testid': 'pj-create' },
-          h('label', { className: 'pf-field pj-grow' }, 'Название проекта', h('input', { name: 'name', type: 'text', className: 'pj-input', maxLength: 200 })),
+          h('label', { className: 'pf-field pj-grow' }, 'Название объекта', h('input', { name: 'name', type: 'text', className: 'pj-input', maxLength: 200 })),
           h('label', { className: 'pf-field' }, 'Код (необязательно)', h('input', { name: 'code', type: 'text', className: 'pj-input', maxLength: 40 })),
-          h('button', { type: 'submit', className: 'pf-btn', disabled: busy }, 'Создать проект'))
+          h('button', { type: 'submit', className: 'pf-btn', disabled: busy }, 'Создать объект'))
       : null,
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
     notice ? h('div', { className: 'pj-notice', role: 'status' }, notice) : null,
@@ -77,10 +77,10 @@ export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess })
               h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'pj-open', onClick: () => setOpened(p) }, 'Структура'),
               p.can_manage && !p.archived_at ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pj-rename', disabled: busy, onClick: () => { setEditing(p.id); setError(''); setNotice(''); } }, 'Изменить') : null,
               p.can_manage ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pj-archive', disabled: busy,
-                onClick: () => { void run(api.updateProject(p.id, p.name, p.code || '', !p.archived_at), p.archived_at ? 'Проект возвращён из архива' : 'Проект перенесён в архив'); } },
+                onClick: () => { void run(api.updateProject(p.id, p.name, p.code || '', !p.archived_at), p.archived_at ? 'Объект возвращён из архива' : 'Объект перенесён в архив'); } },
                 p.archived_at ? 'Вернуть из архива' : 'В архив') : null)))
       : h('div', { className: 'pj-empty pf-muted', 'data-testid': 'pj-empty' },
-          company.can_manage_projects ? 'Проектов пока нет — создайте первый выше.' : 'Нет доступных проектов.')),
+          company.can_manage_projects ? 'Объектов пока нет — создайте первый выше.' : 'Нет доступных объектов.')),
     archived.length ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost pj-toggle', onClick: () => setShowArchive(!showArchive) },
       showArchive ? 'Скрыть архив' : `Показать архив (${archived.length})`) : null);
 }

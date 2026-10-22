@@ -38,6 +38,27 @@ export function guessPriceColumns(labels: string[]): PriceColumns {
   return out;
 }
 
+/** Колонки сумм строки («Стоимость всего … / Работа|СМР», «… / Материал(ы)») — для цены = сумма ÷ объём (P2-0009, К2). */
+export function guessTotalColumns(labels: string[]): PriceColumns {
+  const out: PriceColumns = { labor: null, material: null };
+  for (const l of labels) {
+    const i = l.lastIndexOf('/');
+    if (i < 0) continue;
+    const head = l.slice(0, i).toLowerCase(), tail = l.slice(i + 1).toLowerCase();
+    if (!/(всего|сумма|стоимость)/.test(head) || /(ед\.|ед-|единиц|за ед|цена)/.test(head)) continue;
+    if (!out.labor && /(работ|смр)/.test(tail)) out.labor = l;
+    else if (!out.material && /материал/.test(tail)) out.material = l;
+  }
+  return out;
+}
+
+/** Цена за единицу: из колонки цены, а если её нет — сумма строки ÷ объём (до копеек). В файле заказчика бывает сумма без цены. */
+export function unitPrice(price: number | null | undefined, total: number | null | undefined, qty: number | null | undefined): number | null {
+  if (typeof price === 'number' && Number.isFinite(price)) return price;
+  if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0 || typeof qty !== 'number' || !(qty > 0)) return null;
+  return kop(total / qty);
+}
+
 export interface ImportSource { importId: string; label: string; rows: VorRow[]; columns: PriceColumns }
 export interface Candidate { labor: number | null; material: number | null; importId: string; rowNo: number }
 export type PreviewStatus = 'new' | 'changed' | 'same' | 'conflict';

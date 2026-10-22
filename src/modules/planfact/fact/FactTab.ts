@@ -9,7 +9,8 @@ import type { VorApi, VorProject } from '../vor/vor.service.ts';
 import type { LocationNode, ProjectsApi } from '../../../platform/company/projects.service.ts';
 import type { Brigade, FactApi, FactPosition } from './fact.service.ts';
 import { FACT_APPROVE, FACT_CREATE, FACT_VIEW } from './fact.service.ts';
-import { fmtPct, fmtQty, parseQty, percent, remainder, todayMoscow } from './fact.ts';
+import { fmtPct, fmtQty, parseQty, percent, remainder, todayMoscow, vorHints } from './fact.ts';
+import type { HintRow } from './fact.ts';
 import { FactHistory } from './FactHistory.ts';
 import { FactPending } from './FactPending.ts';
 import { FloorClose } from './FloorClose.ts';
@@ -29,6 +30,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
   const [path, setPath] = useState<LocationNode[]>([]);
   const [children, setChildren] = useState<LocationNode[]>([]);
   const [positions, setPositions] = useState<FactPosition[] | null>(null);
+  const [hints, setHints] = useState<Map<string, string>>(new Map());
   const [brigades, setBrigades] = useState<Brigade[]>([]);
   const [lastBrigade, setLastBrigade] = useState('');
   const [openId, setOpenId] = useState('');
@@ -78,7 +80,19 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
     setLastBrigade(readLast(project.company_id));
     void api.listBrigades(project.company_id, false).then(setBrigades);
     void loadPending(projectId, (perms[projectId] || []).includes(FACT_APPROVE));
+    void loadHints(projectId);
   }, [projectId]);
+
+  /** Номер и раздел ВОР у позиций проекта (подсказка под названием работы). Не загрузилось — список без подсказок. */
+  async function loadHints(pid: string): Promise<void> {
+    setHints(new Map());
+    try {
+      const pos = await vor.positions(pid, null);
+      const byImport = new Map<string, HintRow[]>();
+      for (const imp of Array.from(new Set(pos.map((p) => p.import_id)))) byImport.set(imp, await vor.importRows(imp));
+      setHints(vorHints(pos, byImport));
+    } catch { /* подсказка необязательна */ }
+  }
 
   const refresh = async (): Promise<void> => { await loadPositions(projectId, place); await loadPending(projectId, canApprove); };
   const rememberBrigade = (id: string): void => { setLastBrigade(id); if (project) writeLast(project.company_id, id); };
@@ -129,7 +143,9 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
           const pct = percent(p.fact_qty, p.plan_qty);
           const where = rel(p);
           return h('div', { key: p.position_id, className: 'pf-card ft-card', 'data-position-id': p.position_id },
-            h('div', { className: 'ft-name' }, h('b', null, p.work_name), where ? h('span', { className: 'pf-muted ft-place' }, where) : null),
+            h('div', { className: 'ft-name' }, h('b', null, p.work_name),
+              hints.get(p.position_id) ? h('span', { className: 'pf-muted ft-vor', 'data-testid': 'ft-vor' }, hints.get(p.position_id)) : null,
+              where ? h('span', { className: 'pf-muted ft-place' }, where) : null),
             h('div', { className: 'ft-nums' },
               h('span', { 'data-testid': 'ft-nums' }, `факт ${fmtQty(p.fact_qty)} из ${fmtQty(p.plan_qty)} ${p.unit_code}`),
               h('b', { className: 'ft-pct' + (pct > 100 ? ' ft-pct--over' : ''), 'data-testid': 'ft-pct' }, fmtPct(pct)),
@@ -223,6 +239,7 @@ export const FACT_CSS = `
 .ft-card{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
 .ft-name{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;overflow-wrap:anywhere}
 .ft-place{font-size:12px}
+.ft-vor{font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .ft-nums{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;font-variant-numeric:tabular-nums}
 .ft-pct{font-size:18px}
 .ft-pct--over,.ft-warn{color:var(--color-yellow)}

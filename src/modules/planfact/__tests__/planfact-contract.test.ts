@@ -24,7 +24,7 @@ after(async () => {
   await win.happyDOM.close();
 });
 
-test('mount → unmount → mount ×3: одна таблица, после unmount контейнер пуст, стиль один', async () => {
+test('mount → unmount → mount ×3: один экран, после unmount контейнер пуст, стиль один', async () => {
   const mod = await import('../index.ts');
   const el = win.document.createElement('div') as unknown as HTMLElement;
   win.document.body.appendChild(el as never);
@@ -33,8 +33,9 @@ test('mount → unmount → mount ×3: одна таблица, после unmou
   for (let i = 0; i < 3; i++) {
     mod.mount(el);
     assert.equal(mod.isMounted(), true);
-    assert.equal(el.querySelectorAll('table.pf-table').length, 1, `mount #${i + 1}`);
-    assert.equal(el.querySelectorAll('tr[data-work-id]').length, 6);
+    // P2-0009: без входа — подсказка вместо старой демо-таблицы «Работы»
+    assert.equal(el.querySelectorAll('[data-testid="pf-hint"]').length, 1, `mount #${i + 1}`);
+    assert.equal(el.querySelectorAll('tr[data-work-id]').length, 0);
     mod.unmount();
     assert.equal(mod.isMounted(), false);
     assert.equal(el.childNodes.length, 0, `unmount #${i + 1}: контейнер пуст`);
@@ -43,12 +44,12 @@ test('mount → unmount → mount ×3: одна таблица, после unmou
   assert.equal(win.document.body.childNodes.length, bodyBefore, 'body без лишних узлов');
 });
 
-test('повторный mount без unmount не дублирует таблицу; повторный unmount безопасен', async () => {
+test('повторный mount без unmount не дублирует экран; повторный unmount безопасен', async () => {
   const mod = await import('../index.ts');
   const el = win.document.createElement('div') as unknown as HTMLElement;
   mod.mount(el);
   mod.mount(el);
-  assert.equal(el.querySelectorAll('table.pf-table').length, 1);
+  assert.equal(el.querySelectorAll('[data-testid="pf-hint"]').length, 1);
   mod.unmount();
   mod.unmount();
   assert.equal(el.childNodes.length, 0);

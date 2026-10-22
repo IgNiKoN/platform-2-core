@@ -1,13 +1,13 @@
 /**
  * Оболочка экрана «План/Факт»: вход (общая форма платформы LoginForm), шапка «кто · компания · роль», выход.
- * Нет настроек сервера → локальный демо-режим (как в P2-0002). «Работать локально» остаётся всегда.
+ * Нет настроек сервера → локальный режим без входа (только разбор файла ВОР). «Работать локально» остаётся всегда.
+ * P2-0009: страница по умолчанию и для разделов без права — «Сводка»; старая демо-таблица «Работы» больше не показывается
+ * (PlanfactTable/PlanfactWorks не удалены — отдельным решением, ТД).
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { AccessEntry, AuthApi } from '../../platform/auth/auth.service.ts';
 import { LoginForm, PLATFORM_AUTH_CSS } from '../../platform/auth/LoginForm.ts';
-import { PlanfactTable } from './PlanfactTable.ts';
-import { PlanfactWorks } from './PlanfactWorks.ts';
 import { CompanyScope } from '../../platform/company/CompanyScope.ts';
 import { ProjectsTab } from '../../platform/company/ProjectsTab.ts';
 import { UnitsTab } from '../../platform/company/UnitsTab.ts';
@@ -21,6 +21,7 @@ import { OverheadTemplateTab } from './estimate/OverheadsEditor.ts';
 import type { EstimateApi } from './estimate/estimate.service.ts';
 import { Ks2Tab } from './ks2/Ks2Tab.ts';
 import { SummaryTab } from './summary/SummaryTab.ts';
+import { showShellUser, restoreShellUser } from '../../platform/auth/shell-user.ts';
 import type { SummaryApi } from './summary/summary.service.ts';
 import type { Ks2Api } from './ks2/ks2.service.ts';
 import { KS2_EDIT, KS2_VIEW } from './ks2/ks2.service.ts';
@@ -33,15 +34,16 @@ type Mode = 'loading' | 'login' | 'authed' | 'demo';
 const BASE = '#/planfact';
 /** Событие модуля: маршрут #/planfact… показан (его шлёт index.ts при каждом переходе роутера). */
 export const ROUTE_EVENT = 'planfact:route';
-type Page = 'works' | 'directories' | 'vor' | 'estimate' | 'fact' | 'ks2' | 'summary';
+type Page = 'directories' | 'vor' | 'estimate' | 'fact' | 'ks2' | 'summary';
 type Sub = 'objects' | 'units' | 'brigades' | 'prices' | 'overheads';
 /** «Цены» — только с правом planfact.estimate.manage (коммерческая тайна; прораб вкладку не видит, сервер тоже не отдаст). */
 const SUBS: { id: Sub; label: string; estimate?: boolean }[] = [{ id: 'objects', label: 'Объекты' }, { id: 'units', label: 'Единицы' }, { id: 'brigades', label: 'Бригады' }, { id: 'prices', label: 'Цены', estimate: true }, { id: 'overheads', label: 'Надбавки', estimate: true }];
 
-/** Адрес #/planfact[/vor|/estimate|/fact|/ks2|/summary|/directories[/objects|/units|/prices|/overheads]] → страница и вкладка справочников. Пункты верхнего уровня — в боковом меню (манифест модуля). */
+/** Адрес #/planfact[/vor|/estimate|/fact|/ks2|/summary|/directories[/objects|/units|/prices|/overheads]] → страница и вкладка справочников.
+ *  #/planfact и неизвестный адрес — «Сводка». Пункты верхнего уровня — в боковом меню (манифест модуля). */
 export function routeFromHash(hash: string): { page: Page; sub: Sub } {
   const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
-  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'fact' ? 'fact' : parts[0] === 'ks2' ? 'ks2' : parts[0] === 'summary' ? 'summary' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'works', sub: parts[1] === 'units' ? 'units' : parts[1] === 'brigades' ? 'brigades' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
+  return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'fact' ? 'fact' : parts[0] === 'ks2' ? 'ks2' : parts[0] === 'summary' ? 'summary' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'summary', sub: parts[1] === 'units' ? 'units' : parts[1] === 'brigades' ? 'brigades' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
 }
 
 function accessLabel(entries: AccessEntry[]): string {
@@ -51,7 +53,7 @@ function accessLabel(entries: AccessEntry[]): string {
 }
 
 export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; estimate?: EstimateApi | null; fact?: FactApi | null; ks2?: Ks2Api | null; summary?: SummaryApi | null; onAccess?: (hasDirectories: boolean, hasEstimate: boolean, hasKs2: boolean) => void }): ReactElement {
-  const { auth, data, api, projects, vor: vorApi, estimate, fact: factApi, ks2: ks2Api, summary: summaryApi, onAccess } = props;
+  const { auth, projects, vor: vorApi, estimate, fact: factApi, ks2: ks2Api, summary: summaryApi, onAccess } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [who, setWho] = useState('');
   const [access, setAccess] = useState<AccessEntry[]>([]);
@@ -83,6 +85,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     if (ks2Api && vorApi && comp.length) for (const p of await vorApi.listProjects()) { const pr = await vorApi.permissions(p.id); if (pr.includes(KS2_VIEW) || pr.includes(KS2_EDIT)) { k2 = true; break; } }
     setCanKs2(k2);
     if (onAccess) onAccess(comp.length > 0, est, k2);
+    showShellUser(mail, (await a.getAccess())[0]?.role || '');
     setMode('authed');
   }
 
@@ -92,6 +95,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 
   async function logout(): Promise<void> {
     if (auth) await auth.signOut();
+    restoreShellUser();
     setWho(''); setAccess([]); setCompanies([]); setCanEstimate(false); setCanKs2(false); if (onAccess) onAccess(false, false, false); setMode('login');
   }
 
@@ -113,11 +117,11 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 
   // «Справочники» открываются, только если сервер дал доступ к компании (пункт меню показывается по тому же признаку).
   const dirs = mode === 'authed' && projects && companies.length > 0 && route.page === 'directories';
-  const go = (sub: Sub): void => {
-    const path = `${BASE}/directories/${sub}`;
+  const nav = (path: string): void => {
     const r = (window as unknown as { AppRouter?: { navigate?: (p: string) => void } }).AppRouter;
     if (r && typeof r.navigate === 'function') r.navigate(path); else window.location.hash = path;
   };
+  const go = (sub: Sub): void => nav(`${BASE}/directories/${sub}`);
   // «ВОР»: при доступе к компании; в локальном демо-режиме — только просмотр разбора файла (сервер не нужен).
   const vor = route.page === 'vor' && ((mode === 'authed' && companies.length > 0) || mode === 'demo');
   // «Смета»: только с правом planfact.estimate.manage (сервер проверяет каждый вызов).
@@ -126,8 +130,15 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const fct = route.page === 'fact' && mode === 'authed' && companies.length > 0 && factApi && vorApi && projects;
   // «КС-2»: с правом planfact.ks2.view / ks2.edit хотя бы в одном проекте.
   const k2 = route.page === 'ks2' && mode === 'authed' && canKs2 && ks2Api && vorApi;
-  // «Сводка»: при доступе к компании; проекты, ₽ и общий % отдаёт сервер по правам fact.view / money.view.
-  const sm = route.page === 'summary' && mode === 'authed' && companies.length > 0 && summaryApi;
+  // «Сводка»: по умолчанию и вместо раздела, на который нет права (закладка, прямая ссылка); при доступе к компании —
+  // проекты, ₽ и общий % отдаёт сервер по правам fact.view / money.view.
+  const sm = mode === 'authed' && companies.length > 0 && summaryApi && !(k2 || fct || est || vor || dirs);
+  // Без входа и без доступа к компании — подсказка вместо данных (старая демо-таблица «Работы» больше не показывается).
+  const hint = mode === 'authed'
+    ? 'Нет доступных объектов. Обратитесь к администратору компании.'
+    : auth
+      ? 'Войдите, чтобы увидеть сводку, ВОР, факт и акты КС-2. Без входа доступен только разбор файла ВОР.'
+      : 'Сервер не настроен — вход недоступен. Без входа доступен только разбор файла ВОР.';
   const body = sm
     ? h('div', { className: 'pf-root' }, h(SummaryTab, { api: summaryApi! }))
     : k2
@@ -144,7 +155,9 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
         : route.sub === 'prices' && canEstimate && estimate ? h(PricesTab, { api: estimate, vor: vorApi || null, company: c })
         : route.sub === 'overheads' && canEstimate && estimate ? h(OverheadTemplateTab, { api: estimate, company: c })
         : h(ProjectsTab, { api: projects, company: c }) })
-    : mode === 'authed' && api ? h(PlanfactWorks, { api }) : h(PlanfactTable, { data });
+    : h('div', { className: 'pf-root' }, h('div', { className: 'pf-card pf-hint', 'data-testid': 'pf-hint' },
+        h('div', null, hint),
+        mode === 'demo' ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pf-hint-vor', onClick: () => nav(`${BASE}/vor`) }, 'Разбор файла ВОР') : null));
   const head = sm
     ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'Сводка — готовность объектов'))
     : k2
@@ -167,6 +180,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
 
 export const PLANFACT_TABS_CSS = `
 .pf-dirhead{padding-bottom:0;display:flex;flex-direction:column;gap:12px}
+.pf-hint{padding:16px;display:flex;flex-direction:column;align-items:flex-start;gap:12px;font-size:14px}
 .pf-seg{display:flex;flex-wrap:nowrap;gap:var(--rbi-subtab-gap,6px);padding:4px;border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg);overflow-x:auto;-webkit-overflow-scrolling:touch}
 .pf-seg-btn{flex:1 1 0;min-width:5rem;min-height:40px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;padding:8px 12px;border-radius:8px;border:0;background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;text-align:center}
 .pf-seg-btn--active{background:var(--accent,var(--primary));color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}

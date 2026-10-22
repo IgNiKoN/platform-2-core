@@ -7,7 +7,7 @@ import { createElement as h, useEffect, useState } from 'react';
 import type { ChangeEvent, FocusEvent, KeyboardEvent, ReactElement } from 'react';
 import type { ProjectsApi } from '../../../platform/company/projects.service.ts';
 import type { PlanNodeType } from '../../../services/locations/types.ts';
-import { placeOf, placeNote, bindPlaces, missingList, createMissing } from './places.ts';
+import { placeOf, placeNote, bindPlaces, missingList, createMissing, nodeNumber, sheetBuilding, WHOLE_OBJECT as WHOLE } from './places.ts';
 import type { Binding, BlockChoice, Place, TreeNode } from './places.ts';
 import type { Resolution, VorApi, VorImport, VorRow } from './vor.service.ts';
 import { VorWorks } from './VorWorks.ts';
@@ -34,6 +34,8 @@ export function VorDraft(props: DraftProps): ReactElement {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [blocks, setBlocks] = useState<Record<number, BlockChoice>>({});
+  // «Корпус листа» (P2-0009, К1): куда ложатся строки без корпуса; null — «Весь объект». Угадывается по названию листа.
+  const [sheet, setSheet] = useState<BlockChoice | null>(null);
   const [roots, setRoots] = useState<TreeNode[]>([]);
   const [showPlaces, setShowPlaces] = useState(false);
 
@@ -45,11 +47,11 @@ export function VorDraft(props: DraftProps): ReactElement {
   }
 
   /** Привязать места строк к дереву; изменившиеся привязки — в черновик (если можно править). */
-  async function bind(input: VorRow[], choice: Record<number, BlockChoice> = blocks): Promise<void> {
+  async function bind(input: VorRow[], choice: Record<number, BlockChoice> = blocks, sh: BlockChoice | null = sheet): Promise<void> {
     let list = input;
     const uniq = new Map<string, PlaceInfo>();
     for (const r of list) if (r.kind === 'work') {
-      const pl = placeOf(r.context || {}, choice);
+      const pl = placeOf(r.context || {}, choice, sh);
       const cur = uniq.get(pl.key);
       if (cur) cur.rows++; else uniq.set(pl.key, { place: pl, rows: 1, binding: null });
     }
@@ -61,7 +63,7 @@ export function VorDraft(props: DraftProps): ReactElement {
       const byKey = new Map(bindings.map((b) => [b.key, b]));
       // Блок без выбранного корпуса: уже сохранённое место (выбрано раньше) не сбрасываем.
       const changed = list.filter((r) => r.kind === 'work').map((r) => {
-        const b = byKey.get(placeOf(r.context || {}, choice).key);
+        const b = byKey.get(placeOf(r.context || {}, choice, sh).key);
         return { r, loc: b && b.pendingBlock ? r.location_id : (b ? b.nodeId : null) };
       }).filter((x) => x.r.location_id !== x.loc);
       if (changed.length) {
@@ -72,7 +74,13 @@ export function VorDraft(props: DraftProps): ReactElement {
     }
     setRows(list);
     setPlaces(infos);
-    if (infos.some((i) => i.place.pendingBlock)) setRoots((await loadChildren(null)).filter((n) => n.node_type === 'building'));
+    setRoots((await loadChildren(null)).filter((n) => n.node_type === 'building'));
+  }
+
+  function chooseSheet(name: string): void {
+    const next = name ? { value: nodeNumber(name) || name, name } : null;
+    setSheet(next);
+    if (rows) void bind(rows, blocks, next);
   }
 
   function chooseBlock(block: number, value: string): void {
@@ -95,7 +103,17 @@ export function VorDraft(props: DraftProps): ReactElement {
   }
 
   async function load(): Promise<void> {
-    await bind(await api.importRows(imp.id));
+    const list = await api.importRows(imp.id);
+    // Корпус листа: уже сохранённое место строк без места (черновик открыт повторно) — иначе догадка по названию листа.
+    const empty = (r: VorRow): boolean => { const c = r.context || {}; return !c.building && !c.block && !c.section && !c.floor; };
+    const saved = list.find((r) => r.kind === 'work' && empty(r) && r.location_id);
+    let sh = sheetBuilding(imp.sheet_name);
+    if (saved) {
+      const b = (await loadChildren(null)).find((n) => n.id === saved.location_id && n.node_type === 'building');
+      sh = b ? { value: nodeNumber(b.name) || b.name, name: b.name } : null;
+    }
+    setSheet(sh);
+    await bind(list, blocks, sh);
   }
   useEffect(() => { void load(); }, [imp.id]);
 
@@ -179,6 +197,14 @@ export function VorDraft(props: DraftProps): ReactElement {
     h('div', { className: 'vor-summary' },
       h('span', { className: 'vor-stat' + (boundRows === works.length ? ' vor-stat--ok' : ' vor-stat--bad'), 'data-testid': 'vor-bound' },
         `Привязано строк-работ: ${boundRows} из ${works.length}`)),
+    editable
+      ? h('label', { className: 'pf-field vor-sheet-pick' }, `Корпус листа «${imp.sheet_name}» — для строк, где корпус не указан`,
+          h('select', { className: 'pj-input', 'data-testid': 'vor-sheet-building', value: sheet ? sheet.name : '', disabled: !!busy,
+            onChange: (e: ChangeEvent<HTMLSelectElement>) => chooseSheet(e.currentTarget.value) },
+            h('option', { value: '' }, `— без корпуса: «${WHOLE}» —`),
+            roots.map((n) => h('option', { key: n.id, value: n.name }, n.name)),
+            sheet && !roots.some((n) => n.name === sheet.name) ? h('option', { value: sheet.name }, `${sheet.name} (нет в дереве — создать ниже)`) : null))
+      : null,
     boundRows === works.length && !showPlaces && !pendingBlocks.length
       ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'vor-show-places', onClick: () => setShowPlaces(true) },
           `Все места привязаны — показать (${places.length})`)
@@ -216,7 +242,7 @@ export function VorDraft(props: DraftProps): ReactElement {
                 editable ? 'Создавать узлы может РП или администратор (право «Проекты и дерево локаций») — «Справочники → Объекты».' : 'Просмотр.'))
       : null,
     h('div', { className: 'pf-muted vor-rule' },
-      'Правила: «Этажи 4–12» — позиция на секции с пометкой «эт. 4–12»; «кв. 3, 16…» — позиция на ближайшем узле с пометкой квартир; строки без места — на узел «Весь объект».'),
+      'Правила: «Этажи 4–12» — позиция на секции с пометкой «эт. 4–12»; «кв. 3, 16…» — позиция на ближайшем узле с пометкой квартир; строки без корпуса — на корпус листа, а без него — на узел «Весь объект».'),
     works.some((r) => placeNote(r.context || {}))
       ? h('div', { className: 'pf-muted' }, `Строк с пометкой (диапазон этажей / квартиры): ${works.filter((r) => placeNote(r.context || {})).length}`)
       : null,
@@ -232,6 +258,8 @@ export const VOR_DRAFT_CSS = `
 .vor-rule{font-size:11px}
 .vor-ready{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:4px}
 .vor-block-pick{display:flex;flex-wrap:wrap;gap:6px}
+.vor-sheet-pick{max-width:520px}
+.vor-sheet-pick select{min-height:40px}
 .vor-block-pick select,.vor-block-pick input{flex:1 1 200px;min-width:0;min-height:40px}
 @media (max-width:600px){.vor-missing .pf-btn{width:100%}}
 `;

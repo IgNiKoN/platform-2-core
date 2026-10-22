@@ -82,9 +82,9 @@ async function choose(el: N, name: string) {
   await until(() => el.querySelector('[data-testid="vor-sheet"]') || el.querySelector('.pf-error'));
 }
 
-test('маршрут #/planfact/vor → страница «ВОР»', () => {
+test('маршрут #/planfact/vor → страница «ВОР»; #/planfact — «Сводка» (P2-0009)', () => {
   assert.equal(routeFromHash('#/planfact/vor').page, 'vor');
-  assert.equal(routeFromHash('#/planfact').page, 'works');
+  assert.equal(routeFromHash('#/planfact').page, 'summary');
 });
 
 test('файл выбран → открыт лист-ВОР (даже скрытый), график помечен «не похоже на ВОР», счётчики и строки с местом', async () => {

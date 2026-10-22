@@ -10,7 +10,7 @@ import type { ReactElement } from 'react';
 import type { VorApi, VorImport } from '../vor/vor.service.ts';
 import type { EstimateApi, EstimateItem, EstimateRow, PriceInput, RowPrice } from './estimate.service.ts';
 import { calcRows, calcTotals } from './calc.ts';
-import { guessPriceColumns, money, parsePriceInput } from './prices.ts';
+import { guessPriceColumns, guessTotalColumns, money, parsePriceInput, unitPrice } from './prices.ts';
 import { PriceField } from './PricesTab.ts';
 
 type Filter = 'all' | 'unpriced' | 'manual';
@@ -72,14 +72,17 @@ export function EstimateView(props: EstimateViewProps): ReactElement {
     const items: RowPrice[] = [];
     for (const id of estimate.import_ids) {
       const src = await vor.importRows(id);
-      const cols = guessPriceColumns(Array.from(new Set(src.flatMap((r) => Object.keys(r.prices || {})))));
+      const labels = Array.from(new Set(src.flatMap((r) => Object.keys(r.prices || {}))));
+      const cols = guessPriceColumns(labels);
+      const tot = guessTotalColumns(labels);
       const byNo = new Map(src.map((r) => [r.row_no, r]));
       for (const r of rows) {
         if (r.import_id !== id || (r.kind !== 'work' && r.kind !== 'material')) continue;
         const s = byNo.get(r.row_no);
         if (!s) continue;
-        const pl = r.kind === 'work' && cols.labor ? (s.prices[cols.labor] ?? null) : null;
-        const pm = cols.material ? (s.prices[cols.material] ?? null) : null;
+        // Нет цены за единицу, но есть сумма строки — цена = сумма ÷ объём (P2-0009, К2).
+        const pl = r.kind === 'work' ? unitPrice(cols.labor ? s.prices[cols.labor] : null, tot.labor ? s.prices[tot.labor] : null, s.qty) : null;
+        const pm = unitPrice(cols.material ? s.prices[cols.material] : null, tot.material ? s.prices[tot.material] : null, s.qty);
         if (pl === null && pm === null) continue;
         if (same(pl, r.price_labor) && same(pm, r.price_material)) continue;
         items.push({ source_row_id: r.source_row_id, price_labor: r.kind === 'work' ? pl : null, price_material: pm });

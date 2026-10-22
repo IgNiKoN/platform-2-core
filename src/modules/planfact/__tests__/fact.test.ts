@@ -1,7 +1,7 @@
 /** Расчёты экрана «Факт» (P2-0007): процент, остаток, разбор объёма, разбивка «закрыть этаж» — Σ по ЕИ равна заданному. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fmtQty, parseQty, percent, remainder, round3, splitFloor, sumByUnit, todayMoscow } from '../fact/fact.ts';
+import { fmtQty, parseQty, percent, remainder, round3, splitFloor, sumByUnit, todayMoscow, vorHints } from '../fact/fact.ts';
 
 test('процент и остаток: 10 из 100 → 10 %, остаток 90; план 0 → 0 %; сверх плана — больше 100', () => {
   assert.equal(percent(10, 100), 10);
@@ -48,4 +48,21 @@ test('закрыть этаж на 100 % от плана равно плану, 
 test('сегодняшняя дата — по Москве (в 22:30 UTC уже следующие сутки)', () => {
   assert.equal(todayMoscow(new Date('2026-10-21T22:30:00Z')), '2026-10-22');
   assert.equal(todayMoscow(new Date('2026-10-21T10:00:00Z')), '2026-10-21');
+});
+
+test('подсказка позиции (P2-0009, К3): «№ строки · раздел» — одинаковые названия на одном месте различимы', () => {
+  const rows = [
+    { row_no: 4, kind: 'group', number: null, name: 'Черновая отделка МОП 1-го этажа' },
+    { row_no: 42, kind: 'group', number: null, name: '3 Стены (пом. Входные тамбуры)' },
+    { row_no: 43, kind: 'work', number: '3.1', name: 'Затирка цементно-песчаным раствором' },
+    { row_no: 60, kind: 'group', number: null, name: '4 Стены (пом. Встроенные: офис)' },
+    { row_no: 61, kind: 'work', number: '4.1', name: 'Затирка цементно-песчаным раствором' },
+    { row_no: 70, kind: 'work', number: null, name: 'Без номера' }];
+  const h = vorHints([{ id: 'p1', import_id: 'i1', source_row_no: 43 }, { id: 'p2', import_id: 'i1', source_row_no: 61 },
+    { id: 'p3', import_id: 'i1', source_row_no: 70 }, { id: 'p4', import_id: 'i1', source_row_no: null }, { id: 'p5', import_id: 'i9', source_row_no: 43 }],
+    new Map([['i1', rows]]));
+  assert.equal(h.get('p1'), '№ 3.1 · Стены (пом. Входные тамбуры)');
+  assert.equal(h.get('p2'), '№ 4.1 · Стены (пом. Встроенные: офис)');
+  assert.equal(h.get('p3'), 'Стены (пом. Встроенные: офис)', 'без номера — только раздел');
+  assert.ok(!h.has('p4') && !h.has('p5'), 'без строки или без загрузки — без подсказки');
 });

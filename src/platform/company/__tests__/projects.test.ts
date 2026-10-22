@@ -135,11 +135,12 @@ test('нет доступа ни к одной компании — сообще
 });
 
 test('адрес → страница модуля', () => {
-  assert.deepEqual(routeFromHash('#/planfact'), { page: 'works', sub: 'objects' });
+  assert.deepEqual(routeFromHash('#/planfact'), { page: 'summary', sub: 'objects' });
   assert.equal(routeFromHash('#/planfact/directories/units').sub, 'units');
   assert.equal(routeFromHash('#/planfact/directories').page, 'directories');
   assert.equal(routeFromHash('#/planfact/directories/objects').page, 'directories');
-  assert.equal(routeFromHash('#/planfact/что-то').page, 'works');
+  assert.equal(routeFromHash('#/planfact/что-то').page, 'summary');
+  assert.equal(routeFromHash('#/planfact/summary').page, 'summary');
 });
 
 function fakeAuth(): AuthApi {
@@ -162,7 +163,7 @@ test('План/Факт: «Справочники» (#/planfact/directories) п�
   assert.ok(!el.querySelector('[data-testid="pf-tabs"]'), 'внутри страницы нет собственной панели вкладок — пункты в боковом меню');
 });
 
-test('План/Факт: «Работы» (#/planfact) — таблица; смена адреса переключает страницу', async () => {
+test('План/Факт: #/planfact — не справочники (по умолчанию «Сводка», P2-0009); смена адреса переключает страницу', async () => {
   win.location.hash = '#/planfact';
   const el = mountApp(fakeApi().api); await tick();
   assert.ok(!el.querySelector('[data-testid="pj-projects"]'));
