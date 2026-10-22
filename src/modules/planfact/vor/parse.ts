@@ -6,7 +6,9 @@
  *  - шапка — первая строка (в первых 40) с колонкой «Наименование» и «Ед. изм.»/«Кол-во/Объём»; следующие строки шапки
  *    (повтор объединённых ячеек, подзаголовки «Работа / Материал / Итого») склеиваются в подпись «верх / низ»;
  *    строка нумерации колонок «1, 2, 3…» пропускается;
- *  - тип строки: колонка Г/Р/М (если есть) → group/work/material; иначе: есть ЕИ → работа, а если заполнена
+ *  - тип строки: колонка Г/Р/М (если есть) → group/work/material; колонка «Вид» КВР/Номенклатура (P2-0012, форма «Шаблон оферты СМР»)
+ *    → КВР — group (итог вида работ заказчика: объём и ЕИ — только для сверки), Номенклатура — work со ссылкой на свою КВР
+ *    (context.kvr) и пояснением из «Комментарий»/«Характеристика» (context.note); иначе: есть ЕИ → работа, а если заполнена
  *    «Норма расхода» — материал (дочерняя строка последней работы); нет ЕИ и объёма → группа;
  *  - место: «Корпус N», «Секция N», «Этаж N», «Этажи N-M» (можно через запятую: «Секция 1, Этаж 3») — стек наследуется
  *    строками ниже до заголовка того же или старшего уровня; «кв. 3, 16…» в любой ячейке строки — список квартир;
@@ -31,6 +33,8 @@ export interface ColumnMap {
   unitDefault: string | null;
   /** Колонки цен/стоимостей: подпись из шапки → номер колонки (0-based). */
   prices: { label: string; col: number }[];
+  /** Колонки пояснения строки («Комментарий», «Характеристика») — в context.note (P2-0012). Нет в старом профиле — берутся из шапки. */
+  notes?: number[];
 }
 
 export interface FloorRange { from: number; to: number }
@@ -42,6 +46,10 @@ export interface RowContext {
   /** Корпус в файле не указан, а номера секций пошли заново («Секция 1…6», затем снова «Секция 2») — это другой корпус:
    *  номер блока по порядку (1, 2, …). ПТО выбирает корпус для блока на шаге «Места»; молча секции не сливаются. */
   block?: number;
+  /** Пояснение строки-работы из «Комментарий» / «Характеристика» (P2-0012): различает одноимённые работы. */
+  note?: string;
+  /** Номер строки Excel КВР, под которой стоит строка Номенклатуры (P2-0012). */
+  kvr?: number;
 }
 
 export interface ParsedRow {
@@ -60,6 +68,8 @@ export interface ParsedRow {
 }
 
 export interface SumCheck { rowNo: number; label: string; expected: number; actual: number; ok: boolean }
+/** Сверка КВР (P2-0012): Σ объёмов Номенклатуры одного названия и той же ЕИ под КВР = объём КВР (допуск 0,01). */
+export interface KvrCheck { kvrRowNo: number; kvrName: string; name: string; unit: string; expected: number; actual: number; ok: boolean; rowNos: number[] }
 
 export interface ParseResult {
   sheet: string;
@@ -71,6 +81,7 @@ export interface ParseResult {
   columns: ColumnMap | null;
   rows: ParsedRow[];
   checks: SumCheck[];
+  kvrChecks: KvrCheck[];
   stats: { total: number; works: number; materials: number; groups: number; context: number; worksWithUnit: number; worksWithQty: number };
 }
 
@@ -101,6 +112,8 @@ export function roleFromLabel(label: string): ColumnRole {
   const s = low(label);
   if (!s) return 'ignore';
   if (/норма\s*расхода/.test(s)) return 'norm';
+  // «Стоимость материала на ед. изм.» (P2-0012) — цена, а не ЕИ.
+  if (/^(цена|стоимост)/.test(s)) return 'price';
   if (/ед\.?\s*изм|единиц[аы]\s*измер/.test(s)) return 'unit';
   if (/наименование/.test(s)) return 'name';
   if (/(^|\s)№|n\s*п\/п|^п\/п|№\s*пп/.test(s)) return 'number';
@@ -180,7 +193,15 @@ export function findHeader(rows: Cell[][]): Header | null {
   return null;
 }
 
-/** Колонка типа Г/Р/М: ≥ 50 % непустых значений в данных — одна буква Г, Р или М. */
+/** Значение колонки «Вид» формы КВР/Номенклатура (по началу слова: «кВР», «Номенклатура работ»). */
+export function kvrMark(text: string): 'group' | 'work' | null {
+  const t = low(cellText(text));
+  if (/^квр(?!\p{L})/u.test(t)) return 'group';
+  if (/^номенклатур/.test(t)) return 'work';
+  return null;
+}
+
+/** Колонка типа: ≥ 50 % непустых значений в данных — одна буква Г, Р или М либо КВР / Номенклатура. */
 function findTypeColumn(rows: Cell[][], from: number, width: number): number | null {
   const counts: number[] = new Array(width).fill(0);
   const filled: number[] = new Array(width).fill(0);
@@ -191,7 +212,7 @@ function findTypeColumn(rows: Cell[][], from: number, width: number): number | n
       const t = cellText(r[c]);
       if (!t) continue;
       filled[c]++;
-      if (/^[ГРМгрм]$/.test(t)) counts[c]++;
+      if (/^[ГРМгрм]$/.test(t) || kvrMark(t)) counts[c]++;
     }
   }
   let best: number | null = null;
@@ -225,8 +246,10 @@ export function columnMapFrom(v: unknown): ColumnMap | null {
   if (name === null) return null;
   const prices = Array.isArray(o.prices) ? (o.prices as { label?: unknown; col?: unknown }[])
     .filter((p) => typeof p.label === 'string' && typeof p.col === 'number').map((p) => ({ label: p.label as string, col: p.col as number })) : [];
-  return { number: col('number'), name, unit: col('unit'), qty: col('qty'), norm: col('norm'), type: col('type'),
+  const out: ColumnMap = { number: col('number'), name, unit: col('unit'), qty: col('qty'), norm: col('norm'), type: col('type'),
     unitDefault: typeof o.unitDefault === 'string' ? o.unitDefault : null, prices };
+  if (Array.isArray(o.notes)) out.notes = (o.notes as unknown[]).filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0);
+  return out;
 }
 
 export type EditableRole = 'number' | 'name' | 'unit' | 'qty' | 'norm' | 'type';
@@ -261,7 +284,15 @@ export function columnsFromLabels(labels: string[], typeCol: number | null): Col
     const m = labels[map.qty].split(' / ')[0].match(/,\s*([^,]{1,12})$/);
     if (m) map.unitDefault = m[1].trim();
   }
+  map.notes = noteColumns(labels);
   return map;
+}
+
+/** Колонки пояснения строки: «Комментарий», «Характеристика» (P2-0012). Роль колонки в подписи формы не меняют. */
+export function noteColumns(labels: string[]): number[] {
+  const out: number[] = [];
+  labels.forEach((l, c) => { if (/^(комментари|характеристик)/.test(low(cellText(l)))) out.push(c); });
+  return out;
 }
 
 /** Похоже на ЕИ: короткий текст (м2, шт., пог.м, компл.); длинный текст — это растянутая объединённая ячейка, а не ЕИ. */
@@ -324,7 +355,7 @@ function applyContext(cur: RowContext, add: RowContext): RowContext {
 
 /** Разбор листа. columnsOverride — ручная правка карты колонок (профиль формы, этап 3). */
 export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null): ParseResult {
-  const base: ParseResult = { sheet: sheet.name, isVor: false, reason: null, headerRows: [], labels: [], signature: '', columns: null, rows: [], checks: [],
+  const base: ParseResult = { sheet: sheet.name, isVor: false, reason: null, headerRows: [], labels: [], signature: '', columns: null, rows: [], checks: [], kvrChecks: [],
     stats: { total: 0, works: 0, materials: 0, groups: 0, context: 0, worksWithUnit: 0, worksWithQty: 0 } };
   const rows = sheet.rows;
   if (rows.length > MAX_ROWS) return { ...base, reason: `В листе ${rows.length} строк — больше предела ${MAX_ROWS}. Разделите файл на части.` };
@@ -335,7 +366,14 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
   if (sched >= 6) return { ...base, headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, signature, reason: 'Похоже на график работ (колонки-даты), а не на ВОР.' };
   const width = Math.max(hdr.labels.length, ...rows.slice(hdr.dataStart, hdr.dataStart + 50).map((r) => (r || []).length));
   const typeCol = findTypeColumn(rows, hdr.dataStart, width);
-  const columns = columnsOverride || columnsFromLabels(hdr.labels, typeCol);
+  let columns = columnsOverride || columnsFromLabels(hdr.labels, typeCol);
+  // Профиль, сохранённый до P2-0012, не знает колонку «Вид» КВР/Номенклатура и колонки пояснения — дополнить по файлу.
+  if (columns && columnsOverride) {
+    const used = [columns.number, columns.name, columns.unit, columns.qty, columns.norm, ...columns.prices.map((p) => p.col)];
+    const kvrType = typeCol !== null && rows.slice(hdr.dataStart, hdr.dataStart + 400).some((r) => kvrMark(cellText((r || [])[typeCol])));
+    if (columns.type === null && kvrType && !used.includes(typeCol)) columns = { ...columns, type: typeCol };
+    if (!columns.notes) columns = { ...columns, notes: noteColumns(hdr.labels) };
+  }
   if (!columns) return { ...base, headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, signature, reason: 'Не найдена колонка «Наименование».' };
 
   const out: ParsedRow[] = [];
@@ -343,6 +381,7 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
   let lastWork: number | null = null;
   let blockStart = 0; // начало строк корпуса — для «Итого Корпус N»
   let block = 1, lastSection: number | null = null, restarted = false; // повтор номеров секций без корпуса → новый блок
+  let kvr: number | null = null; // текущая КВР (P2-0012)
   for (let i = hdr.dataStart; i < rows.length; i++) {
     const r = rows[i] || [];
     const name = cellText(r[columns.name]) || altTitle(r, columns);
@@ -351,7 +390,9 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
     const qty = columns.qty !== null ? parseNum(r[columns.qty]) : null;
     const norm = columns.norm !== null ? parseNum(r[columns.norm]) : null;
     const number = columns.number !== null ? cellText(r[columns.number]) || null : null;
-    const typeMark = columns.type !== null ? cellText(r[columns.type]).toUpperCase() : '';
+    const typeText = columns.type !== null ? cellText(r[columns.type]) : '';
+    const typeMark = typeText.toUpperCase();
+    const kvrKind = typeText ? kvrMark(typeText) : null;
     const prices: Record<string, number | null> = {};
     for (const p of columns.prices) prices[p.label] = parseNum(r[p.col]);
     const row: ParsedRow = { rowNo: i + 1, kind: 'skip', number, name, unitText, qty, norm, prices, context: {}, parentRowNo: null, raw: r.slice(0, width) };
@@ -381,7 +422,8 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
       ctx.block = block;
       if (ctxTitle.building !== undefined) blockStart = out.length;
       if (apartments) ctx = { ...ctx, apartments };
-    } else if (typeMark === 'Г') row.kind = 'group';
+    } else if (kvrKind) row.kind = kvrKind;
+    else if (typeMark === 'Г') row.kind = 'group';
     else if (typeMark === 'Р') row.kind = 'work';
     else if (typeMark === 'М') row.kind = 'material';
     else if (columns.type !== null && !typeMark && !unitText && qty === null) row.kind = 'group';
@@ -392,6 +434,12 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
     if (row.kind === 'work') lastWork = row.rowNo;
     if (row.kind === 'material') row.parentRowNo = lastWork;
     if (row.kind !== 'skip') row.context = { ...ctx };
+    if (kvrKind === 'group') kvr = row.rowNo;
+    if (kvrKind === 'work') {
+      if (kvr !== null) row.context.kvr = kvr;
+      const note = rowNote(r, columns, name);
+      if (note) row.context.note = note;
+    }
     out.push(row);
   }
 
@@ -404,6 +452,7 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
   for (let k = lastData + 1; k < out.length; k++) if (out[k].kind !== 'skip') { out[k].kind = 'skip'; out[k].context = {}; }
 
   const checks = sumChecks(out, columns);
+  const kvrChecks = kvrCheck(out);
   const stats = { total: out.length, works: 0, materials: 0, groups: 0, context: 0, worksWithUnit: 0, worksWithQty: 0 };
   for (const r of out) {
     if (r.kind === 'work') { stats.works++; if (r.unitText) stats.worksWithUnit++; if (r.qty !== null) stats.worksWithQty++; }
@@ -412,7 +461,43 @@ export function parseSheet(sheet: SheetData, columnsOverride?: ColumnMap | null)
     else if (r.kind === 'context') stats.context++;
   }
   const isVor = stats.works > 0;
-  return { sheet: sheet.name, isVor, reason: isVor ? null : 'В листе не найдено ни одной строки-работы.', headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, signature, columns, rows: out, checks, stats };
+  return { sheet: sheet.name, isVor, reason: isVor ? null : 'В листе не найдено ни одной строки-работы.', headerRows: hdr.rows.map((r) => r + 1), labels: hdr.labels, signature, columns, rows: out, checks, kvrChecks, stats };
+}
+
+/** Пояснение строки: непустые «Комментарий» / «Характеристика» без повторов и без копии наименования. */
+function rowNote(r: Cell[], columns: ColumnMap, name: string): string {
+  const parts: string[] = [];
+  for (const c of columns.notes || []) {
+    const t = cellText(r[c]);
+    if (t && t !== name && !parts.includes(t)) parts.push(t);
+  }
+  return parts.join(' · ').slice(0, 1000);
+}
+
+const nameKey = (s: string): string => low(cellText(s)).replace(/[.,;:]+$/, '');
+const unitNorm = (s: string | null): string => low(cellText(s)).replace(/²/g, '2').replace(/³/g, '3').replace(/[\s.]/g, '');
+
+/** Минимум строки для сверки КВР: и строка разбора, и строка черновика с сервера (row_no / unit_text). */
+export interface KvrRowLike { rowNo: number; kind: RowKind; name: string; unitText: string | null; qty: number | null; context: RowContext }
+
+/** Сверка КВР: для каждой КВР — работы под ней по (название, ЕИ); ЕИ, отличная от ЕИ КВР, не сверяется (пог. м под м²). */
+export function kvrCheck(rows: KvrRowLike[]): KvrCheck[] {
+  const groups = new Map<number, KvrRowLike>();
+  for (const r of rows) if (r.kind === 'group') groups.set(r.rowNo, r);
+  const sets = new Map<string, KvrCheck>();
+  for (const r of rows) {
+    if (r.kind !== 'work' || r.context.kvr === undefined) continue;
+    const g = groups.get(r.context.kvr);
+    if (!g || g.qty === null || unitNorm(r.unitText) !== unitNorm(g.unitText)) continue;
+    const key = g.rowNo + '|' + nameKey(r.name);
+    let c = sets.get(key);
+    if (!c) { c = { kvrRowNo: g.rowNo, kvrName: g.name, name: r.name, unit: g.unitText || '', expected: g.qty, actual: 0, ok: false, rowNos: [] }; sets.set(key, c); }
+    c.actual = round6(c.actual + (r.qty || 0));
+    c.rowNos.push(r.rowNo);
+  }
+  const out = Array.from(sets.values());
+  for (const c of out) c.ok = Math.abs(c.actual - c.expected) <= 0.01;
+  return out;
 }
 
 /** Сверка итогов: число в колонке цены у строки «Итого» = сумма этой колонки по работам и материалам выше
