@@ -309,3 +309,26 @@ test('проваливание: корпус → секция → этаж → �
   [...panel().querySelectorAll('[data-testid="sm-crumbs"] button')].find((b: N) => b.textContent === 'Все').click(); await tick();
   assert.ok(panel().querySelector('[data-location-id="b1"]'));
 });
+
+test('пороги светофора: только с правом; проверка до запроса; сохранение — запрос и перечитанная сводка', async () => {
+  const f = makeFakeSummary([PTO_PROJECT]);
+  const el = mount(f.api);
+  await tick();
+  el.querySelector('[data-testid="sm-th-btn"]').click(); await tick();
+  const form = el.querySelector('[data-testid="sm-th-form"]');
+  assert.equal(form.querySelector('[name="yellow"]').value, '3');
+  typeIn(form.querySelector('[name="yellow"]'), '12');
+  submit(form); await tick();
+  assert.match(form.querySelector('[role="alert"]').textContent, /жёлтый < красный/);
+  assert.ok(!f.calls.some((c) => c.startsWith('setThresholds')));
+  typeIn(form.querySelector('[name="yellow"]'), '5');
+  typeIn(form.querySelector('[name="red"]'), '25');
+  typeIn(form.querySelector('[name="days"]'), '7');
+  submit(form); await tick(); await tick();
+  assert.ok(f.calls.includes('setThresholds:pr1:5:25:7'));
+  assert.equal(f.calls.filter((c) => c === 'portfolio').length, 2, 'светофор перечитан с сервера');
+  assert.equal(el.querySelector('[data-testid="sm-th-form"]'), null);
+  const el2 = mount(makeFakeSummary([{ ...PTO_PROJECT, can_thresholds: false }]).api);
+  await tick();
+  assert.equal(el2.querySelector('[data-testid="sm-th-btn"]'), null, 'без права — кнопки нет');
+});

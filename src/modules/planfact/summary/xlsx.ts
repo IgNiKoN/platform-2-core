@@ -1,15 +1,16 @@
 /**
  * Сводка → «Скачать Excel» (P2-0008, этап 5): листы «Сводка» (итоги объекта и виды работ), «Позиции» (каждая позиция с местом),
- * «КС-2» (сделано ↔ выставлено по строкам заказчика). Числа — как пришли с сервера (те же, что на экране, до копеек), ничего не пересчитывается.
+ * «КС-2» (сделано ↔ выставлено по строкам заказчика); P2-0010 — отставание (п.п., дни), светофор по ТЗ 8.2 с порогами, вердикт темпа,
+ * лист «Требует внимания» (счётчики, строки, полнота данных). Числа — как пришли с сервера (те же, что на экране, до копеек), ничего не пересчитывается.
  * Без права money.view колонок и строк в ₽ нет (сервер их и не присылает). Excel (exceljs) подгружается лениво.
  */
-import type { Ks2GapRow, SummaryPosition, SummaryProject, SummaryWorkType } from './summary.service.ts';
-import { LIGHT_LABEL, lightText } from './model.ts';
+import type { Ks2GapRow, SummaryAttention, SummaryPosition, SummaryProject, SummaryWorkType } from './summary.service.ts';
+import { LIGHT_LABEL, lightText, verdictText } from './model.ts';
 import { ruDate } from '../ks2/form.ts';
 
 export interface SummaryExport {
   project: SummaryProject; workTypes: SummaryWorkType[]; positions: SummaryPosition[];
-  gap: Ks2GapRow[] | null; gapError: string; today: string;
+  gap: Ks2GapRow[] | null; gapError: string; today: string; attention?: SummaryAttention | null;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -47,7 +48,12 @@ export async function buildSummaryXlsx(x: SummaryExport): Promise<Uint8Array> {
   kv('Светофор', `${LIGHT_LABEL[p.light]} — ${lightText(p)}`);
   kv('Плановое начало', p.planned_start ? ruDate(p.planned_start) : null);
   kv('Плановое окончание', p.planned_finish ? ruDate(p.planned_finish) : null);
+  kv('Пороги светофора', `жёлтый ${p.light_yellow_pp} п.п., красный ${p.light_red_pp} п.п., дней ${p.light_overdue_days}`);
+  kv('План на сегодня (равномерно), %', p.plan_pct_today, PCT);
+  kv('Темп: вердикт (7 дней против 14)', verdictText(p.pace_verdict));
   if (m) {
+    kv('Отставание от плана на сегодня, п.п.', p.lag_pp, PCT);
+    kv('Отставание, дней', p.lag_days, PCT);
     kv('Готовность по деньгам договорной КП, %', p.pct_money, PCT);
     kv('Стоимость ВОР по договорной КП, ₽', p.plan_money, MONEY);
     kv('Сделано, ₽', p.done_money, MONEY);
@@ -107,6 +113,42 @@ export async function buildSummaryXlsx(x: SummaryExport): Promise<Uint8Array> {
       t.font = bold; t.getCell(12).numFmt = MONEY;
     }
     ks.views = [{ state: 'frozen', ySplit: 1 }];
+  }
+  // Лист «Требует внимания»
+  const a = x.attention;
+  if (a) {
+    const at = wb.addWorksheet('Требует внимания');
+    at.columns = [{ width: 52 }, { width: 16 }, { width: 14 }, { width: 18 }];
+    const c = a.counts;
+    at.addRow(['Требует внимания', 'Количество'].concat(m ? ['₽'] : [])).font = bold;
+    const line = (label: string, n: number | string, money?: number | null) => {
+      const cells: (string | number | null)[] = [label, n];
+      if (m && money !== undefined) cells.push(money);
+      const r = at.addRow(cells);
+      if (m) r.getCell(3).numFmt = MONEY;
+    };
+    line('Нет договорной КП', c.no_kp ? 'да' : 'нет');
+    line('Не заданы плановые даты', c.no_dates ? 'да' : 'нет');
+    line('Сделано, не выставлено в КС-2 (строк)', c.gap_rows, c.gap_money);
+    line('Строк ВОР без цены в договорной КП', c.unpriced_rows);
+    line(`Позиций без факта больше ${a.stale_days} дней`, c.stale_positions);
+    line('Факт ждёт подтверждения (записей)', c.pending_entries);
+    at.addRow([]);
+    at.addRow(['Полнота данных', '%']).font = bold;
+    const pr = (label: string, v: number | null) => { const r = at.addRow([label, v]); r.getCell(2).numFmt = PCT; };
+    pr('Строки ВОР с ценой в договорной КП', a.completeness.priced_pct);
+    pr('Плановые даты объекта', a.completeness.dates_pct);
+    pr('Позиции с местом ниже корпуса', a.completeness.placed_pct);
+    const block = (title: string, head: string[], rows: (string | number | null)[][]) => {
+      if (!rows.length) return;
+      at.addRow([]); at.addRow([title]).font = bold; at.addRow(head).font = bold;
+      rows.forEach((r) => at.addRow(r));
+    };
+    block('Сделано, не выставлено (первые 20)', ['Строка заказчика', 'Объём', 'ЕИ'].concat(m ? ['₽'] : []),
+      a.gap.map((g) => { const r: (string | number | null)[] = [`${g.number ? `${g.number} ` : ''}${g.name}`, g.qty, g.unit || '']; if (m) r.push(g.money); return r; }));
+    block('Без цены в договорной КП (первые 20)', ['Строка заказчика', 'Объём', 'ЕИ'], a.unpriced.map((u) => [`${u.number ? `${u.number} ` : ''}${u.name}`, u.qty, u.unit || '']));
+    block(`Без факта больше ${a.stale_days} дней (первые 20)`, ['Позиция · место', 'Факт', 'План', 'Дней без факта'],
+      a.stale.map((t) => [`${t.work_name} · ${t.location_path}`, t.fact_qty, t.plan_qty, t.idle_days]));
   }
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }

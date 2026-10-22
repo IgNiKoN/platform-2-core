@@ -25,11 +25,12 @@ export function ProjectView(props: { api: SummaryApi; p: SummaryProject; card: R
     if (busy) return;
     setBusy(true); setError('');
     try {
-      const [w, pos, gap] = await Promise.all([api.workTypes(p.project_id), api.positions(p.project_id, null), api.ks2Gap(p.project_id)]);
+      const [w, pos, gap, att] = await Promise.all([api.workTypes(p.project_id), api.positions(p.project_id, null), api.ks2Gap(p.project_id), api.attention(p.project_id)]);
       if (!w.ok) { setError(w.message); return; }
       if (!pos.ok) { setError(pos.message); return; }
       const today = todayMoscow();
-      const bytes = await buildSummaryXlsx({ project: p, workTypes: w.value, positions: pos.value, gap: gap.ok ? gap.value : null, gapError: gap.ok ? '' : gap.message, today });
+      const bytes = await buildSummaryXlsx({ project: p, workTypes: w.value, positions: pos.value, gap: gap.ok ? gap.value : null, gapError: gap.ok ? '' : gap.message, today,
+        attention: att.ok ? att.value : null });
       saveBytes(bytes, summaryFileName(p, today));
     } catch {
       setError('Не удалось сформировать файл Excel');

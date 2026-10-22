@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
 import { buildSummaryXlsx, summaryFileName } from '../summary/xlsx.ts';
 import type { SummaryProject } from '../summary/summary.service.ts';
-import { GAP, POSITIONS, PTO_PROJECT, WORK_TYPES } from './summary-fake.ts';
+import { ATTENTION, GAP, POSITIONS, PTO_PROJECT, WORK_TYPES } from './summary-fake.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 async function read(bytes: Uint8Array): Promise<any> {
@@ -51,4 +51,23 @@ test('без договорной КП — на листе «КС-2» понят
   const wb = await read(await buildSummaryXlsx({ project: PTO_PROJECT, workTypes: WORK_TYPES, positions: POSITIONS, gap: null, gapError: 'Выберите договорную редакцию КП проекта', today: '2026-10-21' }));
   assert.equal(wb.getWorksheet('КС-2').getRow(1).getCell(1).value, 'Выберите договорную редакцию КП проекта');
   assert.equal(summaryFileName({ ...PTO_PROJECT, name: 'ЖК «Северный»/1' }, '2026-10-21'), 'Сводка ЖК Северный 1 21.10.2026.xlsx');
+});
+
+test('P2-0010: отставание в днях и п.п., светофор по ТЗ с порогами, вердикт; лист «Требует внимания»', async () => {
+  const wb = await read(await buildSummaryXlsx({ project: PTO_PROJECT, workTypes: WORK_TYPES, positions: POSITIONS, gap: GAP, gapError: '', today: '2026-10-21', attention: ATTENTION }));
+  const s = wb.getWorksheet('Сводка');
+  assert.equal(findRow(s, 'Отставание, дней').getCell(2).value, 8.3);
+  assert.equal(findRow(s, 'Отставание от плана на сегодня, п.п.').getCell(2).value, 5.5);
+  assert.equal(findRow(s, 'План на сегодня (равномерно), %').getCell(2).value, 20);
+  assert.equal(findRow(s, 'Темп: вердикт (7 дней против 14)').getCell(2).value, 'Ускоряемся');
+  assert.match(findRow(s, 'Светофор').getCell(2).value, /^Риск — Отставание 5,5 п\.п\. — между порогами 3 и 10/);
+  assert.equal(findRow(s, 'Пороги светофора').getCell(2).value, 'жёлтый 3 п.п., красный 10 п.п., дней 3');
+  const at = wb.getWorksheet('Требует внимания');
+  assert.deepEqual([2, 3].map((c) => findRow(at, 'Сделано, не выставлено в КС-2 (строк)').getCell(c).value), [1, 300]);
+  assert.equal(findRow(at, 'Строки ВОР с ценой в договорной КП').getCell(2).value, 75);
+  assert.match(texts(at), /1\.3 Грунтовка/);
+  const fore = await read(await buildSummaryXlsx({ project: { ...PTO_PROJECT, can_money: false, lag_pp: null, lag_days: null }, workTypes: WORK_TYPES, positions: POSITIONS,
+    gap: GAP, gapError: '', today: '2026-10-21', attention: { ...ATTENTION, counts: { ...ATTENTION.counts, gap_money: null }, gap: ATTENTION.gap.map((g) => ({ ...g, money: null })) } }));
+  assert.equal(findRow(fore.getWorksheet('Сводка'), 'Отставание, дней'), null, 'без права — отставания нет');
+  assert.ok(!/₽/.test(texts(fore.getWorksheet('Требует внимания'))));
 });

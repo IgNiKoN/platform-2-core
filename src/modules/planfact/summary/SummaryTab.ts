@@ -27,6 +27,7 @@ export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: s
   const [list, setList] = useState<SummaryProject[] | null>(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
+  const [thresholds, setThresholds] = useState(false);
   const [sel, setSel] = useState('all');
   const [period, setPeriod] = useState<Period>(8);
 
@@ -41,7 +42,7 @@ export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: s
   if (list === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   const sorted = [...list].sort(byLag);
   const opened = sel === 'all' ? (list.length === 1 ? list[0] : null) : list.find((p) => p.project_id === sel) || null;
-  const pick = (id: string): void => { setEditing(false); setSel(id); };
+  const pick = (id: string): void => { setEditing(false); setThresholds(false); setSel(id); };
   const chip = (on: boolean, label: string, onClick: () => void, key: string, testId?: string) =>
     h('button', { key, type: 'button', className: 'sm-chip' + (on ? ' sm-chip--on' : ''), 'aria-pressed': on, 'data-testid': testId, onClick }, label);
   const filters = list.length
@@ -55,10 +56,12 @@ export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: s
           PERIODS.map((w) => chip(period === w, `${w} недель`, () => setPeriod(w), String(w), 'sm-chip-period'))))
     : null;
   const dash = (p: SummaryProject): ReactElement => h('div', { className: 'sm-dash' },
-    h(Dashboard, { api, p, period, links, onDates: p.can_manage ? () => setEditing(true) : undefined, actions: p.can_manage
-      ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-dates-btn', onClick: () => setEditing(!editing) }, editing ? 'Закрыть' : 'Даты проекта')
+    h(Dashboard, { api, p, period, links, onDates: p.can_manage ? () => setEditing(true) : undefined, actions: p.can_manage || p.can_thresholds
+      ? [p.can_manage ? h('button', { key: 'd', type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-dates-btn', onClick: () => setEditing(!editing) }, editing ? 'Закрыть даты' : 'Даты проекта') : null,
+         p.can_thresholds ? h('button', { key: 't', type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'sm-th-btn', onClick: () => setThresholds(!thresholds) }, thresholds ? 'Закрыть пороги' : 'Пороги светофора') : null]
       : null }),
-    editing && p.can_manage ? h(DatesForm, { api, p, onSaved: () => { setEditing(false); void load(); } }) : null);
+    editing && p.can_manage ? h(DatesForm, { api, p, onSaved: () => { setEditing(false); void load(); } }) : null,
+    thresholds && p.can_thresholds ? h(ThresholdsForm, { api, p, onSaved: () => { setThresholds(false); void load(); } }) : null);
   return h('div', { className: 'pj-tab sm-tab', 'data-testid': 'sm-tab' },
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
     !error && !list.length ? h('div', { className: 'pf-card pj-empty pf-muted', 'data-testid': 'sm-empty' }, 'Нет объектов: сводка видна по проектам, где у вас есть право просмотра факта.') : null,
@@ -113,6 +116,40 @@ function DatesForm(props: { api: SummaryApi; p: SummaryProject; onSaved: () => v
     h('div', { className: 'pj-actions' }, h('button', { type: 'submit', className: 'pf-btn', disabled: busy, 'data-testid': 'sm-dates-save' }, 'Сохранить')));
 }
 
+/** Пороги светофора объекта (ТЗ 8.2 «пороги в настройках объекта»): у кого право planfact.thresholds.edit (РП, руководство). Проверяет сервер. */
+function ThresholdsForm(props: { api: SummaryApi; p: SummaryProject; onSaved: () => void }): ReactElement {
+  const { api, p, onSaved } = props;
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function submit(ev: FormEvent): Promise<void> {
+    ev.preventDefault();
+    if (busy) return;
+    const f = ev.currentTarget as HTMLFormElement;
+    const num = (k: string): number => Number(String((f.elements.namedItem(k) as HTMLInputElement).value).replace(',', '.'));
+    const y = num('yellow'), r = num('red'), d = num('days');
+    if (![y, r, d].every(Number.isFinite) || y < 0 || y >= r || r > 100 || d < 0 || d > 60 || !Number.isInteger(d)) {
+      setError('Пороги: 0 ≤ жёлтый < красный ≤ 100 п.п., дни — целое число от 0 до 60'); return;
+    }
+    setBusy(true); setError('');
+    const res = await api.setThresholds(p.project_id, y, r, d);
+    setBusy(false);
+    if (!res.ok) { setError(res.message); return; }
+    onSaved();
+  }
+  const field = (name: string, label: string, value: number, step: string) => h('label', { className: 'pf-field' }, label,
+    h('input', { name, type: 'number', inputMode: 'decimal', min: 0, max: name === 'days' ? 60 : 100, step, className: 'pj-input', defaultValue: String(value), 'data-testid': `sm-th-${name}` }));
+  return h('form', { className: 'pf-card pj-form sm-th', onSubmit: (e: FormEvent) => { void submit(e); }, 'data-testid': 'sm-th-form' },
+    h('b', null, 'Пороги светофора объекта'),
+    h('div', { className: 'pf-muted sm-note' }, 'Зелёный — отставание не больше жёлтого порога и меньше порога дней; жёлтый — между порогами, или отставание не меньше порога дней, ',
+      'или до окончания ≤ 5 рабочих дней при отставании больше жёлтого порога; красный — больше красного порога или срок прошёл, а сделано меньше 100 %.'),
+    h('div', { className: 'sm-dates' },
+      field('yellow', 'Жёлтый порог, п.п.', p.light_yellow_pp, '0.1'),
+      field('red', 'Красный порог, п.п.', p.light_red_pp, '0.1'),
+      field('days', 'Порог дней отставания', p.light_overdue_days, '1')),
+    error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
+    h('div', { className: 'pj-actions' }, h('button', { type: 'submit', className: 'pf-btn', disabled: busy, 'data-testid': 'sm-th-save' }, 'Сохранить')));
+}
+
 export const SUMMARY_CSS = `
 .sm-tab{max-width:1400px;display:flex;flex-direction:column;gap:14px}
 .sm-note{font-size:12px}
@@ -126,6 +163,7 @@ export const SUMMARY_CSS = `
 .sm-olink{font:inherit;font-weight:600;color:var(--text-main);background:none;border:0;padding:6px 0;min-height:32px;cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px}
 .sm-otable{min-width:720px}
 .sm-dates{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end}
+.sm-th{display:flex;flex-direction:column;gap:10px;padding:14px 16px}
 @media (max-width:760px){
 .sm-filters{flex-direction:column;align-items:stretch}
 .sm-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
