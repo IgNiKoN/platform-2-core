@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.59.87';
+const SW_VERSION = '18.59.88';
 const CACHE_PREFIX = 'platform2-';
 const CACHE_NAME = `${CACHE_PREFIX}v${SW_VERSION}`;
 
@@ -21,6 +21,35 @@ const BUSINESS_PREFIX_TO_MODULE = [
 
 /** null = allowlist ещё не пришёл — временно разрешаем cache.put (первый paint). */
 let allowedModules = null;
+
+/**
+ * P2-0013: бандлы модулей Platform 2.0 — в кэше только положенные этому входу (сообщение P2_SW_ALLOWLIST от входа платформы:
+ * модуль компании ∩ права по ответу сервера); остальные не кэшируются и удаляются. Сам вход (js/dist/platform/) — всем.
+ */
+const P2_PREFIX_TO_MODULE = [
+  { prefix: '/js/dist/planfact/', module: 'planfact' },
+  { prefix: '/js/dist/company/', module: 'company' },
+  { prefix: '/js/dist/platform-admin/', module: 'platform-admin' }
+];
+let p2AllowedModules = null;
+
+function resolveP2Module(url) {
+  try {
+    const path = new URL(url).pathname;
+    for (let i = 0; i < P2_PREFIX_TO_MODULE.length; i++) {
+      if (path.indexOf(P2_PREFIX_TO_MODULE[i].prefix) !== -1) return P2_PREFIX_TO_MODULE[i].module;
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+function purgeDisallowedP2Cache() {
+  if (p2AllowedModules === null) return Promise.resolve();
+  return caches.open(CACHE_NAME).then((cache) => cache.keys().then((keys) => Promise.all(keys.map((req) => {
+    const mod = resolveP2Module(req.url);
+    return mod && p2AllowedModules.indexOf(mod) === -1 ? cache.delete(req) : null;
+  }))));
+}
 
 function isManifestUrl(url) {
   try {
@@ -47,6 +76,8 @@ function resolveBusinessModule(url) {
 }
 
 function mayCachePut(url) {
+  const p2 = resolveP2Module(url);
+  if (p2) return p2AllowedModules === null || p2AllowedModules.indexOf(p2) !== -1;
   if (isManifestUrl(url)) return true;
   const mod = resolveBusinessModule(url);
   if (!mod) return true;
@@ -439,5 +470,10 @@ self.addEventListener('message', (event) => {
     allowedModules = event.data.modules.slice();
     console.log('[SW] RBI_SW_ALLOWLIST:', allowedModules.join(','));
     event.waitUntil(purgeDisallowedBusinessCache());
+  }
+  if (event.data && event.data.type === 'P2_SW_ALLOWLIST' && Array.isArray(event.data.modules)) {
+    p2AllowedModules = event.data.modules.slice();
+    console.log('[SW] P2_SW_ALLOWLIST:', p2AllowedModules.join(',') || '—');
+    event.waitUntil(purgeDisallowedP2Cache());
   }
 });

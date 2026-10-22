@@ -128,6 +128,21 @@ function apply(st: PlatformState): void {
     restoreShellUser();
   }
   if (st.mode === 'none') showLogin(); else hideLogin();
+  postCacheAllowlist();
+}
+
+/** Кэш приложения (sw.js): файлы модулей Platform 2.0 — только положенных этому входу, остальные удаляются. */
+function postCacheAllowlist(): void {
+  const sh = rbi().services?.shell as { isPlatformModuleAllowed?: (id: string) => boolean } | undefined;
+  const a = getPlatform().access();
+  const modules: string[] = [];
+  if (sh && typeof sh.isPlatformModuleAllowed === 'function' && sh.isPlatformModuleAllowed('planfact')) modules.push('planfact');
+  if (a.company) modules.push('company');
+  if (a.platformAdmin) modules.push('platform-admin');
+  try {
+    const c = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if (c) c.postMessage({ type: 'P2_SW_ALLOWLIST', modules });
+  } catch { /* без кэша приложения — ничего */ }
 }
 
 /** Запуск при открытии (оболочка). Повторный вызов — то же состояние; экран входа показывается, если никто не вошёл. */
