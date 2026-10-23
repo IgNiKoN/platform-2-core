@@ -552,6 +552,39 @@ else {
         const d = await q(`${t}?${key}`, 'alfaAdmin', cA, { method: 'DELETE', headers: { Prefer: 'return=representation' } });
         check(`018: ${t} — админ Альфы удаляет`, d.ok && (await d.json()).length === 1, `статус ${d.status}`);
       }
+      // Этап 6: «туда-обратно» по всем таблицам quality — обязательные поля из описания API (OpenAPI раздела quality).
+      const spec = await (await fetch(`${URL_}/rest/v1/`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaAdmin}`, 'Accept-Profile': 'quality' } })).json();
+      const defs = spec.definitions || {};
+      const val = (p) => p.format === 'uuid' ? crypto.randomUUID() : p.type === 'boolean' ? false : p.type === 'integer' || p.type === 'number' ? 1
+        : p.format === 'jsonb' || p.format === 'json' ? {} : p.type === 'array' ? [] : /timestamp|date/.test(p.format || '') ? new Date().toISOString() : `${stampQ}-v`;
+      const tables = Object.keys(defs).filter((t) => !t.startsWith('rpc')).sort();
+      check('018: в API раздела quality 55 таблиц', tables.length === 55, String(tables.length));
+      let rt = 0;
+      for (const t of tables) {
+        const d = defs[t]; const row = {};
+        for (const c of d.required || []) if (!['core_company_id', 'core_project_id'].includes(c) && !(d.properties[c]?.default !== undefined)) row[c] = val(d.properties[c] || {});
+        if (d.properties.project_code) row.project_code = pRest;
+        if (d.properties.id && !row.id && d.properties.id.format !== 'uuid') row.id = `${stampQ}-${t}`;
+        if (t === 'rbi_company_settings') row.company_id = 'rbi';
+        if (t === 'contracts') {   // договор — на подрядчика своей компании
+          const cId = `${stampQ}-ctr`;
+          await q('contractors', 'alfaAdmin', cA, { method: 'POST', body: JSON.stringify({ id: cId }), headers: { Prefer: 'resolution=merge-duplicates' } });
+          row.contractorId = cId;
+        }
+        const ins = await q(t, 'alfaAdmin', cA, { method: 'POST', body: JSON.stringify(row), headers: { Prefer: 'return=representation,resolution=merge-duplicates' } });
+        const got = ins.ok ? (await ins.json())[0] : null;
+        if (!got) { check(`018: ${t} — запись админом Альфы`, false, `статус ${ins.status} ${(await ins.text().catch(() => '')).slice(0, 120)}`); continue; }
+        const keyCol = d.properties.id ? 'id' : t === 'rbi_company_settings' ? 'company_id' : Object.keys(row)[0];
+        const key = `${keyCol}=eq.${encodeURIComponent(got[keyCol])}`;
+        const seenPto = await cnt(t, 'alfaPto', cA, `&${key}`);
+        const seenBeta = await cnt(t, 'betaPto', cB, `&${key}`);
+        const seenBetaHdr = await cnt(t, 'betaPto', cA, `&${key}`);
+        const del = await q(`${t}?${key}`, 'alfaAdmin', cA, { method: 'DELETE', headers: { Prefer: 'return=representation' } });
+        const okT = got.core_company_id === cA && seenPto === 1 && seenBeta === 0 && seenBetaHdr === 0 && del.ok;
+        if (okT) rt++; else check(`018: ${t} — туда-обратно`, false, `компания ${got.core_company_id === cA}, ПТО ${seenPto}, Бета ${seenBeta}/${seenBetaHdr}, удаление ${del.status}`);
+      }
+      await q(`contractors?id=eq.${stampQ}-ctr`, 'alfaAdmin', cA, { method: 'DELETE' });
+      check(`018: «туда-обратно» по таблицам quality: ${rt} из ${tables.length}`, rt === tables.length);
     } finally {
       await setMods(false);
     }
