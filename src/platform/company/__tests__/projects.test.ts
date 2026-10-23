@@ -10,7 +10,7 @@ import { CompanyScope } from '../CompanyScope.ts';
 import { ProjectsTab } from '../ProjectsTab.ts';
 import { PlanfactApp, routeFromHash, ROUTE_EVENT } from '../../../modules/planfact/PlanfactApp.ts';
 import { UnitsTab } from '../UnitsTab.ts';
-import type { CompanyAccess, ProjectItem, ProjectsApi, UnitItem } from '../projects.service.ts';
+import type { CompanyAccess, ProjectItem, ProjectsApi, UnitItem } from '../../core/projects.service.ts';
 import type { Result } from '../company.service.ts';
 import type { AuthApi } from '../../auth/auth.service.ts';
 import type { PlanfactDemo } from '../../../modules/planfact/model.ts';

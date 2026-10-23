@@ -8,7 +8,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { VorWorks, verdicts } from '../vor/VorWorks.ts';
 import type { DictEntry, Resolution, VorApi, VorRow, WorkType } from '../vor/vor.service.ts';
-import type { ProjectsApi, UnitItem } from '../../../platform/company/projects.service.ts';
+import type { ProjectsApi, UnitItem } from '../../../platform/core/projects.service.ts';
 import { settle } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });

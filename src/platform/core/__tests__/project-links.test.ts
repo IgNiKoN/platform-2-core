@@ -6,7 +6,7 @@ import { Window } from 'happy-dom';
 import { createElement } from 'react';
 import type { CompanyAccess, CoreApi } from '../core.service.ts';
 import type { Counterparty, CounterpartyCard } from '../counterparties.ts';
-import type { ProjectItem, ProjectsApi } from '../../company/projects.service.ts';
+import type { ProjectItem, ProjectsApi } from '../projects.service.ts';
 import type { Result } from '../../company/company.service.ts';
 import type { Ks2ActData } from '../../../modules/planfact/ks2/ks2.service.ts';
 import { actHeader } from '../../../modules/planfact/ks2/model.ts';

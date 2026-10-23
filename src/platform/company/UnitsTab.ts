@@ -4,7 +4,7 @@
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
-import type { CompanyAccess, ProjectsApi, UnitItem } from './projects.service.ts';
+import type { CompanyAccess, ProjectsApi, UnitItem } from '../core/projects.service.ts';
 
 export function UnitsTab(props: { api: ProjectsApi; company: CompanyAccess }): ReactElement {
   const { api, company } = props;

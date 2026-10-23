@@ -6,7 +6,7 @@
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
-import type { CompanyAccess } from '../../../platform/company/projects.service.ts';
+import type { CompanyAccess } from '../../../platform/core/projects.service.ts';
 import type { VorApi, WorkType } from '../vor/vor.service.ts';
 import type { EstimateApi, PriceHistoryRow, PriceInput, PriceItem } from './estimate.service.ts';
 import { isStale, money, parsePriceInput, priceKey } from './prices.ts';

@@ -6,6 +6,7 @@ import { getClient } from '../../../platform/auth/auth.service.ts';
 import { mapCompanyError } from '../../../platform/company/company.service.ts';
 import type { Result } from '../../../platform/company/company.service.ts';
 import type { ParsedRow, RowContext } from './parse.ts';
+import { fetchMyProjects } from '../../../platform/core/projects.service.ts';
 
 export const VOR_MANAGE = 'planfact.vor.manage';
 export const ROWS_CHUNK = 1000;
@@ -89,7 +90,7 @@ export function createVorService(): VorApi | null {
     return { ok: true, value: total };
   }
   return {
-    listProjects: () => rows<VorProject>('pf_my_projects'),
+    listProjects: () => fetchMyProjects<VorProject>(),
     async permissions(p) {
       const { data, error } = await c!.rpc('pf_my_permissions', { p_project: p });
       return !error && Array.isArray(data) ? (data as string[]) : [];

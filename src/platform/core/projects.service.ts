@@ -1,14 +1,15 @@
 /**
- * Проекты, дерево локаций и единицы измерения: данные только через функции public.pf_* миграции 006
- * (права и изоляция компаний — на сервере; кнопки на экране — подсказка).
+ * Ядро платформы (P2-0015): объекты (проекты), дерево локаций и единицы измерения — только через функции public.pf_* миграции 006
+ * (права и изоляция компаний — на сервере; кнопки на экране — подсказка). Модули берут эти данные только отсюда
+ * (standards/SINGLE_SOURCE_OF_TRUTH.md; проверка — src/platform/core/__tests__/single-entry.test.ts).
  */
 import { getClient } from '../auth/auth.service.ts';
-import { mapCompanyError } from './company.service.ts';
+import { mapCompanyError } from '../company/company.service.ts';
 import type { PlanNodeType } from '../../services/locations/types.ts';
-import type { Result } from './company.service.ts';
+import type { Result } from '../company/company.service.ts';
 
-import type { CompanyAccess } from '../core/core.service.ts';
-export type { CompanyAccess } from '../core/core.service.ts';
+import type { CompanyAccess } from './core.service.ts';
+export type { CompanyAccess } from './core.service.ts';
 export interface ProjectItem {
   id: string; name: string; code: string | null; archived_at: string | null; created_at: string; can_manage: boolean;
   /** P2-0015: заказчик и генподрядчик объекта (контрагенты ядра); у старых ответов сервера полей может не быть. */
@@ -37,6 +38,17 @@ export interface ProjectsApi {
   listUnits(companyId: string): Promise<UnitItem[]>;
   addUnit(companyId: string, code: string, name: string): Promise<Result<string>>;
   deleteUnit(unitId: string): Promise<Result>;
+}
+
+/**
+ * Объекты, доступные пользователю (pf_my_projects, строка объекта целиком) — единый вход модулей к списку объектов (P2-0015).
+ * Ошибка или нет входа — пустой список.
+ */
+export async function fetchMyProjects<T>(): Promise<T[]> {
+  const c = getClient();
+  if (!c) return [];
+  const { data, error } = await c.rpc('pf_my_projects');
+  return error || !Array.isArray(data) ? [] : (data as T[]);
 }
 
 /** Число узлов, которое создаст генератор: корпус + N·(секция + M·(этаж + K квартир)). Та же формула, что на сервере. */

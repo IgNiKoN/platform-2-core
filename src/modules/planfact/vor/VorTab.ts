@@ -10,7 +10,7 @@ import type { ColumnMap, EditableRole, ParseResult, ParsedRow, RowKind, SheetDat
 import { VorColumns } from './VorColumns.ts';
 import { VorDraft } from './VorDraft.ts';
 import { VorPositions } from './VorPositions.ts';
-import type { ProjectsApi } from '../../../platform/company/projects.service.ts';
+import type { ProjectsApi } from '../../../platform/core/projects.service.ts';
 import { VOR_MANAGE } from './vor.service.ts';
 import type { VorApi, VorImport, VorProfile, VorProject } from './vor.service.ts';
 import { firstProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';

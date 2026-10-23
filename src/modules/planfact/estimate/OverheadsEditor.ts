@@ -6,7 +6,7 @@
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { CompanyAccess } from '../../../platform/company/projects.service.ts';
+import type { CompanyAccess } from '../../../platform/core/projects.service.ts';
 import type { EstimateApi, OverheadLine, OverheadMethod, OverheadSection } from './estimate.service.ts';
 import { SECTIONS, calcOverheads } from './calc.ts';
 import type { OverheadResult } from './calc.ts';

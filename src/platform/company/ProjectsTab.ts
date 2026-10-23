@@ -6,7 +6,7 @@
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import { LocationsTree } from './LocationsTree.ts';
-import type { CompanyAccess, ProjectItem, ProjectsApi } from './projects.service.ts';
+import type { CompanyAccess, ProjectItem, ProjectsApi } from '../core/projects.service.ts';
 import type { CoreApi } from '../core/core.service.ts';
 import type { Counterparty, CounterpartyKind } from '../core/counterparties.ts';
 

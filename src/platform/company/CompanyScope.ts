@@ -4,7 +4,7 @@
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { CompanyAccess, ProjectsApi } from './projects.service.ts';
+import type { CompanyAccess, ProjectsApi } from '../core/projects.service.ts';
 
 export function CompanyScope(props: { api: ProjectsApi; render: (c: CompanyAccess) => ReactElement }): ReactElement {
   const { api, render } = props;

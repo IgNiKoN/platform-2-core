@@ -9,7 +9,7 @@ import { createRoot } from 'react-dom/client';
 import { VorDraft } from '../vor/VorDraft.ts';
 import { VorPositions, sumByRow } from '../vor/VorPositions.ts';
 import type { VorApi, VorImport, VorPosition, VorRow } from '../vor/vor.service.ts';
-import type { LocationNode, ProjectsApi } from '../../../platform/company/projects.service.ts';
+import type { LocationNode, ProjectsApi } from '../../../platform/core/projects.service.ts';
 import { settle } from '../../../test-utils/settle.ts';
 
 const win = new Window({ url: 'http://localhost/' });

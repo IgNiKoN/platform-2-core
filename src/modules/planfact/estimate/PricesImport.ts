@@ -5,7 +5,7 @@
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { CompanyAccess } from '../../../platform/company/projects.service.ts';
+import type { CompanyAccess } from '../../../platform/core/projects.service.ts';
 import type { VorApi, VorImport, VorRow, WorkType } from '../vor/vor.service.ts';
 import type { EstimateApi, PriceItem } from './estimate.service.ts';
 import { applyItems, buildImportPreview, guessPriceColumns, money, previewCounts } from './prices.ts';

@@ -26,7 +26,7 @@ import { showShellUser, restoreShellUser, openPlatformLogin, platformSignOut, re
 import type { SummaryApi } from './summary/summary.service.ts';
 import type { Ks2Api } from './ks2/ks2.service.ts';
 import { KS2_EDIT, KS2_VIEW } from './ks2/ks2.service.ts';
-import type { CompanyAccess, ProjectsApi } from '../../platform/company/projects.service.ts';
+import type { CompanyAccess, ProjectsApi } from '../../platform/core/projects.service.ts';
 import type { DataApi } from './data.service.ts';
 import type { VorApi } from './vor/vor.service.ts';
 import type { PlanfactDemo } from './model.ts';

@@ -7,8 +7,8 @@ import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import { PLAN_NODE_LABELS, PLAN_NODE_TYPES, SUGGESTED_CHILD } from '../../services/locations/types.ts';
 import type { PlanNodeType } from '../../services/locations/types.ts';
-import { GENERATE_LIMIT, generatedNodeCount } from './projects.service.ts';
-import type { LocationNode, ProjectItem, ProjectsApi } from './projects.service.ts';
+import { GENERATE_LIMIT, generatedNodeCount } from '../core/projects.service.ts';
+import type { LocationNode, ProjectItem, ProjectsApi } from '../core/projects.service.ts';
 
 type Mode = { kind: 'add'; parent: LocationNode | null } | { kind: 'rename'; node: LocationNode } | { kind: 'delete'; node: LocationNode } | null;
 

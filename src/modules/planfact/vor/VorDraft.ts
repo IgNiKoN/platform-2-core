@@ -5,7 +5,7 @@
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { ChangeEvent, FocusEvent, KeyboardEvent, ReactElement } from 'react';
-import type { ProjectsApi } from '../../../platform/company/projects.service.ts';
+import type { ProjectsApi } from '../../../platform/core/projects.service.ts';
 import type { PlanNodeType } from '../../../services/locations/types.ts';
 import { placeOf, placeNote, bindPlaces, missingList, createMissing, nodeNumber, sheetBuilding, WHOLE_OBJECT as WHOLE } from './places.ts';
 import type { Binding, BlockChoice, Place, TreeNode } from './places.ts';

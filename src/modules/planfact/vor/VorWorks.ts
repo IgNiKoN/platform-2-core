@@ -5,7 +5,7 @@
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
-import type { ProjectsApi, UnitItem } from '../../../platform/company/projects.service.ts';
+import type { ProjectsApi, UnitItem } from '../../../platform/core/projects.service.ts';
 import { classify, canonName, unitKey, workTypeName, buildIdf, findUnit } from './matching.ts';
 import type { Light, Verdict } from './matching.ts';
 import type { DictEntry, Resolution, VorApi, VorRow, WorkType } from './vor.service.ts';

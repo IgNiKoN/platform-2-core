@@ -2,6 +2,7 @@
  * Данные «План/Факт» с сервера: только через функции public.pf_* (права проверяет сервер; кнопки — подсказка).
  */
 import { getClient } from '../../platform/auth/auth.service.ts';
+import { fetchMyProjects } from '../../platform/core/projects.service.ts';
 
 export interface ProjectRow { id: string; name: string; company_id: string }
 export interface WorkRow { id: string; name: string; unit: string; plan_qty: number | null; plan_amount: number | null; created_at: string }
@@ -28,7 +29,7 @@ export function createDataService(): DataApi | null {
     return data as T[];
   }
   return {
-    listProjects: () => rows<ProjectRow>('pf_my_projects'),
+    listProjects: () => fetchMyProjects<ProjectRow>(),
     listWorks: (p) => rows<WorkRow>('pf_list_works', { p_project: p }),
     async permissions(p) {
       const { data, error } = await c!.rpc('pf_my_permissions', { p_project: p });

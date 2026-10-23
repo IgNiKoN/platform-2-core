@@ -5,7 +5,7 @@
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
-import type { CompanyAccess } from '../../../platform/company/projects.service.ts';
+import type { CompanyAccess } from '../../../platform/core/projects.service.ts';
 import type { Brigade, FactApi } from './fact.service.ts';
 
 export function BrigadesTab(props: { api: FactApi; company: CompanyAccess }): ReactElement {

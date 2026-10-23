@@ -6,7 +6,7 @@
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import type { VorApi, VorProject } from '../vor/vor.service.ts';
-import type { LocationNode, ProjectsApi } from '../../../platform/company/projects.service.ts';
+import type { LocationNode, ProjectsApi } from '../../../platform/core/projects.service.ts';
 import type { Brigade, FactApi, FactPosition } from './fact.service.ts';
 import { FACT_APPROVE, FACT_CREATE, FACT_VIEW } from './fact.service.ts';
 import { fmtPct, fmtQty, parseQty, percent, remainder, todayMoscow, vorHints } from './fact.ts';

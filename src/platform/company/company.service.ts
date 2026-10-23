@@ -2,6 +2,7 @@
  * Данные раздела «Компания»: только через функции public.pf_* миграции 005 (права и правила защиты — на сервере).
  */
 import { getClient } from '../auth/auth.service.ts';
+import { fetchMyProjects } from '../core/projects.service.ts';
 
 export interface CompanyRef { company_id: string; company_name: string }
 export interface CatalogRow { action: string; description: string }
@@ -63,7 +64,7 @@ export function createCompanyService(): CompanyApi | null {
     catalog: () => rows<CatalogRow>('pf_permission_catalog'),
     listRoles: (co) => rows<RoleRow>('pf_list_company_roles', { p_company: co }),
     listMembers: (co) => rows<MemberRow>('pf_list_company_members', { p_company: co }),
-    listProjects: () => rows<ProjectRef>('pf_my_projects'),
+    listProjects: () => fetchMyProjects<ProjectRef>(),
     listAudit: (co) => rows<CompanyAuditRow>('pf_list_company_audit', { p_company: co, p_limit: 100 }),
     createRole: (src, name) => call<string>('pf_create_role', { p_source_role: src, p_name: name }),
     renameRole: (id, name) => call('pf_rename_role', { p_role: id, p_name: name }),
