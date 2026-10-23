@@ -17,7 +17,7 @@ create or replace function pg_temp.load_project(p_company uuid, p_adm uuid, p_pt
 returns uuid language plpgsql as $f$
 declare p uuid; loc uuid; wt uuid; imp uuid; est uuid; kp uuid; br uuid; m2 uuid; k int; n int;
 begin
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  select id into m2 from core.units where company_id is null and code = 'м²';
   reset role; perform pg_temp.as_user(p_adm);
   p := public.pf_create_project(p_company, p_name);
   loc := public.pf_add_location(p, null, 'building', 'Корпус');
@@ -59,13 +59,13 @@ declare
   td date := (now() at time zone 'Europe/Moscow')::date;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,upm,umgmt,ubadm,ubpto,ubfor]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm),(ca,umgmt),(cb,ubadm),(cb,ubpto),(cb,ubfor);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  select v.c, v.u, (select id from planfact.company_roles where company_id = v.c and template_code = v.code), null
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm),(ca,umgmt),(cb,ubadm),(cb,ubpto),(cb,ubfor);
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  select v.c, v.u, (select id from core.company_roles where company_id = v.c and template_code = v.code), null
   from (values (ca,uadm,'company_admin'),(ca,upto,'pto'),(ca,ufor,'foreman'),(ca,upm,'project_manager'),(ca,umgmt,'management'),
                (cb,ubadm,'company_admin'),(cb,ubpto,'pto'),(cb,ubfor,'foreman')) v(c, u, code);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  select id into m2 from core.units where company_id is null and code = 'м²';
 
   -- 1. Объект: 4 строки ВОР (10, 20 — без цены; 30 — с ценой; 40 — без цены), по позиции на строку.
   perform pg_temp.as_user(uadm);
@@ -89,7 +89,7 @@ begin
   reset role;
   for k in 0..6 loop
     for d in -3..40 loop
-      update planfact.projects set planned_start = td - 10, planned_finish = td + k + d where id = pa;
+      update core.projects set planned_start = td - 10, planned_finish = td + k + d where id = pa;
       select s.work_days_left into n from planfact.summary_project(pa, td + k) s;
       if n is distinct from (select count(*)::int from generate_series(1, d) g where extract(isodow from td + k + g) < 6) then bad := bad + 1; end if;
     end loop;
@@ -107,7 +107,7 @@ begin
   t := pg_temp.err(format('select public.pf_project_set_dates(%L, %L, %L)', pa, td + 5, td));
   res := res || pg_temp.t(t like '22023%', 'начало позже окончания — по-прежнему отказ');
   reset role;
-  update planfact.projects set planned_start = td - 10, planned_finish = '9999-12-31' where id = pa;
+  update core.projects set planned_start = td - 10, planned_finish = '9999-12-31' where id = pa;
   perform pg_temp.as_user(upm);
   t0 := clock_timestamp();
   select * into r from public.pf_summary_portfolio() p where p.project_id = pa;
@@ -140,7 +140,7 @@ begin
   for k in 1..5 loop
     pp[k] := pg_temp.load_project(ca, uadm, upto, ufor, 'ЖК Нагрузка ' || k, 2000, td);
   end loop;
-  select count(*) into n from planfact.vor_positions vp join planfact.projects p on p.id = vp.project_id where p.company_id = cb;
+  select count(*) into n from planfact.vor_positions vp join core.projects p on p.id = vp.project_id where p.company_id = cb;
   res := res || pg_temp.t(n = 20000, 'позиций другой компании в базе: ' || n);
   perform pg_temp.as_user(umgmt);
   t0 := clock_timestamp();

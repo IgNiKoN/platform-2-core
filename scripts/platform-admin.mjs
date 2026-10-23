@@ -1,5 +1,5 @@
 // P2-0013. SQL «администратор платформы» для общего сервера (ADR-064 п. 6): учётка владельца (почта + пароль) и признак
-// planfact.platform_admins. Учётка создаётся вставкой в auth.users / auth.identities, как демо-учётки P2-0009 (service_role-ключа нет;
+// core.platform_admins. Учётка создаётся вставкой в auth.users / auth.identities, как демо-учётки P2-0009 (service_role-ключа нет;
 // ТД №13); если учётка с этой почтой уже есть — пароль не меняется, только признак.
 // Пароль: берётся из .env.local (P2_PLATFORM_ADMIN_PASSWORD); если его нет — генерируется и дописывается туда. В консоль не печатается.
 // Результат — файл .env.platform-admin.sql (в git не попадает: правило .env.*). Его выполняет ВЛАДЕЛЕЦ в SQL Editor сервера
@@ -31,7 +31,7 @@ declare
   v_email text := ${lit(email)}; v_user uuid; v_tpl auth.users; v_has_pid boolean;
 begin
   set local search_path = public, extensions;
-  if to_regclass('planfact.platform_admins') is null then raise exception 'Сначала примените миграцию 014'; end if;
+  if to_regclass('core.platform_admins') is null then raise exception 'Сначала примените миграции 014 и 016'; end if;
   select id into v_user from auth.users where lower(email) = v_email;
   if v_user is null then
     select * into v_tpl from auth.users where email = 'alfa-pto@test.invalid';   -- образец: instance_id, aud, role тестовых учёток P2-0004
@@ -55,7 +55,7 @@ begin
   else
     raise notice 'Учётка уже была — пароль не менялся';
   end if;
-  insert into planfact.platform_admins(user_id) values (v_user) on conflict do nothing;
+  insert into core.platform_admins(user_id) values (v_user) on conflict do nothing;
   raise notice 'Администратор платформы: готово';
 end $$;
 `;

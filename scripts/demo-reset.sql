@@ -2,7 +2,7 @@
 -- «Альфа», «Бета», Quality не затрагиваются. Проверено на копии стенда (данные демо удалены, триггеры снова включены).
 -- Сброс демо: защитные триггеры (журнал, неизменяемые ВОР / КП / КС-2 / факт) отключаются только на время удаления, в одной транзакции.
 begin;
-alter table planfact.audit_log disable trigger audit_log_no_change;
+alter table core.audit_log disable trigger audit_log_no_change;
 alter table planfact.fact_entries disable trigger fact_entries_guard;
 alter table planfact.kp_revisions disable trigger kp_revisions_guard;
 alter table planfact.ks2_acts disable trigger ks2_acts_guard;
@@ -12,7 +12,7 @@ alter table planfact.vor_links disable trigger vor_links_guard;
 alter table planfact.vor_positions disable trigger vor_positions_guard;
 alter table planfact.vor_source_rows disable trigger vor_source_rows_guard;
 create temp table demo_p on commit drop as
-  select p.id from planfact.projects p join planfact.companies c on c.id = p.company_id where c.name = 'Демо-компания' and c.is_test;
+  select p.id from core.projects p join core.companies c on c.id = p.company_id where c.name = 'Демо-компания' and c.is_test;
 update planfact.ks2_acts set status = 'draft', issued_revision_id = null, issued_at = null, issued_by = null where project_id in (select id from demo_p);
 delete from planfact.ks2_revisions where project_id in (select id from demo_p);
 delete from planfact.ks2_acts where project_id in (select id from demo_p);
@@ -24,9 +24,9 @@ delete from planfact.vor_links where project_id in (select id from demo_p);
 delete from planfact.vor_positions where project_id in (select id from demo_p);
 delete from planfact.vor_source_rows where project_id in (select id from demo_p);
 delete from planfact.vor_imports where project_id in (select id from demo_p);
-delete from planfact.projects where id in (select id from demo_p);
-delete from planfact.companies where name = 'Демо-компания' and is_test;
-alter table planfact.audit_log enable trigger audit_log_no_change;
+delete from core.projects where id in (select id from demo_p);
+delete from core.companies where name = 'Демо-компания' and is_test;
+alter table core.audit_log enable trigger audit_log_no_change;
 alter table planfact.fact_entries enable trigger fact_entries_guard;
 alter table planfact.kp_revisions enable trigger kp_revisions_guard;
 alter table planfact.ks2_acts enable trigger ks2_acts_guard;

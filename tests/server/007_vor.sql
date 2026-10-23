@@ -18,27 +18,27 @@ declare
   n int; t text; t0 timestamptz; ms int; res text := ''; rows jsonb;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,ubadm]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(cb,ubadm);
-  select id into r_adm from planfact.company_roles where company_id=ca and template_code='company_admin';
-  select id into r_pto from planfact.company_roles where company_id=ca and template_code='pto';
-  select id into r_for from planfact.company_roles where company_id=ca and template_code='foreman';
-  select id into r_badm from planfact.company_roles where company_id=cb and template_code='company_admin';
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(cb,ubadm);
+  select id into r_adm from core.company_roles where company_id=ca and template_code='company_admin';
+  select id into r_pto from core.company_roles where company_id=ca and template_code='pto';
+  select id into r_for from core.company_roles where company_id=ca and template_code='foreman';
+  select id into r_badm from core.company_roles where company_id=cb and template_code='company_admin';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values
     (ca,uadm,r_adm,null),(ca,upto,r_pto,null),(ca,ufor,r_for,null),(cb,ubadm,r_badm,null);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  select id into m2 from core.units where company_id is null and code = 'м²';
 
   -- 0. Каталог, шаблоны, дозаполнение
-  select count(*) into n from planfact.permission_catalog where action = 'planfact.vor.manage';
+  select count(*) into n from core.permission_catalog where action = 'planfact.vor.manage';
   res := res || case when n = 1 then E'1 OK действие planfact.vor.manage в каталоге\n' else E'1 FAIL нет действия\n' end;
-  select string_agg(r.template_code, ',' order by r.template_code) into t from planfact.company_role_permissions rp
-    join planfact.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.vor.manage';
+  select string_agg(r.template_code, ',' order by r.template_code) into t from core.company_role_permissions rp
+    join core.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.vor.manage';
   res := res || case when t = 'company_admin,project_manager,pto' then E'2 OK право у админа, РП и ПТО, у остальных нет\n' else format(E'2 FAIL выдано: %s\n', t) end;
-  delete from planfact.company_role_permissions where role_id = r_pto and action = 'planfact.vor.manage';
-  insert into planfact.company_role_permissions(role_id, company_id, action)
-    select r.id, r.company_id, p.action from planfact.company_roles r join planfact.role_template_permissions p on p.template_code = r.template_code
+  delete from core.company_role_permissions where role_id = r_pto and action = 'planfact.vor.manage';
+  insert into core.company_role_permissions(role_id, company_id, action)
+    select r.id, r.company_id, p.action from core.company_roles r join core.role_template_permissions p on p.template_code = r.template_code
     where r.template_code in ('company_admin','project_manager','pto') and p.action = 'planfact.vor.manage' on conflict do nothing;
-  select count(*) into n from planfact.company_role_permissions where role_id = r_pto and action = 'planfact.vor.manage';
+  select count(*) into n from core.company_role_permissions where role_id = r_pto and action = 'planfact.vor.manage';
   res := res || case when n = 1 then E'3 OK дозаполнение существующих ролей работает\n' else E'3 FAIL дозаполнение\n' end;
 
   -- 1. Подготовка: проекты и места (админ Альфы / Беты)
@@ -177,7 +177,7 @@ begin
   begin perform public.pf_vor_positions(pa); res := res || E'39 FAIL Бета читает позиции Альфы\n';
   exception when others then res := res || E'39 OK Бета: позиции Альфы закрыты\n'; end;
   select (select count(*) from planfact.vor_imports where company_id = ca) + (select count(*) from planfact.vor_source_rows where project_id = pa)
-       + (select count(*) from planfact.work_types where company_id = ca) + (select count(*) from planfact.vor_dictionary where company_id = ca)
+       + (select count(*) from core.work_types where company_id = ca) + (select count(*) from planfact.vor_dictionary where company_id = ca)
        + (select count(*) from planfact.vor_profiles where company_id = ca) into n;
   res := res || case when n = 0 then E'40 OK Бета: прямой SELECT данных ВОР Альфы — 0 строк\n' else format(E'40 FAIL видит %s\n', n) end;
   select count(*) into n from public.pf_vor_list_work_types(pb);

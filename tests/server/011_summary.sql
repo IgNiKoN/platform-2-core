@@ -23,16 +23,16 @@ declare
   td date := (now() at time zone 'Europe/Moscow')::date;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,upm,uecon,umgmt,ucust,ubadm,unone]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm),(ca,uecon),(ca,umgmt),(ca,ucust),(ca,unone),(cb,ubadm);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  select ca, u, (select id from planfact.company_roles where company_id = ca and template_code = c), null
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm),(ca,uecon),(ca,umgmt),(ca,ucust),(ca,unone),(cb,ubadm);
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  select ca, u, (select id from core.company_roles where company_id = ca and template_code = c), null
   from (values (uadm,'company_admin'),(upto,'pto'),(ufor,'foreman'),(upm,'project_manager'),(uecon,'economist'),(umgmt,'management'),
                (ucust,'customer')) v(u, c);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  values (cb, ubadm, (select id from planfact.company_roles where company_id = cb and template_code = 'company_admin'), null);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
-  select id into sht from planfact.units where company_id is null and code = 'шт.';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  values (cb, ubadm, (select id from core.company_roles where company_id = cb and template_code = 'company_admin'), null);
+  select id into m2 from core.units where company_id is null and code = 'м²';
+  select id into sht from core.units where company_id is null and code = 'шт.';
 
   -- 1. Подготовка. ВОР: 12 штукатурка 100 м² → 13 смесь 900 кг (норма 9); 14 двери 10 шт; 16 грунтовка 50 м² (без цены в КП).
   -- КП: 12 — 300; 13 — 12,5; 14 — 1000 + 200 = 1200. План ₽ = 100×300 + 900×12,5 + 10×1200 = 53 250.
@@ -78,9 +78,9 @@ begin
 
   -- 2. Миграция: даты проекта
   reset role;
-  res := res || pg_temp.t((select count(*) from information_schema.columns where table_schema = 'planfact' and table_name = 'projects'
+  res := res || pg_temp.t((select count(*) from information_schema.columns where table_schema = 'core' and table_name = 'projects'
                            and column_name in ('planned_start', 'planned_finish')) = 2, 'у проекта есть плановые даты начала и окончания');
-  t := pg_temp.err(format('update planfact.projects set planned_start = %L, planned_finish = %L where id = %L', td, td - 1, pa));
+  t := pg_temp.err(format('update core.projects set planned_start = %L, planned_finish = %L where id = %L', td, td - 1, pa));
   res := res || pg_temp.t(t like '23514%', 'ограничение БД: начало ≤ окончания (' || t || ')');
 
   -- 3. Даты: права, проверки, журнал
@@ -95,7 +95,7 @@ begin
   res := res || pg_temp.t(t like '22023%позже%', 'начало позже окончания — отказ (' || t || ')');
   t := pg_temp.err(format('select public.pf_project_set_dates(%L, %L, %L)', pa2, td - 30, td + 120));
   res := res || pg_temp.t(t like '22023%архиве%', 'архивный проект — отказ (' || t || ')');
-  t := pg_temp.err(format('update planfact.projects set planned_finish = %L where id = %L', td, pa));
+  t := pg_temp.err(format('update core.projects set planned_finish = %L where id = %L', td, pa));
   res := res || pg_temp.t(t like '42501%', 'прямая правка дат закрыта (' || t || ')');
 
   -- 4. Без договорной КП и без дат — серый «нет данных» с причиной
@@ -137,13 +137,13 @@ begin
   res := res || pg_temp.t(r.light = 'red', 'прогноз позже на 15 дн. → красный (' || r.light || ')');
   perform public.pf_project_set_dates(pa, td - 30, td + 120);
   reset role;
-  select count(*) into n from planfact.audit_log where project_id = pa and table_name = 'projects' and action = 'UPDATE'
+  select count(*) into n from core.audit_log where project_id = pa and table_name = 'projects' and action = 'UPDATE'
     and new_data ? 'planned_finish';
   res := res || pg_temp.t(n = 4, 'смена дат — в журнале (записей: ' || n || ')');
   reset role; perform pg_temp.as_user(upm);
   perform public.pf_project_set_dates(pa, td - 30, td + 120);
   reset role;
-  select count(*) into n from planfact.audit_log where project_id = pa and table_name = 'projects' and action = 'UPDATE'
+  select count(*) into n from core.audit_log where project_id = pa and table_name = 'projects' and action = 'UPDATE'
     and new_data ? 'planned_finish';
   res := res || pg_temp.t(n = 4, 'те же даты — без лишней записи журнала');
 

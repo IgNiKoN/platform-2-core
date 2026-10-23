@@ -14,7 +14,7 @@ create or replace function pg_temp.full_project(p_company uuid, p_adm uuid, p_pt
 returns uuid language plpgsql as $f$
 declare p uuid; sec uuid; wt uuid; imp uuid; est uuid; kp uuid; br uuid; m2 uuid; pos uuid; f jsonb; a1 uuid; a2 uuid; td date := planfact.fact_today();
 begin
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  select id into m2 from core.units where company_id is null and code = 'м²';
   reset role; perform pg_temp.as_user(p_adm);
   p := public.pf_create_project(p_company, p_name);
   sec := public.pf_add_location(p, null, 'section', 'Секция 1');
@@ -66,11 +66,11 @@ declare
   p uuid;
 begin
   insert into auth.users(id, email) select x, x || '@test.invalid' from unnest(u) x;
-  insert into planfact.companies(id, name, is_test) values (ca, 'Альфа', true), (cb, 'Бета', true), (cd, 'Демо-компания', false);
-  insert into planfact.company_members(company_id, user_id) values (ca, u[1]), (ca, u[2]), (ca, u[3]), (cb, u[4]), (cb, u[5]), (cb, u[6]),
+  insert into core.companies(id, name, is_test) values (ca, 'Альфа', true), (cb, 'Бета', true), (cd, 'Демо-компания', false);
+  insert into core.company_members(company_id, user_id) values (ca, u[1]), (ca, u[2]), (ca, u[3]), (cb, u[4]), (cb, u[5]), (cb, u[6]),
                                                                   (cd, u[7]), (cd, u[8]), (cd, u[9]);
-  insert into planfact.role_assignments(company_id, user_id, role_id, project_id)
-  select v.c, v.u, (select id from planfact.company_roles where company_id = v.c and template_code = v.code), null
+  insert into core.role_assignments(company_id, user_id, role_id, project_id)
+  select v.c, v.u, (select id from core.company_roles where company_id = v.c and template_code = v.code), null
   from (values (ca, u[1], 'company_admin'), (ca, u[2], 'pto'), (ca, u[3], 'foreman'), (cb, u[4], 'company_admin'), (cb, u[5], 'pto'),
                (cb, u[6], 'foreman'), (cd, u[7], 'company_admin'), (cd, u[8], 'pto'), (cd, u[9], 'foreman')) v(c, u, code);
 
@@ -107,7 +107,7 @@ select s.id, x.t, x.n from public.cleanup_seed s cross join lateral (
   union all select 'vor_source_rows', (select count(*) from planfact.vor_source_rows where project_id = s.id)
   union all select 'vor_positions', (select count(*) from planfact.vor_positions where project_id = s.id)
   union all select 'vor_links', (select count(*) from planfact.vor_links where project_id = s.id)
-  union all select 'locations', (select count(*) from planfact.locations where project_id = s.id)
+  union all select 'locations', (select count(*) from core.locations where project_id = s.id)
   union all select 'fact_entries', (select count(*) from planfact.fact_entries where project_id = s.id)
   union all select 'estimates', (select count(*) from planfact.estimates where project_id = s.id)
   union all select 'estimate_rows', (select count(*) from planfact.estimate_rows where project_id = s.id)
@@ -117,9 +117,9 @@ select s.id, x.t, x.n from public.cleanup_seed s cross join lateral (
   union all select 'ks2_acts', (select count(*) from planfact.ks2_acts where project_id = s.id)
   union all select 'ks2_revisions', (select count(*) from planfact.ks2_revisions where project_id = s.id)
   union all select 'works', (select count(*) from planfact.works where project_id = s.id)
-  union all select 'audit_log', (select count(*) from planfact.audit_log where project_id = s.id)
-  union all select 'projects', (select count(*) from planfact.projects where id = s.id)) x;
+  union all select 'audit_log', (select count(*) from core.audit_log where project_id = s.id)
+  union all select 'projects', (select count(*) from core.projects where id = s.id)) x;
 create table public.cleanup_seed_company_before as
-select (select count(*) from planfact.work_types) work_types, (select count(*) from planfact.brigades) brigades,
-       (select count(*) from planfact.price_items) price_items, (select count(*) from planfact.company_roles) roles,
-       (select count(*) from planfact.units) units, (select count(*) from planfact.companies) companies;
+select (select count(*) from core.work_types) work_types, (select count(*) from planfact.brigades) brigades,
+       (select count(*) from planfact.price_items) price_items, (select count(*) from core.company_roles) roles,
+       (select count(*) from core.units) units, (select count(*) from core.companies) companies;

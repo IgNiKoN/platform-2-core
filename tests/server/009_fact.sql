@@ -26,37 +26,37 @@ declare
   e15 uuid; e5 uuid; tot record; today date := (now() at time zone 'Europe/Moscow')::date; batch1 uuid; cnt_before int;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,ufor2,upm,ubadm]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,ufor2),(ca,upm),(cb,ubadm);
-  select id into r_adm from planfact.company_roles where company_id=ca and template_code='company_admin';
-  select id into r_pto from planfact.company_roles where company_id=ca and template_code='pto';
-  select id into r_for from planfact.company_roles where company_id=ca and template_code='foreman';
-  select id into r_pm  from planfact.company_roles where company_id=ca and template_code='project_manager';
-  select id into r_badm from planfact.company_roles where company_id=cb and template_code='company_admin';
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,ufor2),(ca,upm),(cb,ubadm);
+  select id into r_adm from core.company_roles where company_id=ca and template_code='company_admin';
+  select id into r_pto from core.company_roles where company_id=ca and template_code='pto';
+  select id into r_for from core.company_roles where company_id=ca and template_code='foreman';
+  select id into r_pm  from core.company_roles where company_id=ca and template_code='project_manager';
+  select id into r_badm from core.company_roles where company_id=cb and template_code='company_admin';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values
     (ca,uadm,r_adm,null),(ca,upto,r_pto,null),(ca,ufor,r_for,null),(ca,ufor2,r_for,null),(ca,upm,r_pm,null),(cb,ubadm,r_badm,null);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  select id into m2 from core.units where company_id is null and code = 'м²';
 
   -- 0. Каталог и шаблоны ролей
-  select count(*) into n from planfact.permission_catalog where action in ('planfact.fact.approve', 'planfact.brigades.manage');
+  select count(*) into n from core.permission_catalog where action in ('planfact.fact.approve', 'planfact.brigades.manage');
   res := res || pg_temp.t(n = 2, 'действия fact.approve и brigades.manage в каталоге');
-  select string_agg(r.template_code, ',' order by r.template_code) into t from planfact.company_role_permissions rp
-    join planfact.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.fact.approve';
+  select string_agg(r.template_code, ',' order by r.template_code) into t from core.company_role_permissions rp
+    join core.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.fact.approve';
   res := res || pg_temp.t(t = 'company_admin,project_manager', 'fact.approve: только админ и РП (получено: ' || coalesce(t, '-') || ')');
-  select string_agg(r.template_code, ',' order by r.template_code) into t from planfact.company_role_permissions rp
-    join planfact.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.brigades.manage';
+  select string_agg(r.template_code, ',' order by r.template_code) into t from core.company_role_permissions rp
+    join core.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.brigades.manage';
   res := res || pg_temp.t(t = 'company_admin,project_manager,pto', 'brigades.manage: админ, РП, ПТО (получено: ' || coalesce(t, '-') || ')');
 
-  select string_agg(r.template_code, ',' order by r.template_code) into t from planfact.company_role_permissions rp
-    join planfact.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.fact.view';
+  select string_agg(r.template_code, ',' order by r.template_code) into t from core.company_role_permissions rp
+    join core.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.fact.view';
   res := res || pg_temp.t(t like 'company_admin%', 'fact.view есть и у администратора (получено: ' || coalesce(t, '-') || ')');
 
   -- 1. Подготовка: проект Альфы с местами и тремя позициями (план 100 / 20 / 50), проект Беты
   reset role; perform pg_temp.as_user(uadm);
   pa := public.pf_create_project(ca, 'ЖК Факт');
   pa2 := public.pf_create_project(ca, 'ЖК Архив');
-  select fact_tolerance_pct into tot from planfact.projects where id = pa;
-  res := res || pg_temp.t((select fact_tolerance_pct from planfact.projects where id = pa) = 2, 'допуск перебора по умолчанию 2 %');
+  select fact_tolerance_pct into tot from core.projects where id = pa;
+  res := res || pg_temp.t((select fact_tolerance_pct from core.projects where id = pa) = 2, 'допуск перебора по умолчанию 2 %');
   bld := public.pf_add_location(pa, null, 'building', 'Корпус 1');
   f5 := public.pf_add_location(pa, bld, 'floor', '5 этаж');
   f6 := public.pf_add_location(pa, bld, 'floor', '6 этаж');

@@ -16,23 +16,23 @@ declare
   n int; b boolean; res text := '';
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,ubpto,umulti]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values
     (ca,uadm),(ca,upto),(ca,ufor),(ca,umulti),(cb,ubpto),(cb,umulti);
-  insert into planfact.projects(id, company_id, name) values (pa,ca,'Проект А'),(pb,cb,'Проект Б');
-  select id into r_adm from planfact.company_roles where company_id=ca and template_code='company_admin';
-  select id into r_pto from planfact.company_roles where company_id=ca and template_code='pto';
-  select id into r_for from planfact.company_roles where company_id=ca and template_code='foreman';
-  select id into r_ptob from planfact.company_roles where company_id=cb and template_code='pto';
-  select id into r_forb from planfact.company_roles where company_id=cb and template_code='foreman';
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values
+  insert into core.projects(id, company_id, name) values (pa,ca,'Проект А'),(pb,cb,'Проект Б');
+  select id into r_adm from core.company_roles where company_id=ca and template_code='company_admin';
+  select id into r_pto from core.company_roles where company_id=ca and template_code='pto';
+  select id into r_for from core.company_roles where company_id=ca and template_code='foreman';
+  select id into r_ptob from core.company_roles where company_id=cb and template_code='pto';
+  select id into r_forb from core.company_roles where company_id=cb and template_code='foreman';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values
     (ca,uadm,r_adm,null),(ca,upto,r_pto,pa),(ca,ufor,r_for,pa),(cb,ubpto,r_ptob,pb),
     (ca,umulti,r_for,pa),(cb,umulti,r_ptob,pb);
   insert into planfact.works(company_id,project_id,name,created_by) values (ca,pa,'Работа А',upto),(cb,pb,'Работа Б',ubpto);
 
-  select count(*) into n from planfact.company_roles where company_id=ca;
+  select count(*) into n from core.company_roles where company_id=ca;
   res := res || format(E'1 ролей-шаблонов в компании (9): %s\n', n);
-  select count(*) into n from planfact.role_templates;
+  select count(*) into n from core.role_templates;
   res := res || format(E'2 шаблонов (9): %s\n', n);
 
   -- ПТО Альфы
@@ -53,7 +53,7 @@ begin
   exception when others then res := res || E'10 OK прораб отклонён (RPC)\n'; end;
   begin insert into planfact.works(company_id,project_id,name,created_by) values (ca,pa,'x',ufor); res := res || E'11 FAIL прораб вставил напрямую\n';
   exception when others then res := res || E'11 OK прораб отклонён (прямой insert)\n'; end;
-  begin insert into planfact.role_assignments(company_id,user_id,role_id) values (ca,ufor,r_adm); res := res || E'12 FAIL прямая запись назначения\n';
+  begin insert into core.role_assignments(company_id,user_id,role_id) values (ca,ufor,r_adm); res := res || E'12 FAIL прямая запись назначения\n';
   exception when others then res := res || E'12 OK прямая запись назначения запрещена\n'; end;
   begin perform public.pf_assign_role(ufor, r_pto, pa); res := res || E'13 FAIL прораб назначил себе роль\n';
   exception when others then res := res || E'13 OK прораб не назначает роли: ' || sqlerrm || E'\n'; end;
@@ -83,12 +83,12 @@ begin
   exception when others then res := res || E'20 OK после отзыва назначения запрос отклонён\n'; end;
 
   -- Отзыв/срок
-  reset role; update planfact.role_assignments set valid_to = now() - interval '1 minute' where user_id = upto;
+  reset role; update core.role_assignments set valid_to = now() - interval '1 minute' where user_id = upto;
   perform pg_temp.as_user(upto);
   select count(*) into n from planfact.works; res := res || format(E'21 истёкшее назначение: работ видно (0): %s\n', n);
 
   -- Модуль выключен
-  reset role; update planfact.company_modules set enabled=false where company_id=ca;
+  reset role; update core.company_modules set enabled=false where company_id=ca;
   perform pg_temp.as_user(ufor);
   select count(*) into n from planfact.works; res := res || format(E'22 модуль выключен: работ видно (0): %s\n', n);
   select planfact.has_permission(pa,'planfact.works.view') into b; res := res || format(E'23 модуль выключен: works.view (false): %s\n', b);
@@ -100,7 +100,7 @@ begin
   begin perform planfact.has_permission(pa,'planfact.works.view'); res := res || E'25 FAIL anon вызвал has_permission\n';
   exception when others then res := res || E'25 OK anon отклонён\n'; end;
   reset role; perform pg_temp.as_user(ubpto);
-  begin select count(*) into n from planfact.role_templates; res := res || E'26 FAIL чтение шаблонов\n';
+  begin select count(*) into n from core.role_templates; res := res || E'26 FAIL чтение шаблонов\n';
   exception when others then res := res || E'26 OK шаблоны напрямую не читаются\n'; end;
   reset role;
   raise exception E'ОТЧЁТ (откат):\n%\nFAIL всего: %', res, (length(res) - length(replace(res,'FAIL','')))/4;

@@ -20,21 +20,21 @@ declare
   pi_w uuid; n int; t text; j jsonb; res text := ''; lines jsonb;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,ubadm,uptop]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,uptop),(cb,ubadm);
-  select id into r_adm from planfact.company_roles where company_id=ca and template_code='company_admin';
-  select id into r_pto from planfact.company_roles where company_id=ca and template_code='pto';
-  select id into r_for from planfact.company_roles where company_id=ca and template_code='foreman';
-  select id into r_badm from planfact.company_roles where company_id=cb and template_code='company_admin';
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,uptop),(cb,ubadm);
+  select id into r_adm from core.company_roles where company_id=ca and template_code='company_admin';
+  select id into r_pto from core.company_roles where company_id=ca and template_code='pto';
+  select id into r_for from core.company_roles where company_id=ca and template_code='foreman';
+  select id into r_badm from core.company_roles where company_id=cb and template_code='company_admin';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values
     (ca,uadm,r_adm,null),(ca,upto,r_pto,null),(ca,ufor,r_for,null),(cb,ubadm,r_badm,null);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  select id into m2 from core.units where company_id is null and code = 'м²';
 
   -- 0. Каталог, шаблоны ролей
-  select count(*) into n from planfact.permission_catalog where action = 'planfact.estimate.manage';
+  select count(*) into n from core.permission_catalog where action = 'planfact.estimate.manage';
   res := res || case when n = 1 then E'1 OK действие planfact.estimate.manage в каталоге\n' else E'1 FAIL нет действия\n' end;
-  select string_agg(r.template_code, ',' order by r.template_code) into t from planfact.company_role_permissions rp
-    join planfact.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.estimate.manage';
+  select string_agg(r.template_code, ',' order by r.template_code) into t from core.company_role_permissions rp
+    join core.company_roles r on r.id = rp.role_id where r.company_id = ca and rp.action = 'planfact.estimate.manage';
   res := res || case when t = 'company_admin,project_manager,pto' then E'2 OK право у админа, РП и ПТО; у прораба и прочих нет\n' else format(E'2 FAIL выдано: %s\n', t) end;
 
   -- 1. Подготовка: проекты, подтверждённый ВОР Альфы, черновик, ВОР Беты
@@ -43,7 +43,7 @@ begin
   pa2 := public.pf_create_project(ca, 'ЖК Второй');
   parch := public.pf_create_project(ca, 'ЖК Архив');
   sec1 := public.pf_add_location(pa, null, 'section', 'Секция 1');
-  reset role; insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values (ca,uptop,r_pto,pa2); -- ПТО только на проекте pa2
+  reset role; insert into core.role_assignments(company_id,user_id,role_id,project_id) values (ca,uptop,r_pto,pa2); -- ПТО только на проекте pa2
   reset role; perform pg_temp.as_user(upto);
   wt := public.pf_vor_add_work_type(pa, 'Устройство пола', m2);
   wt2 := public.pf_vor_add_work_type(pa, 'Окраска стен', m2);

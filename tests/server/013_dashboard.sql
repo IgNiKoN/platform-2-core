@@ -23,15 +23,15 @@ declare
   r record; a1 uuid; rev int; x numeric; y numeric; t0 timestamptz; ms int; k int; pp uuid[]; td date := (now() at time zone 'Europe/Moscow')::date;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,upm,umgmt,ucust,ubadm,unone]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm),(ca,umgmt),(ca,ucust),(ca,unone),(cb,ubadm);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  select ca, u, (select id from planfact.company_roles where company_id = ca and template_code = c), null
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm),(ca,umgmt),(ca,ucust),(ca,unone),(cb,ubadm);
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  select ca, u, (select id from core.company_roles where company_id = ca and template_code = c), null
   from (values (uadm,'company_admin'),(upto,'pto'),(ufor,'foreman'),(upm,'project_manager'),(umgmt,'management'),(ucust,'customer')) v(u, c);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  values (cb, ubadm, (select id from planfact.company_roles where company_id = cb and template_code = 'company_admin'), null);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
-  select id into sht from planfact.units where company_id is null and code = 'шт.';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  values (cb, ubadm, (select id from core.company_roles where company_id = cb and template_code = 'company_admin'), null);
+  select id into m2 from core.units where company_id is null and code = 'м²';
+  select id into sht from core.units where company_id is null and code = 'шт.';
 
   -- 1. Подготовка. Места: Корпус 1 → Секция 1 → Этаж 1; Корпус 2 (пустой).
   -- ВОР: 12 штукатурка 100 м² (Этаж 1) → 13 смесь 200 кг (норма 2); 14 двери 100 шт (Корпус 1); 16 грунтовка 50 м² (Секция 1, без цены).
@@ -89,9 +89,9 @@ begin
 
   -- 2. Миграция: пороги объекта, план на дату (ТЗ §9)
   reset role;
-  select light_yellow_pp, light_red_pp, light_overdue_days into r from planfact.projects where id = pa;
+  select light_yellow_pp, light_red_pp, light_overdue_days into r from core.projects where id = pa;
   res := res || pg_temp.t(r.light_yellow_pp = 3 and r.light_red_pp = 10 and r.light_overdue_days = 3, 'пороги по умолчанию 3 / 10 п.п., 3 дня');
-  t := pg_temp.err(format('update planfact.projects set light_yellow_pp = 20, light_red_pp = 10 where id = %L', pa));
+  t := pg_temp.err(format('update core.projects set light_yellow_pp = 20, light_red_pp = 10 where id = %L', pa));
   res := res || pg_temp.t(t like '23514%', 'ограничение БД: жёлтый < красного (' || t || ')');
   res := res || pg_temp.t(planfact.plan_pct(td, td + 100, td + 25) = 25, 'P_план: 25 дней из 100 = 25 %');
   res := res || pg_temp.t(planfact.plan_pct(td, td + 100, td - 5) = 0 and planfact.plan_pct(td, td + 100, td + 130) = 100,
@@ -202,15 +202,15 @@ begin
   res := res || pg_temp.t(t like '22023%', 'красный > 100 — отказ');
   t := pg_temp.err(format('select public.pf_project_set_thresholds(%L, 3, 10, 61)', pa));
   res := res || pg_temp.t(t like '22023%', 'дни > 60 — отказ');
-  t := pg_temp.err(format('update planfact.projects set light_red_pp = 50 where id = %L', pa));
-  res := res || pg_temp.t(t like '42501%' or (select light_red_pp from planfact.projects where id = pa) = 10, 'прямая правка порогов закрыта (' || t || ')');
+  t := pg_temp.err(format('update core.projects set light_red_pp = 50 where id = %L', pa));
+  res := res || pg_temp.t(t like '42501%' or (select light_red_pp from core.projects where id = pa) = 10, 'прямая правка порогов закрыта (' || t || ')');
   reset role; perform pg_temp.as_user(umgmt);
   perform public.pf_project_set_thresholds(pa, 4, 12, 5);
   select * into r from public.pf_summary_portfolio() p where p.project_id = pa;
   res := res || pg_temp.t(r.light_yellow_pp = 4 and r.light_red_pp = 12 and r.light_overdue_days = 5 and r.can_thresholds,
                           'руководство меняет пороги, видит их и право');
   reset role;
-  select count(*) into n from planfact.audit_log a where a.project_id = pa and a.table_name = 'projects' and a.new_data ? 'light_red_pp';
+  select count(*) into n from core.audit_log a where a.project_id = pa and a.table_name = 'projects' and a.new_data ? 'light_red_pp';
   res := res || pg_temp.t(n >= 6, 'смена порогов в журнале (' || n || ')');
   perform pg_temp.as_user(upm);
   perform public.pf_project_set_thresholds(pa, 3, 10, 3);

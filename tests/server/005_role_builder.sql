@@ -18,17 +18,17 @@ declare
   n int; b boolean; t text; arr text[]; res text := '';
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,uadm2,upto,ufor,ubadm,uout]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,uadm2),(ca,upto),(ca,ufor),(cb,ubadm),(cb,uout);
-  insert into planfact.projects(id, company_id, name) values (pa,ca,'Проект А'),(pb,cb,'Проект Б');
-  select id into r_adm from planfact.company_roles where company_id=ca and template_code='company_admin';
-  select id into r_pto from planfact.company_roles where company_id=ca and template_code='pto';
-  select id into r_for from planfact.company_roles where company_id=ca and template_code='foreman';
-  select id into r_badm from planfact.company_roles where company_id=cb and template_code='company_admin';
-  select id into r_bpto from planfact.company_roles where company_id=cb and template_code='pto';
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,uadm2),(ca,upto),(ca,ufor),(cb,ubadm),(cb,uout);
+  insert into core.projects(id, company_id, name) values (pa,ca,'Проект А'),(pb,cb,'Проект Б');
+  select id into r_adm from core.company_roles where company_id=ca and template_code='company_admin';
+  select id into r_pto from core.company_roles where company_id=ca and template_code='pto';
+  select id into r_for from core.company_roles where company_id=ca and template_code='foreman';
+  select id into r_badm from core.company_roles where company_id=cb and template_code='company_admin';
+  select id into r_bpto from core.company_roles where company_id=cb and template_code='pto';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values
     (ca,upto,r_pto,pa),(ca,ufor,r_for,pa),(cb,ubadm,r_badm,null);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values (ca,uadm,r_adm,null) returning id into a_adm;
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values (ca,uadm,r_adm,null) returning id into a_adm;
 
   -- Администратор Альфы
   reset role; perform pg_temp.as_user(uadm);
@@ -38,9 +38,9 @@ begin
   begin r_new := public.pf_create_role(r_for, '  Старший прораб '); res := res || E'4 OK копия шаблона создана\n';
   exception when others then res := res || E'4 FAIL ' || sqlerrm || E'\n'; end;
   select actions into arr from public.pf_list_company_roles(ca) where id = r_new;
-  select name into t from planfact.company_roles where id = r_new;
+  select name into t from core.company_roles where id = r_new;
   res := res || format(E'5 копия: название «%s», действий как у прораба (%s): %s\n', t,
-    (select count(*) from planfact.company_role_permissions where role_id=r_for), coalesce(array_length(arr,1),0));
+    (select count(*) from core.company_role_permissions where role_id=r_for), coalesce(array_length(arr,1),0));
   begin perform public.pf_create_role(r_pto, 'старший ПРОРАБ'); res := res || E'6 FAIL дубль названия\n';
   exception when others then res := res || E'6 OK дубль названия отклонён: ' || sqlerrm || E'\n'; end;
   begin perform public.pf_rename_role(r_for, 'Прораб 2'); res := res || E'7 FAIL шаблон переименован\n';
@@ -93,9 +93,9 @@ begin
   exception when others then res := res || E'28 OK ПТО не создаёт роли\n'; end;
   begin perform public.pf_list_company_members(ca); res := res || E'29 FAIL ПТО читает сотрудников\n';
   exception when others then res := res || E'29 OK ПТО не видит сотрудников\n'; end;
-  begin insert into planfact.company_role_permissions(role_id, company_id, action) values (r_pto, ca, 'security.roles.assign'); res := res || E'30 FAIL прямая запись действия роли\n';
+  begin insert into core.company_role_permissions(role_id, company_id, action) values (r_pto, ca, 'security.roles.assign'); res := res || E'30 FAIL прямая запись действия роли\n';
   exception when others then res := res || E'30 OK прямая запись действия роли запрещена\n'; end;
-  begin select count(*) into n from planfact.audit_log; res := res || E'31 FAIL прямой SELECT журнала\n';
+  begin select count(*) into n from core.audit_log; res := res || E'31 FAIL прямой SELECT журнала\n';
   exception when others then res := res || E'31 OK прямой SELECT журнала закрыт\n'; end;
 
   -- Админ Беты против Альфы

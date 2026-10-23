@@ -19,34 +19,34 @@ declare
   n int; n2 int; t text; b boolean; res text := ''; i int; chain uuid;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,uprj,ubadm]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,uprj),(cb,ubadm);
-  select id into r_adm from planfact.company_roles where company_id=ca and template_code='company_admin';
-  select id into r_pto from planfact.company_roles where company_id=ca and template_code='pto';
-  select id into r_for from planfact.company_roles where company_id=ca and template_code='foreman';
-  select id into r_badm from planfact.company_roles where company_id=cb and template_code='company_admin';
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,uprj),(cb,ubadm);
+  select id into r_adm from core.company_roles where company_id=ca and template_code='company_admin';
+  select id into r_pto from core.company_roles where company_id=ca and template_code='pto';
+  select id into r_for from core.company_roles where company_id=ca and template_code='foreman';
+  select id into r_badm from core.company_roles where company_id=cb and template_code='company_admin';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values
     (ca,uadm,r_adm,null),(ca,ufor,r_for,null),(cb,ubadm,r_badm,null);
   -- проект Беты создаём напрямую (до теста функций)
-  insert into planfact.projects(company_id, name) values (cb,'Проект Беты') returning id into pb;
+  insert into core.projects(company_id, name) values (cb,'Проект Беты') returning id into pb;
 
   -- 0. Каталог и шаблоны (дозаполнение)
-  select count(*) into n from planfact.permission_catalog where action in ('planfact.projects.manage','planfact.units.manage');
+  select count(*) into n from core.permission_catalog where action in ('planfact.projects.manage','planfact.units.manage');
   res := res || case when n = 2 then E'1 OK два новых действия в каталоге\n' else format(E'1 FAIL действий в каталоге: %s\n', n) end;
-  select count(*) into n from planfact.company_role_permissions rp join planfact.company_roles r on r.id = rp.role_id
+  select count(*) into n from core.company_role_permissions rp join core.company_roles r on r.id = rp.role_id
     where r.company_id = ca and rp.action in ('planfact.projects.manage','planfact.units.manage') and r.template_code in ('company_admin','project_manager','pto');
   res := res || case when n = 6 then E'2 OK админ, РП, ПТО получили оба права\n' else format(E'2 FAIL выдано %s из 6\n', n) end;
-  select count(*) into n from planfact.company_role_permissions rp join planfact.company_roles r on r.id = rp.role_id
+  select count(*) into n from core.company_role_permissions rp join core.company_roles r on r.id = rp.role_id
     where r.company_id = ca and rp.action in ('planfact.projects.manage','planfact.units.manage') and r.template_code not in ('company_admin','project_manager','pto');
   res := res || case when n = 0 then E'3 OK остальные шаблоны прав не получили\n' else format(E'3 FAIL лишних выдач: %s\n', n) end;
   -- дозаполнение старой роли: убираем права и повторяем запрос миграции
-  delete from planfact.company_role_permissions where role_id = r_pto and action in ('planfact.projects.manage','planfact.units.manage');
-  insert into planfact.company_role_permissions(role_id, company_id, action)
-    select r.id, r.company_id, p.action from planfact.company_roles r join planfact.role_template_permissions p on p.template_code = r.template_code
+  delete from core.company_role_permissions where role_id = r_pto and action in ('planfact.projects.manage','planfact.units.manage');
+  insert into core.company_role_permissions(role_id, company_id, action)
+    select r.id, r.company_id, p.action from core.company_roles r join core.role_template_permissions p on p.template_code = r.template_code
     where r.template_code in ('company_admin','project_manager','pto') and p.action in ('planfact.projects.manage','planfact.units.manage') on conflict do nothing;
-  select count(*) into n from planfact.company_role_permissions where role_id = r_pto and action in ('planfact.projects.manage','planfact.units.manage');
+  select count(*) into n from core.company_role_permissions where role_id = r_pto and action in ('planfact.projects.manage','planfact.units.manage');
   res := res || case when n = 2 then E'4 OK дозаполнение существующих ролей работает\n' else format(E'4 FAIL после дозаполнения %s\n', n) end;
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values (ca,upto,r_pto,null);
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values (ca,upto,r_pto,null);
 
   -- 1. Администратор Альфы: проекты
   reset role; perform pg_temp.as_user(uadm);
@@ -78,14 +78,14 @@ begin
   exception when others then res := res || E'13 OK неизвестный тип отклонён\n'; end;
   -- уровни можно пропускать: квартира сразу в корпус
   tmp := public.pf_add_location(pa, bld, 'apartment', 'кв. 1');
-  res := res || case when (select depth from planfact.locations where id = tmp) = 2 then E'14 OK уровень пропущен (квартира сразу в корпусе)\n' else E'14 FAIL\n' end;
+  res := res || case when (select depth from core.locations where id = tmp) = 2 then E'14 OK уровень пропущен (квартира сразу в корпусе)\n' else E'14 FAIL\n' end;
   -- глубина ≤ 6
   chain := bld;
   for i in 2..6 loop chain := public.pf_add_location(pa, chain, 'other', 'Уровень ' || i); end loop;
   begin perform public.pf_add_location(pa, chain, 'other', 'Уровень 7'); res := res || E'15 FAIL седьмой уровень создан\n';
   exception when others then res := res || E'15 OK глубина > 6 отклонена\n'; end;
   perform public.pf_rename_location(sec1, 'Секция Первая');
-  res := res || case when (select name from planfact.locations where id = sec1) = 'Секция Первая' then E'16 OK узел переименован\n' else E'16 FAIL\n' end;
+  res := res || case when (select name from core.locations where id = sec1) = 'Секция Первая' then E'16 OK узел переименован\n' else E'16 FAIL\n' end;
   begin perform public.pf_rename_location(sec1, 'кв. 1'); res := res || E'17 FAIL переименование в чужое имя уровня прошло\n';
   exception when others then res := res || E'17 OK дубль при переименовании отклонён\n'; end;
 
@@ -98,9 +98,9 @@ begin
   begin perform public.pf_move_location(sec1, sec1); res := res || E'19 FAIL узел внутрь себя\n';
   exception when others then res := res || E'19 OK перенос в себя отклонён\n'; end;
   perform public.pf_move_location(fl, sec2);
-  select depth into n from planfact.locations where id = tmp;
-  res := res || case when (select parent_id from planfact.locations where id = fl) = sec2 and n = 4 then E'20 OK этаж перенесён вместе с квартирой, глубина пересчитана\n' else format(E'20 FAIL перенос (глубина %s)\n', n) end;
-  select count(*) into n from planfact.locations where id = tmp and depth = 4;
+  select depth into n from core.locations where id = tmp;
+  res := res || case when (select parent_id from core.locations where id = fl) = sec2 and n = 4 then E'20 OK этаж перенесён вместе с квартирой, глубина пересчитана\n' else format(E'20 FAIL перенос (глубина %s)\n', n) end;
+  select count(*) into n from core.locations where id = tmp and depth = 4;
   begin perform public.pf_move_location(bld, chain); res := res || E'21 FAIL корпус внутрь своей ветки\n';
   exception when others then res := res || E'21 OK корпус в свою ветку нельзя\n'; end;
 
@@ -117,33 +117,33 @@ begin
 
   -- 3. Генератор 2×5×4
   gen := public.pf_generate_building(pa, null, 'Корпус Г', 2, 5, 4, 1);
-  select count(*) into n from planfact.locations where project_id = pa and deleted_at is null
-    and id in (with recursive d(id) as (select id from planfact.locations where parent_id = gen union all select l.id from planfact.locations l join d on l.parent_id = d.id) select id from d);
+  select count(*) into n from core.locations where project_id = pa and deleted_at is null
+    and id in (with recursive d(id) as (select id from core.locations where parent_id = gen union all select l.id from core.locations l join d on l.parent_id = d.id) select id from d);
   res := res || case when n = 52 then E'26 OK генератор 2×5×4: 52 узла под корпусом (53 с корпусом)\n' else format(E'26 FAIL узлов: %s\n', n) end;
   select count(*) filter (where node_type='section'), count(*) filter (where node_type='floor'), count(*) filter (where node_type='apartment')
-    into n, n2, i from planfact.locations where project_id = pa and deleted_at is null and depth >= 2
-    and id in (with recursive d(id) as (select id from planfact.locations where parent_id = gen union all select l.id from planfact.locations l join d on l.parent_id = d.id) select id from d);
+    into n, n2, i from core.locations where project_id = pa and deleted_at is null and depth >= 2
+    and id in (with recursive d(id) as (select id from core.locations where parent_id = gen union all select l.id from core.locations l join d on l.parent_id = d.id) select id from d);
   res := res || case when n = 2 and n2 = 10 and i = 40 then E'27 OK 2 секции / 10 этажей / 40 квартир\n' else format(E'27 FAIL %s/%s/%s\n', n, n2, i) end;
-  select l.id into tmp from planfact.locations l join planfact.locations f on f.id = l.parent_id join planfact.locations s on s.id = f.parent_id
+  select l.id into tmp from core.locations l join core.locations f on f.id = l.parent_id join core.locations s on s.id = f.parent_id
     where s.parent_id = gen and l.name = 'кв. 21';
   t := public.pf_location_path(tmp);
   res := res || case when t = 'Корпус Г · Секция 2 · эт. 1 · кв. 21' then E'28 OK сквозная нумерация, путь: ' || t || E'\n' else E'28 FAIL путь: ' || coalesce(t,'null') || E'\n' end;
-  select count(distinct name) into n from planfact.locations where node_type = 'apartment' and project_id = pa
-    and id in (with recursive d(id) as (select id from planfact.locations where parent_id = gen union all select l.id from planfact.locations l join d on l.parent_id = d.id) select id from d);
+  select count(distinct name) into n from core.locations where node_type = 'apartment' and project_id = pa
+    and id in (with recursive d(id) as (select id from core.locations where parent_id = gen union all select l.id from core.locations l join d on l.parent_id = d.id) select id from d);
   res := res || case when n = 40 then E'29 OK номера квартир не повторяются (40)\n' else format(E'29 FAIL уникальных номеров %s\n', n) end;
   begin perform public.pf_generate_building(pa, null, 'Корпус Г', 1, 1, 1, 1); res := res || E'30 FAIL дубль имени корпуса\n';
   exception when others then res := res || E'30 OK повтор имени корпуса отклонён\n'; end;
-  select count(*) into n from planfact.locations where project_id = pa and deleted_at is null;
+  select count(*) into n from core.locations where project_id = pa and deleted_at is null;
   begin perform public.pf_generate_building(pa, null, 'Огромный', 10, 100, 10, 1); res := res || E'31 FAIL > 5000 узлов принято\n';
   exception when others then res := res || E'31 OK > 5000 узлов отклонено: ' || sqlerrm || E'\n'; end;
-  select count(*) into n2 from planfact.locations where project_id = pa and deleted_at is null;
+  select count(*) into n2 from core.locations where project_id = pa and deleted_at is null;
   res := res || case when n = n2 then E'32 OK отклонённый генератор ничего не создал (транзакция)\n' else format(E'32 FAIL создано частично: %s -> %s\n', n, n2) end;
   begin perform public.pf_generate_building(pa, null, 'Ноль', 0, 5, 4, 1); res := res || E'33 FAIL 0 секций принято\n';
   exception when others then res := res || E'33 OK 0 секций отклонено\n'; end;
   begin perform public.pf_generate_building(pa, chain, 'Глубоко', 1, 1, 1, 1); res := res || E'34 FAIL генератор на глубину > 6\n';
   exception when others then res := res || E'34 OK генератор у глубокого родителя отклонён\n'; end;
   lv := public.pf_generate_building(pa, null, 'Подвал', 1, 3, 0, -1);
-  select count(*) into n from planfact.locations where parent_id in (select id from planfact.locations where parent_id = lv) and name in ('эт. -1','эт. 0','эт. 1');
+  select count(*) into n from core.locations where parent_id in (select id from core.locations where parent_id = lv) and name in ('эт. -1','эт. 0','эт. 1');
   res := res || case when n = 3 then E'35 OK первый этаж -1, квартир 0\n' else format(E'35 FAIL этажи: %s\n', n) end;
 
   -- ленивая загрузка
@@ -163,7 +163,7 @@ begin
   exception when others then res := res || E'40 OK дубль своей единицы (без учёта регистра) отклонён\n'; end;
   begin perform public.pf_add_unit(ca, 'КГ', 'дубль общей'); res := res || E'41 FAIL дубль общей единицы\n';
   exception when others then res := res || E'41 OK дубль общей единицы отклонён\n'; end;
-  select id into mv from planfact.units where company_id is null and code = 'шт.';
+  select id into mv from core.units where company_id is null and code = 'шт.';
   begin perform public.pf_delete_unit(mv); res := res || E'42 FAIL общая единица удалена\n';
   exception when others then res := res || case when sqlstate = '42501' then E'42 OK общую единицу удалить нельзя\n' else E'42 FAIL ' || sqlerrm || E'\n' end; end;
 
@@ -216,8 +216,8 @@ begin
 
   -- 8. Назначение на один проект: право только внутри него
   reset role;
-  insert into planfact.projects(id, company_id, name) values (gen_random_uuid(), ca, 'Второй проект') returning id into pa2;
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id) values (ca,uprj,r_pto,pa);
+  insert into core.projects(id, company_id, name) values (gen_random_uuid(), ca, 'Второй проект') returning id into pa2;
+  insert into core.role_assignments(company_id,user_id,role_id,project_id) values (ca,uprj,r_pto,pa);
   perform pg_temp.as_user(uprj);
   begin perform public.pf_add_location(pa, null, 'other', 'Внутри назначенного'); res := res || E'62 OK право в назначенном проекте\n';
   exception when others then res := res || E'62 FAIL ' || sqlerrm || E'\n'; end;
@@ -232,7 +232,7 @@ begin
   reset role; perform pg_temp.as_user(ubadm);
   select count(*) into n from public.pf_company_projects(ca);
   res := res || case when n = 0 then E'66 OK Бета: проектов Альфы 0\n' else format(E'66 FAIL Бета видит %s проектов Альфы\n', n) end;
-  select count(*) into n from planfact.projects where company_id = ca; select count(*) into n2 from planfact.locations where company_id = ca;
+  select count(*) into n from core.projects where company_id = ca; select count(*) into n2 from core.locations where company_id = ca;
   res := res || case when n = 0 and n2 = 0 then E'67 OK Бета: прямой SELECT проектов и локаций Альфы — 0 строк\n' else format(E'67 FAIL прямой SELECT %s/%s\n', n, n2) end;
   begin perform public.pf_list_locations(pa, null); res := res || E'68 FAIL Бета читает дерево Альфы\n';
   exception when others then res := res || E'68 OK Бета: дерево Альфы закрыто\n'; end;
@@ -260,14 +260,14 @@ begin
   exception when others then res := res || E'79 OK Бета: единица Альфы недоступна\n'; end;
   select count(*) into n from public.pf_list_units(cb);
   res := res || case when n = 9 then E'80 OK Бета: только 9 общих единиц\n' else format(E'80 FAIL единиц у Беты %s\n', n) end;
-  select count(*) into n from planfact.units where company_id = ca;
+  select count(*) into n from core.units where company_id = ca;
   res := res || case when n = 0 then E'81 OK Бета: прямой SELECT своих единиц Альфы — 0 строк\n' else format(E'81 FAIL видит %s\n', n) end;
   begin perform public.pf_list_company_audit(ca, 10); res := res || E'82 FAIL Бета читает журнал Альфы\n';
   exception when others then res := res || E'82 OK Бета: журнал Альфы закрыт\n'; end;
   select count(*) into n from public.pf_list_units(cb);
-  begin update planfact.locations set name = 'взлом' where project_id = pa; get diagnostics n = row_count; res := res || case when n = 0 then E'83 OK прямой UPDATE ничего не изменил\n' else E'83 FAIL\n' end;
+  begin update core.locations set name = 'взлом' where project_id = pa; get diagnostics n = row_count; res := res || case when n = 0 then E'83 OK прямой UPDATE ничего не изменил\n' else E'83 FAIL\n' end;
   exception when others then res := res || E'83 OK прямой UPDATE отклонён\n'; end;
-  begin insert into planfact.locations(company_id, project_id, node_type, name, canonical_key) values (cb, pb, 'other', 'прямая', 'прямая'); res := res || E'84 FAIL прямой INSERT прошёл\n';
+  begin insert into core.locations(company_id, project_id, node_type, name, canonical_key) values (cb, pb, 'other', 'прямая', 'прямая'); res := res || E'84 FAIL прямой INSERT прошёл\n';
   exception when others then res := res || E'84 OK прямой INSERT отклонён\n'; end;
   -- Бета в своём проекте создаёт узлы независимо
   tmp := public.pf_create_project(cb, 'Проект Беты 2');
@@ -277,14 +277,14 @@ begin
   exception when others then res := res || E'86 FAIL ' || sqlerrm || E'\n'; end;
   begin perform public.pf_add_location(pb, bld, 'other', 'Х'); res := res || E'87 FAIL родитель из другого проекта\n';
   exception when others then res := res || E'87 OK родитель из другого проекта отклонён\n'; end;
-  begin perform public.pf_move_location((select id from planfact.locations where project_id = pb limit 1), bld); res := res || E'88 FAIL перенос в другой проект\n';
+  begin perform public.pf_move_location((select id from core.locations where project_id = pb limit 1), bld); res := res || E'88 FAIL перенос в другой проект\n';
   exception when others then res := res || E'88 OK перенос в другой проект отклонён\n'; end;
 
   -- 10. anon
   reset role; perform set_config('request.jwt.claims','',true); perform set_config('request.jwt.claim.sub','',true); execute 'set local role anon';
   begin perform public.pf_create_project(ca, 'anon'); res := res || E'89 FAIL anon создал проект\n';
   exception when others then res := res || E'89 OK anon отклонён\n'; end;
-  begin perform count(*) from planfact.locations; res := res || E'90 FAIL anon читает локации\n';
+  begin perform count(*) from core.locations; res := res || E'90 FAIL anon читает локации\n';
   exception when others then res := res || E'90 OK anon: локации закрыты\n'; end;
   begin perform public.pf_list_units(ca); res := res || E'91 FAIL anon читает единицы\n';
   exception when others then res := res || E'91 OK anon: единицы закрыты\n'; end;

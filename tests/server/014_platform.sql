@@ -22,20 +22,20 @@ declare
 begin
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[uplat, uadm, ufor, unone, ubpto]) u;
   e_for := ufor || '@TEST.invalid';
-  insert into planfact.companies(id, name, is_test) values (ca, 'Альфа 014', true), (cb, 'Бета 014', true);
-  insert into planfact.company_members(company_id, user_id) values (ca, uadm), (ca, ufor), (ca, unone), (cb, ubpto);
-  insert into planfact.projects(id, company_id, name) values (pa, ca, 'Проект А'), (pb, cb, 'Проект Б');
-  insert into planfact.role_assignments(company_id, user_id, role_id, project_id) values
-    (ca, uadm,  (select id from planfact.company_roles where company_id = ca and template_code = 'company_admin'), null),
-    (ca, ufor,  (select id from planfact.company_roles where company_id = ca and template_code = 'foreman'), pa),
-    (cb, ubpto, (select id from planfact.company_roles where company_id = cb and template_code = 'pto'), pb);
+  insert into core.companies(id, name, is_test) values (ca, 'Альфа 014', true), (cb, 'Бета 014', true);
+  insert into core.company_members(company_id, user_id) values (ca, uadm), (ca, ufor), (ca, unone), (cb, ubpto);
+  insert into core.projects(id, company_id, name) values (pa, ca, 'Проект А'), (pb, cb, 'Проект Б');
+  insert into core.role_assignments(company_id, user_id, role_id, project_id) values
+    (ca, uadm,  (select id from core.company_roles where company_id = ca and template_code = 'company_admin'), null),
+    (ca, ufor,  (select id from core.company_roles where company_id = ca and template_code = 'foreman'), pa),
+    (cb, ubpto, (select id from core.company_roles where company_id = cb and template_code = 'pto'), pb);
   insert into planfact.works(company_id, project_id, name, created_by) values (ca, pa, 'Работа А', ufor), (cb, pb, 'Работа Б', ubpto);
-  insert into planfact.platform_admins(user_id) values (uplat);
+  insert into core.platform_admins(user_id) values (uplat);
 
   -- 1. Каталог модулей
-  res := res || pg_temp.t((select count(*) from planfact.module_catalog where managed) = 1
-                          and (select managed from planfact.module_catalog where code = 'planfact')
-                          and not (select managed from planfact.module_catalog where code = 'quality'), 'каталог: управляется только planfact, старые — с пометкой');
+  res := res || pg_temp.t((select count(*) from core.module_catalog where managed) = 1
+                          and (select managed from core.module_catalog where code = 'planfact')
+                          and not (select managed from core.module_catalog where code = 'quality'), 'каталог: управляется только planfact, старые — с пометкой');
 
   -- 2. Прораб: кто я
   reset role; perform pg_temp.as_user(ufor);
@@ -60,7 +60,7 @@ begin
   res := res || pg_temp.t(jsonb_array_length(j -> 'companies') = 0 and not (j ->> 'is_platform_admin')::boolean, 'без роли: компаний нет');
 
   -- 5. Модуль выключен (владелец БД) → у прораба пусто и прав нет
-  reset role; update planfact.company_modules set enabled = false where company_id = ca and module = 'planfact';
+  reset role; update core.company_modules set enabled = false where company_id = ca and module = 'planfact';
   perform pg_temp.as_user(ufor);
   j := public.pf_my_platform();
   res := res || pg_temp.t(j -> 'companies' -> 0 -> 'modules' = '[]'::jsonb, 'модуль выключен: модулей нет');
@@ -72,7 +72,7 @@ begin
   reset role; perform pg_temp.as_user(uplat);
   j := public.pf_my_platform();
   res := res || pg_temp.t((j ->> 'is_platform_admin')::boolean, 'админ платформы: признак');
-  reset role; select count(*) into n from planfact.companies; select count(*) into n2 from planfact.permission_catalog; perform pg_temp.as_user(uplat);
+  reset role; select count(*) into n from core.companies; select count(*) into n2 from core.permission_catalog; perform pg_temp.as_user(uplat);
   res := res || pg_temp.t(jsonb_array_length(j -> 'companies') = n, 'админ платформы: все компании (' || n || ')');
   select x into c from jsonb_array_elements(j -> 'companies') x where (x ->> 'id')::uuid = cb;
   res := res || pg_temp.t(c -> 'modules' = '["planfact"]'::jsonb and (c ->> 'can_manage_company')::boolean, 'админ платформы: Бета — модуль и «Компания»');
@@ -86,7 +86,7 @@ begin
   res := res || pg_temp.t((select count(*) from planfact.works where project_id = pb) = 1, 'админ платформы видит работу Беты');
   res := res || pg_temp.t(exists (select 1 from public.pf_my_company_access() where company_id = cb)
                           and not exists (select 1 from public.pf_my_company_access() where company_id = ca), 'админ платформы: pf_my_company_access — только с включённым модулем');
-  res := res || pg_temp.t((select count(*) from planfact.company_roles where company_id = cb) = 9, 'админ платформы: роли Беты видны (RLS)');
+  res := res || pg_temp.t((select count(*) from core.company_roles where company_id = cb) = 9, 'админ платформы: роли Беты видны (RLS)');
 
   -- 7. Список компаний
   select count(*) into n2 from public.pf_platform_companies();
@@ -100,10 +100,10 @@ begin
   -- 8. Создать компанию
   cc := public.pf_platform_create_company('  Гамма 014  ', true);
   reset role;
-  res := res || pg_temp.t((select name = 'Гамма 014' and is_test from planfact.companies where id = cc), 'создание: название без пробелов, тестовая');
-  res := res || pg_temp.t((select count(*) from planfact.company_roles where company_id = cc) = 9
-                          and (select enabled from planfact.company_modules where company_id = cc and module = 'planfact'), 'создание: 9 ролей, модуль включён');
-  res := res || pg_temp.t(exists (select 1 from planfact.audit_log where company_id = cc and action = 'platform.company.create' and actor = uplat), 'создание: журнал');
+  res := res || pg_temp.t((select name = 'Гамма 014' and is_test from core.companies where id = cc), 'создание: название без пробелов, тестовая');
+  res := res || pg_temp.t((select count(*) from core.company_roles where company_id = cc) = 9
+                          and (select enabled from core.company_modules where company_id = cc and module = 'planfact'), 'создание: 9 ролей, модуль включён');
+  res := res || pg_temp.t(exists (select 1 from core.audit_log where company_id = cc and action = 'platform.company.create' and actor = uplat), 'создание: журнал');
   perform pg_temp.as_user(uplat);
   res := res || pg_temp.t(pg_temp.err(format('select public.pf_platform_create_company(%L)', 'гамма 014')) like '23505%', 'создание: дубль названия — отказ');
   res := res || pg_temp.t(pg_temp.err('select public.pf_platform_create_company(''  '')') like '22023%', 'создание: пустое название — отказ');
@@ -111,13 +111,13 @@ begin
   -- 9. Модуль: включить/выключить
   perform public.pf_platform_set_module(cc, 'planfact', false);
   reset role;
-  res := res || pg_temp.t(not (select enabled from planfact.company_modules where company_id = cc and module = 'planfact'), 'модуль выключен функцией');
-  select count(*) into n from planfact.audit_log where company_id = cc and action = 'platform.module.set';
+  res := res || pg_temp.t(not (select enabled from core.company_modules where company_id = cc and module = 'planfact'), 'модуль выключен функцией');
+  select count(*) into n from core.audit_log where company_id = cc and action = 'platform.module.set';
   res := res || pg_temp.t(n = 1, 'модуль: журнал');
   perform pg_temp.as_user(uplat);
   perform public.pf_platform_set_module(cc, 'planfact', false);
   reset role;
-  res := res || pg_temp.t((select count(*) from planfact.audit_log where company_id = cc and action = 'platform.module.set') = 1, 'модуль: повтор без изменений — без записи');
+  res := res || pg_temp.t((select count(*) from core.audit_log where company_id = cc and action = 'platform.module.set') = 1, 'модуль: повтор без изменений — без записи');
   perform pg_temp.as_user(uplat);
   res := res || pg_temp.t(pg_temp.err(format('select public.pf_platform_set_module(%L, ''quality'', false)', cc)) like '22023%', 'модуль: старый (Качество) — отказ');
   res := res || pg_temp.t(pg_temp.err(format('select public.pf_platform_set_module(%L, ''nope'', true)', cc)) like '22023%', 'модуль: неизвестный — отказ');
@@ -132,7 +132,7 @@ begin
   a2 := public.pf_platform_set_company_admin(cc, ' ' || lower(e_for) || ' ');
   res := res || pg_temp.t(a1 is not null and a1 = a2, 'админ компании: назначен, повтор — то же назначение');
   reset role;
-  res := res || pg_temp.t((select count(*) from planfact.audit_log where company_id = cc and action = 'platform.company_admin.set') = 1, 'админ компании: журнал один раз');
+  res := res || pg_temp.t((select count(*) from core.audit_log where company_id = cc and action = 'platform.company_admin.set') = 1, 'админ компании: журнал один раз');
   perform pg_temp.as_user(ufor);
   select x into c from jsonb_array_elements(public.pf_my_platform() -> 'companies') x where (x ->> 'id')::uuid = cc;
   res := res || pg_temp.t((c ->> 'can_manage_company')::boolean and c -> 'modules' = '["planfact"]'::jsonb, 'прораб стал админом Гаммы: «Компания» и модуль');
@@ -151,14 +151,14 @@ begin
     res := res || pg_temp.t(pg_temp.err(s) like '42501%', 'прораб: отказ — ' || left(s, 50));
   end loop;
   reset role; perform pg_temp.as_user(uadm);
-  res := res || pg_temp.t(pg_temp.err('select count(*) from planfact.platform_admins') like '42501%', 'platform_admins клиенту закрыта (чтение)');
-  res := res || pg_temp.t(pg_temp.err(format('insert into planfact.platform_admins values (%L)', uadm)) like '42501%', 'platform_admins: самоназначение — отказ');
-  res := res || pg_temp.t(pg_temp.err('select count(*) from planfact.module_catalog') like '42501%', 'module_catalog клиенту закрыт');
+  res := res || pg_temp.t(pg_temp.err('select count(*) from core.platform_admins') like '42501%', 'platform_admins клиенту закрыта (чтение)');
+  res := res || pg_temp.t(pg_temp.err(format('insert into core.platform_admins values (%L)', uadm)) like '42501%', 'platform_admins: самоназначение — отказ');
+  res := res || pg_temp.t(pg_temp.err('select count(*) from core.module_catalog') like '42501%', 'module_catalog клиенту закрыт');
   res := res || pg_temp.t(pg_temp.err('select planfact.is_platform_admin()') like '42501%', 'is_platform_admin клиенту не вызвать');
-  res := res || pg_temp.t(pg_temp.err(format('update planfact.company_modules set enabled = false where company_id = %L', ca)) like '42501%', 'company_modules напрямую не меняется');
+  res := res || pg_temp.t(pg_temp.err(format('update core.company_modules set enabled = false where company_id = %L', ca)) like '42501%', 'company_modules напрямую не меняется');
   reset role;
-  res := res || pg_temp.t((select enabled from planfact.company_modules where company_id = ca and module = 'planfact')
-                          and (select count(*) from planfact.companies where name = 'Взлом') = 0, 'после отказов ничего не изменилось');
+  res := res || pg_temp.t((select enabled from core.company_modules where company_id = ca and module = 'planfact')
+                          and (select count(*) from core.companies where name = 'Взлом') = 0, 'после отказов ничего не изменилось');
 
   -- 12. anon
   perform set_config('request.jwt.claims', '', true); perform set_config('request.jwt.claim.sub', '', true); execute 'set local role anon';

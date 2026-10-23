@@ -18,10 +18,10 @@ declare
   ca uuid := gen_random_uuid(); cb uuid := gen_random_uuid(); pa uuid; imp uuid; p jsonb; t text; res text := ''; n int;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,ucus,ueco,uboss,ubeta]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,ucus),(ca,ueco),(ca,uboss),(cb,ubeta);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  select v.c, v.u, (select id from planfact.company_roles where company_id = v.c and template_code = v.code), null
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,ucus),(ca,ueco),(ca,uboss),(cb,ubeta);
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  select v.c, v.u, (select id from core.company_roles where company_id = v.c and template_code = v.code), null
   from (values (ca,uadm,'company_admin'),(ca,upto,'pto'),(ca,ufor,'foreman'),(ca,ucus,'customer'),(ca,ueco,'economist'),(ca,uboss,'management'),(cb,ubeta,'company_admin')) v(c, u, code);
 
   reset role; perform pg_temp.as_user(uadm);

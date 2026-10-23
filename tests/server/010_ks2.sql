@@ -27,22 +27,22 @@ declare
   old_tot text; new_tot text; sha text;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,upm,uecon,umgmt,ubadm]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm),(ca,uecon),(ca,umgmt),(cb,ubadm);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  select ca, u, (select id from planfact.company_roles where company_id = ca and template_code = c), null
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true),(cb,'Бета',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm),(ca,uecon),(ca,umgmt),(cb,ubadm);
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  select ca, u, (select id from core.company_roles where company_id = ca and template_code = c), null
   from (values (uadm,'company_admin'),(upto,'pto'),(ufor,'foreman'),(upm,'project_manager'),(uecon,'economist'),(umgmt,'management')) v(u, c);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  values (cb, ubadm, (select id from planfact.company_roles where company_id = cb and template_code = 'company_admin'), null);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  values (cb, ubadm, (select id from core.company_roles where company_id = cb and template_code = 'company_admin'), null);
+  select id into m2 from core.units where company_id is null and code = 'м²';
 
   -- 0. Каталог и шаблоны ролей
-  res := res || pg_temp.t(exists (select 1 from planfact.permission_catalog where action = 'planfact.ks2.view'), 'действие ks2.view в каталоге');
-  select string_agg(r2.template_code, ',' order by r2.template_code) into t from planfact.company_role_permissions rp
-    join planfact.company_roles r2 on r2.id = rp.role_id where r2.company_id = ca and rp.action = 'planfact.ks2.view';
+  res := res || pg_temp.t(exists (select 1 from core.permission_catalog where action = 'planfact.ks2.view'), 'действие ks2.view в каталоге');
+  select string_agg(r2.template_code, ',' order by r2.template_code) into t from core.company_role_permissions rp
+    join core.company_roles r2 on r2.id = rp.role_id where r2.company_id = ca and rp.action = 'planfact.ks2.view';
   res := res || pg_temp.t(t = 'management', 'ks2.view: руководство (получено: ' || coalesce(t, '-') || ')');
-  select string_agg(r2.template_code, ',' order by r2.template_code) into t from planfact.company_role_permissions rp
-    join planfact.company_roles r2 on r2.id = rp.role_id where r2.company_id = ca and rp.action = 'planfact.ks2.edit';
+  select string_agg(r2.template_code, ',' order by r2.template_code) into t from core.company_role_permissions rp
+    join core.company_roles r2 on r2.id = rp.role_id where r2.company_id = ca and rp.action = 'planfact.ks2.edit';
   res := res || pg_temp.t(t = 'economist,project_manager,pto', 'ks2.edit: экономист, РП, ПТО (получено: ' || coalesce(t, '-') || ')');
 
   -- 1. Подготовка: ВОР (работа 12 → материал 13 по норме 9; работа 14 → материал 15 без нормы, 40 на 20), смета, КП

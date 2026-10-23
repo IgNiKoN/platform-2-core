@@ -34,13 +34,13 @@ declare
   v_company uuid; v_user uuid; v_tpl auth.users; v_has_pid boolean; r record;
 begin
   set local search_path = public, extensions;
-  if exists (select 1 from planfact.companies where name = 'Демо-компания') or exists (select 1 from auth.users where email like '%@demo.invalid') then
+  if exists (select 1 from core.companies where name = 'Демо-компания') or exists (select 1 from auth.users where email like '%@demo.invalid') then
     raise exception 'Демо-компания или учётки @demo.invalid уже есть — сначала «Сброс демо» (docs/DEMO.md)';
   end if;
   select * into v_tpl from auth.users where email = 'alfa-pto@test.invalid';   -- образец: instance_id, aud, role тестовых учёток P2-0004
   if v_tpl.id is null then raise exception 'Нет образца alfa-pto@test.invalid'; end if;
   select exists (select 1 from information_schema.columns where table_schema = 'auth' and table_name = 'identities' and column_name = 'provider_id') into v_has_pid;
-  insert into planfact.companies(name, is_test) values ('Демо-компания', true) returning id into v_company;
+  insert into core.companies(name, is_test) values ('Демо-компания', true) returning id into v_company;
   for r in select * from (values
 ${USERS.map(([k, e, role]) => `    (${lit(e)}, ${lit(pw[k])}, ${lit(role)})`).join(',\n')}
   ) u(email, pass, role) loop
@@ -58,9 +58,9 @@ ${USERS.map(([k, e, role]) => `    (${lit(e)}, ${lit(pw[k])}, ${lit(role)})`).jo
                values ($1, $1, $2, ''email'', now(), now(), now())'
         using v_user, jsonb_build_object('sub', v_user::text, 'email', r.email, 'email_verified', true);
     end if;
-    insert into planfact.company_members(company_id, user_id) values (v_company, v_user);
-    insert into planfact.role_assignments(company_id, user_id, role_id, project_id)
-    values (v_company, v_user, (select id from planfact.company_roles where company_id = v_company and template_code = r.role), null);
+    insert into core.company_members(company_id, user_id) values (v_company, v_user);
+    insert into core.role_assignments(company_id, user_id, role_id, project_id)
+    values (v_company, v_user, (select id from core.company_roles where company_id = v_company and template_code = r.role), null);
   end loop;
   raise notice 'Демо-компания и 5 учёток созданы';
 end $$;

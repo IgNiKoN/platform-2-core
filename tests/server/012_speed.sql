@@ -21,12 +21,12 @@ declare
   t0 timestamptz; ms_k int; ms_s int; n int; res text := ''; td date := (now() at time zone 'Europe/Moscow')::date;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  select ca, u, (select id from planfact.company_roles where company_id = ca and template_code = c), null
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor);
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  select ca, u, (select id from core.company_roles where company_id = ca and template_code = c), null
   from (values (uadm,'company_admin'),(upto,'pto'),(ufor,'foreman')) v(u, c);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  select id into m2 from core.units where company_id is null and code = 'м²';
 
   reset role; perform pg_temp.as_user(uadm);
   pa := public.pf_create_project(ca, 'ЖК Большой');

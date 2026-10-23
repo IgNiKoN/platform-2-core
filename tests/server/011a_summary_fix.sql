@@ -18,12 +18,12 @@ declare
   r record; t text; res text := ''; n int; rows_ text; td date := (now() at time zone 'Europe/Moscow')::date;
 begin
   insert into auth.users(id, email) select u, u||'@test.invalid' from unnest(array[uadm,upto,ufor,upm]) u;
-  insert into planfact.companies(id, name, is_test) values (ca,'Альфа',true);
-  insert into planfact.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm);
-  insert into planfact.role_assignments(company_id,user_id,role_id,project_id)
-  select ca, u, (select id from planfact.company_roles where company_id = ca and template_code = c), null
+  insert into core.companies(id, name, is_test) values (ca,'Альфа',true);
+  insert into core.company_members(company_id, user_id) values (ca,uadm),(ca,upto),(ca,ufor),(ca,upm);
+  insert into core.role_assignments(company_id,user_id,role_id,project_id)
+  select ca, u, (select id from core.company_roles where company_id = ca and template_code = c), null
   from (values (uadm,'company_admin'),(upto,'pto'),(ufor,'foreman'),(upm,'project_manager')) v(u, c);
-  select id into m2 from planfact.units where company_id is null and code = 'м²';
+  select id into m2 from core.units where company_id is null and code = 'м²';
 
   -- План 30 000 000 м² × 1 ₽ = 30 млн ₽; за 14 дней сделано 0,14 м² → темп 0,01 ₽/дн. → остаток / темп ≈ 3·10⁹ дней.
   reset role; perform pg_temp.as_user(uadm);
