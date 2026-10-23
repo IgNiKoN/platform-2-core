@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.59.99';
+const SW_VERSION = '18.60.0';
 // P2-0013: «разработка / выпуск» — из единственного переключателя js/services/config.service.js (выпуск: rbi-quality-* вместо старой версии).
 importScripts('./js/services/config.service.js');
 const CACHE_PREFIX = (self.APP_CONFIG && self.APP_CONFIG.SW_CACHE_PREFIX) || 'platform2-';
@@ -536,7 +536,8 @@ self.addEventListener('message', (event) => {
     const had = p2StorageToken;
     p2StorageToken = typeof event.data.token === 'string' && event.data.token ? event.data.token : null;
     p2TokenKnown = true;
-    if (had && !p2StorageToken) event.waitUntil(purgeCompanyFiles());   // выход — закрытые файлы из кэша убрать
+    // выход — закрытые файлы из кэша убрать (и после перезапуска кэша: по сохранённому слоту входа)
+    if (!p2StorageToken) event.waitUntil(had ? purgeCompanyFiles().then(() => setStorageSlot('')) : setStorageSlot(''));
     const w = p2TokenWaiters; p2TokenWaiters = [];
     w.forEach((r) => r(p2StorageToken));
     return;

@@ -96,3 +96,16 @@ test('выход и смена «компания + пользователь» �
   await sw.message({ type: 'P2_STORAGE_TOKEN', token: null });
   assert.deepEqual([...store.get('app')!], [RBI, APP], 'выход — удалены');
 });
+
+test('выход после перезапуска кэша (токен в памяти неизвестен): закрытые файлы всё равно удаляются по сохранённому входу', async () => {
+  const first = setup();
+  const store = withCaches(first.sw, [F1, APP]);
+  await first.sw.message({ type: 'P2_STORAGE_SLOT', slot: 'c1:u1' });
+  store.get('app')!.add(F1);
+  // «перезапуск»: новый экземпляр кэша с теми же хранилищами, токен ему ещё не сообщали
+  const again = setup();
+  again.sw.ctx.caches = first.sw.ctx.caches;
+  again.sw.ctx.Response = first.sw.ctx.Response;
+  await again.sw.message({ type: 'P2_STORAGE_TOKEN', token: null });
+  assert.deepEqual([...store.get('app')!], [APP]);
+});
