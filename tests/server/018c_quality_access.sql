@@ -35,11 +35,14 @@ begin
     (cb, ub,   (select id from core.company_roles where company_id = cb and template_code = 'company_admin'), null);
 
   perform pg_temp.as_user(ua, ca); j := pg_temp.acc(null);
-  res := res || pg_temp.t(j -> 'actions' = '["construction.edit", "construction.manage", "construction.view", "quality.edit", "quality.manage", "quality.view"]'
+  -- после 020: + quality.scope.company у админа; прораб — только просмотр
+  res := res || pg_temp.t(j -> 'actions' = case when to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null then '["construction.edit", "construction.manage", "construction.view", "quality.edit", "quality.manage", "quality.scope.company", "quality.view"]'::jsonb
+      else '["construction.edit", "construction.manage", "construction.view", "quality.edit", "quality.manage", "quality.view"]' end
     and j -> 'templates' = '["company_admin"]' and j ->> 'company_id' = ca::text, 'админ: все 6 действий, шаблон company_admin: ' || j::text);
   perform pg_temp.as_user(ufor, ca);
   j := pg_temp.acc(pa);
-  res := res || pg_temp.t(j -> 'actions' = '["construction.edit", "construction.view", "quality.view"]', 'прораб на своём объекте: ' || j::text);
+  res := res || pg_temp.t(j -> 'actions' = case when to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null then '["construction.view", "quality.view"]'::jsonb
+      else '["construction.edit", "construction.view", "quality.view"]' end, 'прораб на своём объекте: ' || j::text);
   j := pg_temp.acc(pa2);
   res := res || pg_temp.t(j -> 'actions' = '[]' and j -> 'templates' = '[]', 'прораб на чужом объекте — ничего: ' || j::text);
   perform pg_temp.as_user(ucon, ca); j := pg_temp.acc(pa);

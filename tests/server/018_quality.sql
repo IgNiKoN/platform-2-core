@@ -49,7 +49,7 @@ declare
   ua uuid := gen_random_uuid(); ua_eco uuid := gen_random_uuid(); ua_qc uuid := gen_random_uuid(); ub uuid := gen_random_uuid();
   ca uuid := gen_random_uuid(); cb uuid := gen_random_uuid();
   pa uuid := gen_random_uuid(); pb uuid := gen_random_uuid();
-  r record; t text; i_a text; i_x text; i_b text; i_c text; i_e text; cls text; haspc boolean; mods text[]; mark text; pc text; n int; s text; res text := ''; ntab int := 0;
+  r record; t text; v_conf text; i_a text; i_x text; i_b text; i_c text; i_e text; cls text; haspc boolean; mods text[]; mark text; pc text; n int; s text; res text := ''; ntab int := 0;
 begin
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[ua, ua_eco, ua_qc, ub]) u;
   insert into core.companies(id, name, is_test) values (ca, 'Альфа 018', true), (cb, 'Бета 018', true);
@@ -72,7 +72,8 @@ begin
   res := res || pg_temp.t(n = 0, 'anon/PUBLIC — без прав на таблицы quality (' || n || ')');
   select count(*), string_agg(tgrelid::regclass::text, ', ') into n, s from pg_trigger tg join pg_class c on c.oid = tg.tgrelid
    join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname = 'quality' and not tg.tgisinternal and tg.tgname not like '%_bind_company'
-     and tg.tgname <> 'contractor_directory_to_core';   -- 018e: подрядчик из Качества → «Контрагенты»
+     and tg.tgname <> 'contractor_directory_to_core'    -- 018e: подрядчик из Качества → «Контрагенты»
+     and tg.tgname not like '%_set_author';             -- 020: автор записи
   res := res || pg_temp.t(n = 0, 'в quality только триггер привязки к компании (лишние: ' || coalesce(s, '—') || ')');
   select count(*), string_agg(p.proname, ', ') into n, s from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
    where ns.nspname = 'quality' and has_function_privilege('anon', p.oid, 'execute');
@@ -176,17 +177,21 @@ begin
   -- 8. Назначение на объект: технадзор Альфы на «Спутнике» видит проверку этого объекта, но не настройки компании
   perform pg_temp.as_user(ua_qc, ca);
   n := pg_temp.cnt('select count(*) from quality.rbi_inspections');
-  res := res || pg_temp.t(n = 1, 'технадзор объекта видит проверку объекта (' || n || ')');
+  -- после 020 инженер СК видит только свои проверки (проверку создал админ)
+  res := res || pg_temp.t(n = case when to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null then 0 else 1 end, 'технадзор объекта видит проверку объекта (' || n || ')');
   s := pg_temp.err(i_e);
   res := res || pg_temp.t(s <> 'OK', 'технадзор не меняет настройки компании (' || s || ')');
   reset role;
 
   -- 9. Настройки компании — одна строка на компанию: company_id = компания (upsert по company_id работает у каждой)
+  -- после 021 ключ — (core_company_id, company_id); мост Качества дописывает core_company_id в onConflict
+  v_conf := case when exists (select 1 from pg_constraint where conname = 'rbi_company_settings_pkey'
+                  and pg_get_constraintdef(oid) like '%core_company_id%') then 'core_company_id, company_id' else 'company_id' end;
   perform pg_temp.as_user(ua, ca);
-  s := pg_temp.err('insert into quality.rbi_company_settings(company_id) values (''rbi'') on conflict (company_id) do update set updated_at = now()');
+  s := pg_temp.err('insert into quality.rbi_company_settings(company_id) values (''rbi'') on conflict (' || v_conf || ') do update set updated_at = now()');
   res := res || pg_temp.t(s = 'OK', 'настройки Альфы: upsert (' || s || ')');
   perform pg_temp.as_user(ub, cb);
-  s := pg_temp.err('insert into quality.rbi_company_settings(company_id) values (''rbi'') on conflict (company_id) do update set updated_at = now()');
+  s := pg_temp.err('insert into quality.rbi_company_settings(company_id) values (''rbi'') on conflict (' || v_conf || ') do update set updated_at = now()');
   res := res || pg_temp.t(s = 'OK', 'настройки Беты: upsert, не мешает Альфе (' || s || ')');
   reset role;
   select count(*) into n from quality.rbi_company_settings where company_id in (ca::text, cb::text);

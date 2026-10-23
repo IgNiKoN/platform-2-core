@@ -1,6 +1,26 @@
 -- P2-0016: откат 018e_quality_contractors_up.sql. Строки справочника Качества, созданные из ядра, остаются (данные компании);
 -- черновики контрагентов без ИНН удаляются (их нельзя вернуть в схему «ИНН обязателен»). Применять до 018d_quality_storage_down.sql.
+-- P2-0018 (ТД №117): если черновик где-то указан (ссылка без каскада) — понятная ошибка до любых изменений.
 begin;
+
+do $$
+declare r record; n bigint;
+begin
+  if to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null then
+    raise exception 'Сначала откатите 020: 020_quality_scope_down.sql' using errcode = 'P0001';
+  end if;
+  for r in select c.conrelid::regclass::text tbl, a.attname col from pg_constraint c
+             cross join lateral unnest(c.conkey, c.confkey) k(src, dst)
+             join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.src
+             join pg_attribute b on b.attrelid = c.confrelid and b.attnum = k.dst and b.attname = 'id'
+            where c.contype = 'f' and c.confrelid = 'core.counterparties'::regclass and c.confdeltype in ('a', 'r') loop
+    execute format('select count(*) from %s t join core.counterparties cp on cp.id = t.%I where cp.draft and cp.inn is null', r.tbl, r.col) into n;
+    if n > 0 then
+      raise exception 'Черновик контрагента без ИНН указан в % (% шт.): дозаполните ИНН в «Контрагентах» или уберите ссылку, затем повторите откат', r.tbl, n
+        using errcode = 'P0001';
+    end if;
+  end loop;
+end $$;
 
 drop trigger if exists contractor_directory_to_core on quality.contractor_directory;
 drop trigger if exists projects_to_quality on core.projects;

@@ -38,14 +38,17 @@ function fakeApi(opts: { fail?: string } = {}) {
   ];
   const res = <T = null>(value: T): Result<T> => opts.fail ? { ok: false, message: opts.fail } : { ok: true, value };
   const api: CompanyApi = {
+    async listContractors() { return [{ id: 'k1', name: 'ООО «Альфа-Строй»' }, { id: 'k2', name: 'Бета Монтаж', draft: true }]; },
     async myAdminCompanies() { return []; }, async catalog() { return []; }, async listAudit() { return []; },
-    async listRoles() { return [{ id: 'r-senior', name: 'Старший прораб', template_code: null, actions: [], active_assignments: 0 }]; },
+    async listRoles() { return [{ id: 'r-senior', name: 'Старший прораб', template_code: null, actions: [], active_assignments: 0 },
+      { id: 'r-con', name: 'Представитель подрядчика', template_code: 'contractor_rep', actions: ['quality.view', 'quality.scope.contractor'], active_assignments: 0 }]; },
     async listMembers() { return members; },
     async listProjects() { return [{ id: 'p1', name: 'Проект Альфа', company_id: 'c1' }, { id: 'pb', name: 'Проект Бета', company_id: 'c2' }]; },
     async createRole() { return res(''); }, async renameRole() { return res(null); }, async setRoleActions() { return res(null); }, async deleteRole() { return res(null); },
-    async assignRole(u, r, p, to) {
-      calls.push(`assign:${u}:${r}:${p}:${to}`);
-      if (!opts.fail) members = [...members, A('a-new', u, 'alfa-foreman@test.invalid', 'Старший прораб', p ? 'Проект Альфа' : null, true, to)];
+    async assignRole(u, r, p, to, cp) {
+      calls.push(`assign:${u}:${r}:${p}:${to}` + (cp ? `:${cp}` : ''));
+      if (!opts.fail) members = [...members, { ...A('a-new', u, 'alfa-foreman@test.invalid', cp ? 'Представитель подрядчика' : 'Старший прораб', p ? 'Проект Альфа' : null, true, to),
+        counterparty_id: cp || null, counterparty_name: cp === 'k1' ? 'ООО «Альфа-Строй»' : null }];
       return res('a-new');
     },
     async revoke(id) { calls.push(`revoke:${id}`); if (!opts.fail) members = members.filter((m) => m.assignment_id !== id); return res(null); }
@@ -168,4 +171,29 @@ test('журнал компании: таблица «когда — кто — 
   const t = (el as N).querySelector('[data-testid=co-audit]').textContent;
   assert.match(t, /alfa-admin@test\.invalid/);
   assert.match(t, /Создана роль «Старший прораб»/);
+});
+
+test('роль «только своя фирма»: появляется выбор фирмы из «Контрагентов» и подсказка; без фирмы — не отправляется; фирма видна в списке', async () => {
+  const { api, calls } = fakeApi();
+  const el = mount(api);
+  await tick();
+  assert.equal(el.querySelector('[data-testid=co-firm]'), null, 'обычная роль — без выбора фирмы');
+  const form = el.querySelector('[data-testid=co-assign]');
+  const role = form.querySelector('[name=role]');
+  role.value = 'r-con';
+  role.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await tick();
+  const firm = el.querySelector('[data-testid=co-firm]');
+  assert.ok(firm, 'выбор фирмы показан');
+  assert.deepEqual(Array.from(firm.querySelectorAll('option')).map((o: N) => o.textContent), ['— выберите —', 'ООО «Альфа-Строй»', 'Бета Монтаж (нужен ИНН)']);
+  assert.match(el.querySelector('[data-testid=co-firm-hint]').textContent, /только записи этой фирмы/);
+  fill(form, { user: 'u-for' });
+  submit(form); await tick();
+  assert.deepEqual(calls, []);
+  assert.match(el.querySelector('[role=alert]').textContent, /Выберите фирму подрядчика/);
+  fill(form, { user: 'u-for', firm: 'k1' });
+  submit(form); await tick();
+  assert.deepEqual(calls, ['assign:u-for:r-con:null:null:k1']);
+  assert.match(el.querySelector('[data-assignment-id=a-new]').textContent, /Представитель подрядчика · ООО «Альфа-Строй»/);
+  assert.equal(el.querySelector('[data-testid=co-firm]'), null, 'после назначения форма сброшена');
 });

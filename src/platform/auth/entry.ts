@@ -6,7 +6,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { createAuthService, getClient, readAuthConfig } from './auth.service.ts';
-import { applyQualityBridge } from './quality-bridge.ts';
+import { applyQualityBridge, QUALITY_COMPANY_KEY, QUALITY_USER_KEY } from './quality-bridge.ts';
 import { createProjectsService } from '../core/projects.service.ts';
 import type { QualityProject } from './quality-bridge.ts';
 import { createPlatform } from './platform.service.ts';
@@ -130,6 +130,13 @@ function apply(st: PlatformState): void {
   void applyQuality(st);
 }
 
+let slotWired = false;
+/** Вход устройства для кэша закрытых файлов: «компания:пользователь» (пусто — без компании). */
+function currentSlot(): string {
+  const ls = window.localStorage, company = ls.getItem(QUALITY_COMPANY_KEY) || '';
+  return company ? company + ':' + (ls.getItem(QUALITY_USER_KEY) || '') : '';
+}
+
 /** Качество и Стройконтроль при входе почтой: синхронизация в хранилище компании (P2-0016). */
 async function applyQuality(st: PlatformState): Promise<void> {
   try {
@@ -143,12 +150,21 @@ async function applyQuality(st: PlatformState): Promise<void> {
       cfg,
       createClient: createClient as never,
       serviceWorker: 'serviceWorker' in navigator ? navigator.serviceWorker as never : null,
+      dropDatabase: (name) => { try { indexedDB.deleteDatabase(name); } catch { /* нет IndexedDB — нечего удалять */ } },
       listProjects: async (companyId) => {
         const svc = createProjectsService();   // объекты — из ядра (src/platform/core)
         const rows = svc ? await svc.listProjects(companyId) : [];
         return rows.filter((p) => !p.archived_at).map((p): QualityProject => ({ id: p.id, name: p.name }));
       }
     });
+    // P2-0018: кэшу приложения — текущий «компания + пользователь» (закрытые файлы другого входа он удалит).
+    const slot = currentSlot();
+    if ('serviceWorker' in navigator) {
+      const sw = navigator.serviceWorker;
+      if (sw.controller) sw.controller.postMessage({ type: 'P2_STORAGE_SLOT', slot });
+      // кэш приложения сменился (первая загрузка после обновления / жёсткой перезагрузки) — сообщить слот ему
+      if (!slotWired) { slotWired = true; sw.addEventListener('controllerchange', () => { sw.controller?.postMessage({ type: 'P2_STORAGE_SLOT', slot: currentSlot() }); }); }
+    }
     const shell = rbi().services?.shell;
     if (shell && typeof shell.renderSidebar === 'function') shell.renderSidebar();
     if (shell && typeof shell.renderMobileModuleMenu === 'function') shell.renderMobileModuleMenu();

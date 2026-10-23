@@ -33,34 +33,92 @@ export function qualityCompanyFor(st: PlatformState): string | null {
   return cur && (cur.modules.includes('quality') || cur.modules.includes('construction')) ? cur.id : null;
 }
 
-/** Переключить устройство на базу и состояние синхронизации компании (null — без компании). true → нужна перезагрузка. */
-export function switchDeviceCompany(store: Store, next: string | null): boolean {
-  const cur = store.getItem(QUALITY_COMPANY_KEY) || '';
-  const nxt = next || '';
-  if (cur === nxt) return false;
+export const QUALITY_USER_KEY = 'platform2_quality_user';
+/** Старая общая база компании (до P2-0018), которую удалить после перезагрузки; её владелец — пока в ней неотправленное. */
+export const QUALITY_DROP_DB_KEY = 'platform2_quality_drop_db';
+export const QUALITY_LEGACY_OWNER_KEY = 'platform2_quality_legacy_owner';
+
+/** Ключ пользователя для имени локальной базы (без почты в имени): 16 hex-знаков от почты (FNV-1a, два прохода). */
+export function deviceUserKey(email: string): string {
+  const e = email.trim().toLowerCase();
+  const fnv = (seed: number): string => {
+    let h = seed >>> 0;
+    for (let i = 0; i < e.length; i++) { h ^= e.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, '0');
+  };
+  return fnv(0x811c9dc5) + fnv(0x2f2e1d0c);
+}
+
+/** Переключить устройство на базу и состояние синхронизации «компания + пользователь» (P2-0018: у каждого вошедшего
+ *  своя локальная база PLATFORM2_DB_<компания>_<пользователь>; null — без компании). true → нужна перезагрузка.
+ *  Старая общая база компании (до P2-0018): с неотправленными изменениями (rbi_cloud_dirty) остаётся первому вошедшему,
+ *  пока он их не отправит; иначе — удаляется после перезагрузки (её данные заново придут с сервера по правам вошедшего). */
+export function switchDeviceCompany(store: Store, next: string | null, user = ''): boolean {
+  const curC = store.getItem(QUALITY_COMPANY_KEY) || '';
+  const curU = curC ? store.getItem(QUALITY_USER_KEY) || '' : '';   // пользователь без компании — не база
+  const nxtC = next || '';
+  const nxtU = nxtC ? user : '';
+  if (curC === nxtC && curU === nxtU) return false;
+  const legacy = !!curC && !curU && curC === nxtC && !!nxtU;
+  if (legacy) {
+    const owner = store.getItem(QUALITY_LEGACY_OWNER_KEY);
+    if (store.getItem('rbi_cloud_dirty') === '1' && (!owner || owner === nxtU)) {
+      store.setItem(QUALITY_LEGACY_OWNER_KEY, nxtU);   // сначала отправить неотправленное — база этого пользователя
+      return false;
+    }
+    if (store.getItem('rbi_cloud_dirty') !== '1' || owner === null) store.setItem(QUALITY_DROP_DB_KEY, curC);
+  }
+  const slot = (c: string, u: string): string => (u ? c + ':' + u : c);
   const saved: Record<string, string> = {};
   for (const k of SYNC_STATE_KEYS) {
     const v = store.getItem(k);
     if (v !== null) saved[k] = v;
     store.removeItem(k);
   }
-  store.setItem(STASH_PREFIX + cur, JSON.stringify(saved));
+  if (legacy && store.getItem(QUALITY_DROP_DB_KEY) === curC) store.removeItem(STASH_PREFIX + curC);
+  else store.setItem(STASH_PREFIX + slot(curC, curU), JSON.stringify(saved));
   let restore: Record<string, string> = {};
-  try { restore = JSON.parse(store.getItem(STASH_PREFIX + nxt) || '{}') as Record<string, string>; } catch { restore = {}; }
+  try { restore = JSON.parse(store.getItem(STASH_PREFIX + slot(nxtC, nxtU)) || '{}') as Record<string, string>; } catch { restore = {}; }
   for (const k of SYNC_STATE_KEYS) if (typeof restore[k] === 'string') store.setItem(k, restore[k]);
-  store.removeItem(STASH_PREFIX + nxt);
-  if (nxt) store.setItem(QUALITY_COMPANY_KEY, nxt); else store.removeItem(QUALITY_COMPANY_KEY);
+  store.removeItem(STASH_PREFIX + slot(nxtC, nxtU));
+  if (nxtC) store.setItem(QUALITY_COMPANY_KEY, nxtC); else store.removeItem(QUALITY_COMPANY_KEY);
+  if (nxtU) store.setItem(QUALITY_USER_KEY, nxtU); else store.removeItem(QUALITY_USER_KEY);
   return true;
 }
 
-/** Роль экрана Качества по правам компании (ROLE_MATRIX permission.service.js). Права всё равно проверяет сервер (RLS). */
-export function roleFor(actions: string[], templates: string[]): string {
+/** Роль экрана Качества по правам компании (ROLE_MATRIX permission.service.js). Область записей держит сервер (020,
+ *  quality.row_visible); экрану — роль с тем же разрезом или шире, чтобы его фильтры не прятали то, что отдал сервер:
+ *  manage → «Админ»; своя фирма → «Подрядчик»; правка Качества → «Инженер СК» (свои записи); остальной просмотр
+ *  (Руководство, РП, Прораб, ПТО, Заказчик) → «Директор» — только просмотр, объекты ограничивает сервер
+ *  (решение владельца 23.10.2026: у «РП» старого экрана фильтр по стройобъектам, а не по объектам компании). */
+export function roleFor(actions: string[]): string {
   const has = (a: string): boolean => actions.includes(a);
   if (has('quality.manage') || has('construction.manage')) return 'manager';
+  if (has('quality.scope.contractor')) return 'contractor';
   if (has('quality.edit')) return 'engineer';
-  if (templates.includes('contractor_rep') && actions.length > 0) return 'contractor';
   if (has('quality.view') || has('construction.view') || has('construction.edit')) return 'director';
   return 'guest';
+}
+
+/** Доступ из quality.my_access: projects — назначенные объекты (null — вся компания), contractor — фирма назначения. */
+export interface QualityAccess { actions: string[]; templates: string[]; projects: string[] | null; contractor: string }
+export function parseAccess(data: unknown): QualityAccess {
+  const d = (data && typeof data === 'object' ? data : {}) as { actions?: unknown; templates?: unknown; projects?: unknown; contractor?: unknown };
+  const c = (d.contractor && typeof d.contractor === 'object' ? d.contractor : {}) as { name?: unknown };
+  return {
+    actions: Array.isArray(d.actions) ? d.actions.map(String) : [],
+    templates: Array.isArray(d.templates) ? d.templates.map(String) : [],
+    projects: Array.isArray(d.projects) ? d.projects.map(String) : null,
+    contractor: typeof c.name === 'string' ? c.name : ''
+  };
+}
+
+/** Поля доступа экрана Качества при входе почтой — только из моста: загрузка сохранённых на устройстве настроек
+ *  (Object.assign из user_prefs — в т.ч. прошлого пользователя) их не перетирает; чтение и сохранение — как обычно. */
+export function pinAccess(settings: Record<string, unknown>, values: Record<string, unknown>): void {
+  for (const [k, v] of Object.entries(values)) {
+    Object.defineProperty(settings, k, { configurable: true, enumerable: true, get: () => v, set: () => { /* значение держит мост */ } });
+  }
 }
 
 type CreateClient = (url: string, key: string, opts: Record<string, unknown>) => SupabaseClient;
@@ -78,7 +136,26 @@ export function createQualityClient(createClient: CreateClient, cfg: { url: stri
     get(target, prop, receiver) {
       if (prop === 'auth') return platformClient.auth;
       if (prop === 'storage') return storage;
+      if (prop === 'from') return (table: string) => companyKeys(target.from(table) as unknown as Record<string, unknown>);
       return Reflect.get(target, prop, receiver);
+    }
+  });
+}
+
+/** Цель upsert с компанией: ключи записей Качества — (core_company_id, …) (021); компанию строки ставит сервер. */
+export function companyConflict(onConflict: string | undefined): string | undefined {
+  if (!onConflict) return onConflict;
+  const cols = onConflict.split(',').map((c) => c.trim()).filter(Boolean);
+  return (cols.includes('core_company_id') ? cols : ['core_company_id', ...cols]).join(',');
+}
+/** Таблица Качества: старый код пишет upsert(…, { onConflict: 'id' }) — уходит onConflict 'core_company_id,id'. */
+function companyKeys<T extends Record<string, unknown>>(builder: T): T {
+  return new Proxy(builder, {
+    get(target, prop, receiver) {
+      const v = Reflect.get(target, prop, receiver);
+      if (prop !== 'upsert' || typeof v !== 'function') return v;
+      return (values: unknown, opts?: { onConflict?: string } & Record<string, unknown>) =>
+        v.call(target, values, opts?.onConflict ? { ...opts, onConflict: companyConflict(opts.onConflict) } : opts);
     }
   });
 }
@@ -159,6 +236,8 @@ export interface BridgeDeps {
   createClient: CreateClient;
   /** Объекты компании (pf_company_projects) — от имени вошедшего, клиентом платформы. */
   listProjects: (companyId: string) => Promise<QualityProject[]>;
+  /** Удалить локальную базу IndexedDB по имени (старая общая база компании, P2-0018). */
+  dropDatabase?: (name: string) => void;
   /** Кэш приложения (navigator.serviceWorker): ему — токен для закрытых файлов компании (sw.js, P2_STORAGE_TOKEN). */
   serviceWorker?: { controller: { postMessage(m: unknown): void } | null; addEventListener(t: 'message', cb: (e: { data: unknown }) => void): void } | null;
 }
@@ -186,7 +265,15 @@ function wireStorageToken(deps: BridgeDeps): void {
 export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): Promise<QualitySync | null> {
   if (st.mode === 'none' && !deps.store.getItem(QUALITY_COMPANY_KEY)) return null;
   const company = qualityCompanyFor(st);
-  if (switchDeviceCompany(deps.store, company)) { deps.reload(); return null; }
+  if (switchDeviceCompany(deps.store, company, company && st.email ? deviceUserKey(st.email) : '')) { deps.reload(); return null; }
+  // Старая общая база компании (до P2-0018) — удалить: эта страница уже открыла базу пользователя.
+  const drop = deps.store.getItem(QUALITY_DROP_DB_KEY);
+  if (drop && deps.dropDatabase) {
+    const base = (deps.win as { APP_CONFIG?: { LOCAL_DB_NAME?: string } }).APP_CONFIG?.LOCAL_DB_NAME || 'PLATFORM2_DB';
+    deps.dropDatabase(base + '_' + drop);
+    deps.store.removeItem(QUALITY_DROP_DB_KEY);
+    if (deps.store.getItem(QUALITY_LEGACY_OWNER_KEY) !== null && deps.store.getItem(QUALITY_COMPANY_KEY) === drop) deps.store.removeItem(QUALITY_LEGACY_OWNER_KEY);
+  }
   const rbi = (deps.win.RBI = deps.win.RBI || {});
   if (!company || !deps.platformClient || !deps.cfg || !st.email) { rbi.qualitySync = null; return null; }
   const prev = rbi.qualitySync as QualitySync | null | undefined;
@@ -195,26 +282,32 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
   wireStorageToken(deps);
   const client = createQualityClient(deps.createClient, deps.cfg, company, deps.platformClient);
   deps.win.supabaseClient = client;
-  const projects = await deps.listProjects(company).catch(() => [] as QualityProject[]);
+  const loadAccess = async (pid: string | null): Promise<QualityAccess> => {
+    const { data, error } = await client.rpc('my_access', { p_project: pid });
+    return parseAccess(error ? null : data);
+  };
+  // «Синхронизация команды» — только свои объекты (назначения роли); вся компания — все объекты.
+  const scope = (await loadAccess(null)).projects;
+  const projects = (await deps.listProjects(company).catch(() => [] as QualityProject[]))
+    .filter((p) => scope === null || scope.includes(p.id));
   const savedProject = deps.store.getItem(PROJECT_PREFIX + company);
   const projectId = projects.some((p) => p.id === savedProject) ? savedProject
     : projects.length === 1 ? projects[0].id : null;
   const cur = st.companies.find((c) => c.id === company);
   const email = st.email;
 
-  const loadAccess = async (pid: string | null): Promise<{ actions: string[]; templates: string[] }> => {
-    const { data, error } = await client.rpc('my_access', { p_project: pid });
-    const d = (!error && data && typeof data === 'object' ? data : {}) as { actions?: unknown; templates?: unknown };
-    return {
-      actions: Array.isArray(d.actions) ? d.actions.map(String) : [],
-      templates: Array.isArray(d.templates) ? d.templates.map(String) : []
-    };
-  };
-  const applyRole = (a: { actions: string[]; templates: string[] }): void => {
+  const applyRole = (a: QualityAccess): void => {
     sync.actions = a.actions;
-    sync.role = roleFor(a.actions, a.templates);
-    const s = deps.win.appSettings;
-    if (s) { s.userRole = sync.role; s.cloudStatus = 'approved'; s.engineerName = email; }
+    sync.role = roleFor(a.actions);
+    // Фирма подрядчика — из назначения роли (020); объекты экрану не передаются: их держит сервер.
+    if (deps.win.appSettings) pinAccess(deps.win.appSettings, { userRole: sync.role, cloudStatus: 'approved', engineerName: email,
+      contractorName: a.contractor, assignedContractor: a.contractor, assignedProjects: [], assigned_projects: [] });
+    // Руководящим ролям экрана (Админ, Директор) — режим «Вся команда», как делал профиль старого Качества (sync-engine).
+    const c = deps.win.syncConfig;
+    if (c && (sync.role === 'manager' || sync.role === 'director') && c.syncMode !== 'full') {
+      c.syncMode = 'full';
+      deps.store.setItem('rbi_sync_config', JSON.stringify(c));
+    }
   };
   const writeConfig = (pid: string | null): void => {
     const c = (deps.win.syncConfig = deps.win.syncConfig || {});

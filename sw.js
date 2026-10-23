@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.59.98';
+const SW_VERSION = '18.60.0';
 // P2-0013: «разработка / выпуск» — из единственного переключателя js/services/config.service.js (выпуск: rbi-quality-* вместо старой версии).
 importScripts('./js/services/config.service.js');
 const CACHE_PREFIX = (self.APP_CONFIG && self.APP_CONFIG.SW_CACHE_PREFIX) || 'platform2-';
@@ -397,18 +397,36 @@ async function p2Token() {
   });
 }
 
+// P2-0018 (ТД №121): ответ сервера (в т.ч. 401/403 — нет входа или права) отдаётся как есть; офлайн-кэш — только без сети.
 async function fetchCompanyFile(request) {
   const token = await p2Token();
   const url = request.url.replace('/storage/v1/object/public/', '/storage/v1/object/authenticated/');
   try {
-    const res = await fetch(url, { headers: token ? { Authorization: 'Bearer ' + token, apikey: self.APP_CONFIG.P2_SUPABASE_ANON_KEY } : {} });
-    if (res.ok) return res;
-    const cached = await caches.match(request, { ignoreVary: true });
-    return cached || res;
+    return await fetch(url, { headers: token ? { Authorization: 'Bearer ' + token, apikey: self.APP_CONFIG.P2_SUPABASE_ANON_KEY } : {} });
   } catch (e) {
     const cached = await caches.match(request, { ignoreVary: true });
     return cached || Response.error();
   }
+}
+
+// P2-0018 (ТД №121): закрытые файлы компаний в кэше — только текущего входа. Выход (токен сброшен) или другой
+// «компания + пользователь» (сообщение страницы P2_STORAGE_SLOT) — такие файлы удаляются из всех кэшей.
+const P2_SLOT_CACHE = 'p2-storage-slot', P2_SLOT_KEY = '/__p2_storage_slot';
+function purgeCompanyFiles() {
+  return caches.keys().then((names) => Promise.all(names.map((n) => caches.open(n).then((c) => c.keys()
+    .then((keys) => Promise.all(keys.filter((r) => isCompanyFileUrl(r.url)).map((r) => c.delete(r))))))));
+}
+async function setStorageSlot(slot) {
+  let prev = null;
+  try {
+    const c = await caches.open(P2_SLOT_CACHE);
+    const hit = typeof c.match === 'function' ? await c.match(P2_SLOT_KEY) : null;
+    prev = hit ? await hit.text() : null;
+    if (prev !== slot) {
+      await purgeCompanyFiles();
+      await c.put(P2_SLOT_KEY, new Response(slot));
+    }
+  } catch (e) { await purgeCompanyFiles(); }
 }
 
 self.addEventListener('fetch', event => {
@@ -515,10 +533,17 @@ self.addEventListener('message', (event) => {
     event.waitUntil(purgeDisallowedBusinessCache());
   }
   if (event.data && event.data.type === 'P2_STORAGE_TOKEN') {
+    const had = p2StorageToken;
     p2StorageToken = typeof event.data.token === 'string' && event.data.token ? event.data.token : null;
     p2TokenKnown = true;
+    // выход — закрытые файлы из кэша убрать (и после перезапуска кэша: по сохранённому слоту входа)
+    if (!p2StorageToken) event.waitUntil(had ? purgeCompanyFiles().then(() => setStorageSlot('')) : setStorageSlot(''));
     const w = p2TokenWaiters; p2TokenWaiters = [];
     w.forEach((r) => r(p2StorageToken));
+    return;
+  }
+  if (event.data && event.data.type === 'P2_STORAGE_SLOT' && typeof event.data.slot === 'string') {
+    event.waitUntil(setStorageSlot(event.data.slot));
     return;
   }
   if (event.data && event.data.type === 'P2_SW_ALLOWLIST' && Array.isArray(event.data.modules)) {

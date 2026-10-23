@@ -588,7 +588,9 @@ else {
         const seenBeta = await cnt(t, 'betaPto', cB, `&${key}`);
         const seenBetaHdr = await cnt(t, 'betaPto', cA, `&${key}`);
         const del = await q(`${t}?${key}`, 'alfaAdmin', cA, { method: 'DELETE', headers: { Prefer: 'return=representation' } });
-        const okT = got.core_company_id === cA && seenPto === 1 && seenBeta === 0 && seenBetaHdr === 0 && del.ok;
+        // P2-0018 (023): черновики и очередь — только свои (ПТО чужие не видит)
+        const ptoSees = ['rbi_draft_sessions', 'rbi_sync_queue'].includes(t) ? 0 : 1;
+        const okT = got.core_company_id === cA && seenPto === ptoSees && seenBeta === 0 && seenBetaHdr === 0 && del.ok;
         if (okT) rt++; else check(`018: ${t} — туда-обратно`, false, `компания ${got.core_company_id === cA}, ПТО ${seenPto}, Бета ${seenBeta}/${seenBetaHdr}, удаление ${del.status}`);
       }
       await q(`contractors?id=eq.${stampQ}-ctr`, 'alfaAdmin', cA, { method: 'DELETE' });
@@ -630,6 +632,82 @@ else {
       // уборка: контрагент — в архив (удаления контрагентов нет), строки справочника Качества — удалить
       if (cp) await rpc('pf_counterparties_archive', { p_id: cp.id, p_archived: true }, tok.alfaAdmin);
       await q(`contractor_directory?canonical_key=eq.${ctrKey}`, 'alfaAdmin', cA, { method: 'DELETE' });
+
+      // P2-0018 (020/021): видимость по ролям проверяет сервер. alfa-foreman временно — инженер СК на объекте автопроверок,
+      // затем представитель подрядчика своей фирмы, затем подрядчик без фирмы. ПТО Альфы (просмотр) — свои объекты.
+      const accQ = async (k) => j(await q('rpc/my_access', k, cA, { method: 'POST', body: '{}' }));
+      const acc0 = await accQ('alfaAdmin');
+      if (!acc0 || typeof acc0 !== 'object' || !('projects' in acc0)) { console.log('NOT RUN: 020 на сервере не применена — проверки P2-0018 пропущены'); fails++; }
+      else {
+        const s18 = 'REST-0018-' + Date.now();
+        const members = await j(await rpc('pf_list_company_members', { p_company: cA }, tok.alfaAdmin));
+        const forU = members.find((m) => m.email === 'alfa-foreman@test.invalid')?.user_id;
+        const forBase = members.filter((m) => m.user_id === forU && m.is_active && (!m.project_id || m.project_id === pRest));
+        const rolesA = await j(await rpc('pf_list_company_roles', { p_company: cA }, tok.alfaAdmin));
+        const roleOf = (tpl) => rolesA.find((x) => x.template_code === tpl)?.id;
+        if (!forU || forBase.length) { console.log('NOT RUN: у alfa-foreman есть назначение на объект автопроверок или на всю компанию — матрица P2-0018 пропущена'); fails++; }
+        else {
+          const asg18 = [];
+          const assign = async (tpl, cpId) => { const r = await rpc('pf_assign_role', { p_user: forU, p_role: roleOf(tpl), p_project: pRest, ...(cpId ? { p_counterparty: cpId } : {}) }, tok.alfaAdmin);
+            const id = r.ok ? await j(r) : null; if (id) asg18.push(id); check(`0018: alfa-foreman назначен «${tpl}»${cpId ? ' с фирмой' : ''}`, !!id, `статус ${r.status}`); return id; };
+          const revoke = async (id) => { if (id && (await rpc('pf_revoke_assignment', { p_assignment: id }, tok.alfaAdmin)).ok) asg18.splice(asg18.indexOf(id), 1); };
+          const row = (t, extra) => { const d = defs[t]; const r0 = {};
+            for (const c of d.required || []) if (!['core_company_id', 'core_project_id'].includes(c) && d.properties[c]?.default === undefined) r0[c] = val(d.properties[c] || {});
+            return { ...r0, project_code: pRest, ...extra }; };
+          const ids = (t, k) => q(`${t}?select=id&id=like.${s18}*&order=id`, k, cA).then(async (r) => r.ok ? (await r.json()).map((x) => x.id.slice(s18.length + 1)).join(',') : `ERR${r.status}`);
+          const patch = async (t, id, k, body) => { const r = await q(`${t}?id=eq.${s18}-${id}`, k, cA, { method: 'PATCH', body: JSON.stringify(body), headers: { Prefer: 'return=representation' } });
+            return r.ok ? (await r.json()).length : -r.status; };
+          const kName = `REST-0018 Фирма ${s18}`, kKey = `rest-0018-${s18}`;
+          let cp18 = null;
+          try {
+            await q('contractor_directory', 'alfaAdmin', cA, { method: 'POST', body: JSON.stringify({ project_code: pRest, canonical_key: kKey, display_name: kName }) });
+            cp18 = (await j(await rpc('pf_counterparties_list', { p_company: cA, p_include_archived: false }, tok.alfaAdmin))).find((c) => c.name === kName);
+            check('0018: фирма-подрядчик для проверки в «Контрагентах»', !!cp18);
+            const w = async (t, id, extra) => { const r = await q(t, 'alfaAdmin', cA, { method: 'POST', body: JSON.stringify(row(t, { id: `${s18}-${id}`, ...extra })) });
+              check(`0018: админ пишет ${t} ${id}`, r.ok, r.ok ? '' : `статус ${r.status} ${(await r.text()).slice(0, 120)}`); };
+            await w('rbi_inspections', 'i1', { contractor_name: kName });
+            await w('rbi_inspections', 'i2', { contractor_name: 'REST-0018 чужая фирма' });
+            await w('construction_defects', 'd1', { contractor: kName });
+            await w('construction_defects', 'd2', { contractor: 'REST-0018 чужая фирма' });
+
+            const aE = await assign('qc_engineer');
+            const iE = await q('rbi_inspections', 'alfaForeman', cA, { method: 'POST', body: JSON.stringify(row('rbi_inspections', { id: `${s18}-i3` })) });
+            check('0018: инженер СК создаёт свою проверку', iE.ok, `статус ${iE.status}`);
+            check('0018: инженер СК видит только свои проверки', await ids('rbi_inspections', 'alfaForeman') === 'i3', await ids('rbi_inspections', 'alfaForeman'));
+            check('0018: инженер СК не правит чужую проверку', await patch('rbi_inspections', 'i1', 'alfaForeman', { location: 'x' }) <= 0);
+            check('0018: инженер СК правит свою проверку', await patch('rbi_inspections', 'i3', 'alfaForeman', { location: 'x' }) === 1);
+            check('0018: ПТО (свои объекты) видит все проверки объекта', await ids('rbi_inspections', 'alfaPto') === 'i1,i2,i3', await ids('rbi_inspections', 'alfaPto'));
+            check('0018: ПТО не правит проверку', await patch('rbi_inspections', 'i3', 'alfaPto', { location: 'y' }) <= 0);
+            check('0018: ПТО не правит замечание', await patch('construction_defects', 'd1', 'alfaPto', { updated_at: new Date().toISOString() }) <= 0);
+            await revoke(aE);
+
+            const aC = await assign('contractor_rep', cp18?.id);
+            check('0018: подрядчик видит только проверки своей фирмы', await ids('rbi_inspections', 'alfaForeman') === 'i1', await ids('rbi_inspections', 'alfaForeman'));
+            check('0018: подрядчик видит только замечания своей фирмы', await ids('construction_defects', 'alfaForeman') === 'd1', await ids('construction_defects', 'alfaForeman'));
+            check('0018: подрядчик правит замечание своей фирмы', await patch('construction_defects', 'd1', 'alfaForeman', { updated_at: new Date().toISOString() }) === 1);
+            check('0018: подрядчик не правит замечание чужой фирмы', await patch('construction_defects', 'd2', 'alfaForeman', { updated_at: new Date().toISOString() }) <= 0);
+            check('0018: подрядчик не правит проверку Качества', await patch('rbi_inspections', 'i1', 'alfaForeman', { location: 'z' }) <= 0);
+            const accC = await accQ('alfaForeman');
+            check('0018: экран Качества получает фирму и объект подрядчика', accC?.contractor?.name === kName && Array.isArray(accC?.projects) && accC.projects.includes(pRest), JSON.stringify(accC).slice(0, 200));
+            const memC = (await j(await rpc('pf_list_company_members', { p_company: cA }, tok.alfaAdmin))).find((m) => m.assignment_id === aC);
+            check('0018: «Компания → люди» показывает фирму назначения', memC?.counterparty_name === kName);
+            await revoke(aC);
+
+            const a0 = await assign('contractor_rep');
+            check('0018: подрядчик без фирмы не видит записей', await ids('rbi_inspections', 'alfaForeman') === '' && await ids('construction_defects', 'alfaForeman') === '');
+            await revoke(a0);
+            const spoof = await q('rbi_inspections?select=id', 'betaPto', cA);
+            check('0018: подмена x-company-id (Бета → Альфа) — 0 строк', !spoof.ok || (await spoof.json()).length === 0);
+          } finally {
+            for (const id of [...asg18]) await revoke(id);
+            check('0018: временные назначения alfa-foreman отозваны', asg18.length === 0);
+            for (const [t, l] of [['rbi_inspections', ['i1', 'i2', 'i3']], ['construction_defects', ['d1', 'd2']]])
+              for (const id of l) await q(`${t}?id=eq.${s18}-${id}`, 'alfaAdmin', cA, { method: 'DELETE' });
+            if (cp18) await rpc('pf_counterparties_archive', { p_id: cp18.id, p_archived: true }, tok.alfaAdmin);
+            await q(`contractor_directory?canonical_key=eq.${kKey}`, 'alfaAdmin', cA, { method: 'DELETE' });
+          }
+        }
+      }
     } finally {
       if (asgQ) check('018: назначение ПТО на объект автопроверок отозвано', (await rpc('pf_revoke_assignment', { p_assignment: asgQ }, tok.alfaAdmin)).ok);
       await setMods(false);

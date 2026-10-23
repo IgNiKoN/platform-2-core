@@ -48,3 +48,64 @@ test('выход: токен сброшен — запрос без входа (
   assert.equal(res.from, 'cache');
   assert.equal(JSON.stringify(fetched[0].init.headers), '{}');
 });
+
+// --- P2-0018 (ТД №121) ---
+function withCaches(sw: N, entries: string[]) {
+  const store = new Map<string, Set<string>>([['app', new Set(entries)], ['p2-storage-slot', new Set()]]);
+  const slotVal: { v: string | null } = { v: null };
+  sw.ctx.caches.keys = async () => [...store.keys()];
+  sw.ctx.caches.open = async (n: string) => ({
+    keys: async () => [...(store.get(n) || [])].map((url) => ({ url })),
+    delete: async (r: N) => store.get(n)!.delete(r.url),
+    match: async () => (n === 'p2-storage-slot' && slotVal.v !== null ? { text: async () => slotVal.v } : undefined),
+    put: async (_k: string, res: N) => { if (n === 'p2-storage-slot') slotVal.v = await res.text(); }
+  });
+  sw.ctx.Response = class { b: string; constructor(b: string) { this.b = b; } async text() { return this.b; } };
+  return store;
+}
+const F1 = `${SRV}/storage/v1/object/public/quality-inspection-photos/c1/P/a.jpg`;
+const RBI = `${SRV}/storage/v1/object/public/inspection-photos/P/a.jpg`;
+const APP = 'http://localhost/index.html';
+
+test('закрытый файл: 401/403 от сервера — ответ сервера, не из кэша; без сети — из кэша', async () => {
+  const { sw, fire } = setup();
+  await sw.message({ type: 'P2_STORAGE_TOKEN', token: 'TOK' });
+  sw.ctx.caches.match = async () => ({ ok: true, from: 'cache' });
+  for (const status of [401, 403]) {
+    sw.ctx.fetch = async () => ({ ok: false, status, from: 'net' });
+    const res = await fire(F1);
+    assert.equal(res.from, 'net', `статус ${status} — не из кэша`);
+    assert.equal(res.status, status);
+  }
+  sw.ctx.fetch = async () => { throw new Error('offline'); };
+  assert.equal((await fire(F1)).from, 'cache');
+});
+
+test('выход и смена «компания + пользователь» — закрытые файлы удаляются из кэша; РБИ и приложение не трогаются', async () => {
+  const { sw } = setup();
+  const store = withCaches(sw, [F1, RBI, APP]);
+  await sw.message({ type: 'P2_STORAGE_SLOT', slot: 'c1:u1' });   // первый раз — кэш чистится (прошлый вход неизвестен)
+  assert.deepEqual([...store.get('app')!], [RBI, APP]);
+  store.get('app')!.add(F1);
+  await sw.message({ type: 'P2_STORAGE_SLOT', slot: 'c1:u1' });
+  assert.ok(store.get('app')!.has(F1), 'тот же вход — файлы остаются (офлайн)');
+  await sw.message({ type: 'P2_STORAGE_SLOT', slot: 'c1:u2' });
+  assert.ok(!store.get('app')!.has(F1), 'другой пользователь — удалены');
+  store.get('app')!.add(F1);
+  await sw.message({ type: 'P2_STORAGE_TOKEN', token: 'TOK' });
+  await sw.message({ type: 'P2_STORAGE_TOKEN', token: null });
+  assert.deepEqual([...store.get('app')!], [RBI, APP], 'выход — удалены');
+});
+
+test('выход после перезапуска кэша (токен в памяти неизвестен): закрытые файлы всё равно удаляются по сохранённому входу', async () => {
+  const first = setup();
+  const store = withCaches(first.sw, [F1, APP]);
+  await first.sw.message({ type: 'P2_STORAGE_SLOT', slot: 'c1:u1' });
+  store.get('app')!.add(F1);
+  // «перезапуск»: новый экземпляр кэша с теми же хранилищами, токен ему ещё не сообщали
+  const again = setup();
+  again.sw.ctx.caches = first.sw.ctx.caches;
+  again.sw.ctx.Response = first.sw.ctx.Response;
+  await again.sw.message({ type: 'P2_STORAGE_TOKEN', token: null });
+  assert.deepEqual([...store.get('app')!], [APP]);
+});
