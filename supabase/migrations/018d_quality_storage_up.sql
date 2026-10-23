@@ -61,6 +61,23 @@ create policy quality_files_update on storage.objects for update to authenticate
 create policy quality_files_delete on storage.objects for delete to authenticated
   using (bucket_id like 'quality-%' and quality.storage_can(bucket_id, name, true));
 
+-- 4. Ограничивающие (restrictive) правила: на сервере у РБИ есть разрешающая политика без ограничения по бакету
+-- (rbi_admin_storage_access — руководитель/заместитель РБИ ко всем бакетам); разрешающие складываются через «или», поэтому
+-- для бакетов quality-* дополнительно требуется право компании (через «и»). Бакеты РБИ — case ... else true: без изменений.
+drop policy if exists quality_files_guard_select on storage.objects;
+drop policy if exists quality_files_guard_insert on storage.objects;
+drop policy if exists quality_files_guard_update on storage.objects;
+drop policy if exists quality_files_guard_delete on storage.objects;
+create policy quality_files_guard_select on storage.objects as restrictive for select to authenticated
+  using (case when bucket_id like 'quality-%' then quality.storage_can(bucket_id, name, false) else true end);
+create policy quality_files_guard_insert on storage.objects as restrictive for insert to authenticated
+  with check (case when bucket_id like 'quality-%' then quality.storage_can(bucket_id, name, true) else true end);
+create policy quality_files_guard_update on storage.objects as restrictive for update to authenticated
+  using (case when bucket_id like 'quality-%' then quality.storage_can(bucket_id, name, true) else true end)
+  with check (case when bucket_id like 'quality-%' then quality.storage_can(bucket_id, name, true) else true end);
+create policy quality_files_guard_delete on storage.objects as restrictive for delete to authenticated
+  using (case when bucket_id like 'quality-%' then quality.storage_can(bucket_id, name, true) else true end);
+
 revoke all on function quality.has_actions(uuid, uuid, text[]), quality.storage_can(text, text, boolean) from public, anon, authenticated;
 grant execute on function quality.has_actions(uuid, uuid, text[]), quality.storage_can(text, text, boolean) to authenticated;
 revoke all on function quality.can(uuid, uuid, text[]) from public, anon, authenticated;

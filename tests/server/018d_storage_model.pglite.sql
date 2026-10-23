@@ -15,3 +15,8 @@ from unnest(array['construction-defects', 'construction-plans', 'custom-assets',
 -- политика РБИ-образец (публичные бакеты читают все) — проверка, что 018d её не трогает
 drop policy if exists rbi_public_read on storage.objects;
 create policy rbi_public_read on storage.objects for select to anon, authenticated using (bucket_id in ('inspection-photos', 'reports'));
+-- политика РБИ с сервера (снята 23.10.2026, только чтение pg_policies): руководитель/заместитель РБИ — ко ВСЕМ бакетам, без
+-- ограничения по бакету. Разрешающие политики складываются через «или» — 018d должна закрыть от неё бакеты quality-*.
+drop policy if exists rbi_admin_storage_access on storage.objects;
+create policy rbi_admin_storage_access on storage.objects for all to authenticated
+  using (public.rbi_current_role() = any (array['manager'::text, 'deputy_manager'::text]));

@@ -19,7 +19,7 @@ create or replace function pg_temp.t(c boolean, l text) returns text language sq
 do $$
 declare
   ua uuid := gen_random_uuid(); ufor uuid := gen_random_uuid(); ueco uuid := gen_random_uuid(); ub uuid := gen_random_uuid();
-  ca uuid := gen_random_uuid(); cb uuid := gen_random_uuid(); pa uuid := gen_random_uuid();
+  ca uuid := gen_random_uuid(); cb uuid := gen_random_uuid(); pa uuid := gen_random_uuid(); urbi uuid := gen_random_uuid();
   b text; n int; s text; res text := ''; v_before text;
 begin
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[ua, ufor, ueco, ub]) u;
@@ -83,6 +83,22 @@ begin
   res := res || pg_temp.t(s <> 'OK', 'прораб не загружает фото проверки Качества (' || s || ')');
   n := pg_temp.cnt('select count(*) from storage.objects where bucket_id = ''quality-inspection-photos''');
   res := res || pg_temp.t(n = 1, 'прораб видит фото проверки (' || n || ')');
+
+  -- руководитель РБИ (широкая политика rbi_admin_storage_access) — к файлам компаний доступа нет, к бакетам РБИ — как раньше
+  reset role;
+  insert into auth.users(id, email) values (urbi, urbi || '@test.invalid');
+  insert into public.rbi_engineer_profiles(project_code, role, cloud_status, auth_user_id) values ('RBI-018D', 'manager', 'approved', urbi);
+  perform pg_temp.as_user(urbi);
+  n := pg_temp.cnt('select count(*) from storage.objects where bucket_id like ''quality-%''');
+  res := res || pg_temp.t(n = 0, 'руководитель РБИ не видит файлы компаний (' || n || ')');
+  s := pg_temp.err(format('insert into storage.objects(bucket_id, name) values (''quality-inspection-photos'', %L)', ca || '/T018d/rbi.jpg'));
+  res := res || pg_temp.t(s <> 'OK', 'руководитель РБИ не загружает в папку компании (' || s || ')');
+  n := pg_temp.rows('update storage.objects set metadata = ''{}'' where bucket_id like ''quality-%''');
+  res := res || pg_temp.t(n = 0, 'руководитель РБИ не меняет файлы компаний (' || n || ')');
+  n := pg_temp.rows('delete from storage.objects where bucket_id like ''quality-%''');
+  res := res || pg_temp.t(n = 0, 'руководитель РБИ не удаляет файлы компаний (' || n || ')');
+  s := pg_temp.err('insert into storage.objects(bucket_id, name) values (''library-docs'', ''RBI-018D/x.pdf'')');
+  res := res || pg_temp.t(s = 'OK', 'руководитель РБИ работает с бакетом РБИ как раньше (' || s || ')');
 
   -- своя компания удаляет
   perform pg_temp.as_user(ua);

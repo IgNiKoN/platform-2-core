@@ -6,6 +6,10 @@ drop policy if exists quality_files_select on storage.objects;
 drop policy if exists quality_files_insert on storage.objects;
 drop policy if exists quality_files_update on storage.objects;
 drop policy if exists quality_files_delete on storage.objects;
+drop policy if exists quality_files_guard_select on storage.objects;
+drop policy if exists quality_files_guard_insert on storage.objects;
+drop policy if exists quality_files_guard_update on storage.objects;
+drop policy if exists quality_files_guard_delete on storage.objects;
 delete from storage.objects where bucket_id like 'quality-%';
 delete from storage.buckets where id like 'quality-%';
 
