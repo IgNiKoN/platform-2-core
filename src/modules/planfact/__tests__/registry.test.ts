@@ -208,3 +208,103 @@ test('палитра: реестр без своих цветов; синий с
   const badge = mount(h(ui.StatusBadge, { status: 'blue', label: 'Ждёт РП' }));
   assert.equal(badge.querySelector('.p2-badge--blue svg') !== null, true, 'синий бейдж — слово + иконка');
 });
+
+// ── Этап 3: виды и ссылка, выгрузка, боковая карточка ──
+test('виды: сохраняются и открываются по компании и пользователю; чужой пользователь их не видит; ссылка → те же фильтры', async () => {
+  win.localStorage.clear();
+  const scope = { registry: 'vor-positions', company: 'c1', user: 'pto@x' };
+  const s = { ...ui.EMPTY_STATE, f: { corp: ['Корпус 2'] }, overdue: true, sort: { id: 'qty', dir: 'desc' as const } };
+  assert.equal(ui.saveView(scope, '  Мой вид  ', s), true);
+  assert.equal(ui.saveView(scope, '', s), false, 'пустое имя');
+  assert.deepEqual(ui.listViews(scope).map((v: N) => v.name), ['Мой вид']);
+  assert.deepEqual(ui.viewState(ui.listViews(scope)[0]), s);
+  assert.deepEqual(ui.listViews({ ...scope, user: 'other@x' }), [], 'другой пользователь');
+  assert.deepEqual(ui.listViews({ ...scope, company: 'c2' }), [], 'другая компания');
+  ui.saveView(scope, 'Мой вид', ui.EMPTY_STATE);
+  assert.equal(ui.listViews(scope).length, 1, 'то же имя заменяет');
+  ui.deleteView(scope, 'Мой вид');
+  assert.deepEqual(ui.listViews(scope), []);
+
+  let copied = '';
+  function ViewHarness(): N {
+    const [state, setState] = useState(ui.EMPTY_STATE);
+    lastState = state;
+    return h(ui.RegistryTable as N, { testId: 'reg', rows: ROWS, rowKey: (r: Row) => r.id, columns: COLS, filters: FILTERS, state, onState: setState,
+      isOverdue: (r: Row) => r.late, selected: new Set(), onSelect: () => {}, empty: '-', views: scope, linkBase: '#/planfact/vor/positions',
+      copy: async (t: string) => { copied = t; return true; } });
+  }
+  const box = mount(h(ViewHarness));
+  click(box.querySelector('[data-testid="p2-reg-overdue"]'));
+  click(box.querySelector('[data-testid="p2-reg-views-open"]'));
+  const name = box.querySelector('[data-testid="p2-reg-view-name"]');
+  flushSync(() => { const set = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')!.set!; set.call(name, 'Просроченные'); name.dispatchEvent(new win.Event('input', { bubbles: true })); });
+  click(box.querySelector('[data-testid="p2-reg-view-save"]'));
+  assert.match(box.querySelector('[data-testid="p2-reg-notice"]').textContent, /сохранён на этом устройстве/);
+  assert.deepEqual(ui.listViews(scope).map((v: N) => v.name), ['Просроченные']);
+  click(box.querySelector('[data-testid="p2-reg-reset"]'));
+  assert.equal(lastState.overdue, false);
+  click(box.querySelector('[data-testid="p2-reg-view"]'));
+  assert.equal(lastState.overdue, true, 'вид открылся');
+  assert.deepEqual(rowsShown(box), ['b', 'd']);
+  click(box.querySelector('[data-testid="p2-reg-share"]'));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(copied, 'http://localhost/#/planfact/vor/positions?overdue=1');
+  assert.deepEqual(ui.queryToState(ui.queryOf(copied)), lastState, 'по ссылке — тот же вид');
+  // без хранилища — пусто, без ошибок
+  g.window = { get localStorage() { throw new Error('blocked'); } };
+  try {
+    assert.deepEqual(ui.listViews(scope), []);
+    assert.equal(ui.saveView(scope, 'X', ui.EMPTY_STATE), false);
+  } finally { g.window = win; }
+});
+
+test('выгрузка в Excel: видимые колонки и переданные строки (файл читается ExcelJS)', async () => {
+  const ExcelJS: N = (await import('exceljs')).default;
+  const cols = ui.visibleColumns(COLS, { ...ui.EMPTY_STATE, cols: ['qty'] });
+  const bytes = await ui.buildRegistryXlsx('Позиции ВОР', cols, [ROWS[1], ROWS[3]]);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(bytes);
+  const ws = wb.worksheets[0];
+  assert.equal(ws.name, 'Позиции ВОР');
+  const vals = (i: number) => (ws.getRow(i).values as N[]).slice(1);
+  assert.deepEqual(vals(1), ['Работа', 'Объём']);
+  assert.deepEqual(vals(2), ['Окраска', 30]);
+  assert.deepEqual(vals(3), ['Окраска', 7]);
+  assert.equal(ws.rowCount, 3);
+  assert.equal(ui.registryFileName('Позиции «ЖК»: А/Б', '24.10.2026'), 'Позиции ЖК А Б 24.10.2026.xlsx');
+});
+
+test('боковая карточка: «пред. / след.» по списку, шаги процесса, лента истории «было → стало», Esc закрывает', () => {
+  function CardHarness(): N {
+    const list = ui.registryRows(ROWS, { filters: FILTERS, columns: COLS, state: { ...ui.EMPTY_STATE, overdue: true }, isOverdue: (r: Row) => r.late });
+    const [i, setI] = useState(0);
+    const [open, setOpen] = useState(true);
+    if (!open) return h('div', { 'data-testid': 'closed' });
+    const r = list[i];
+    return h(ui.SideCard, { title: r.work, subtitle: r.corp, index: i, total: list.length, onPrev: () => setI(i - 1), onNext: () => setI(i + 1), onClose: () => setOpen(false),
+      head: h(ui.Steps, { steps: [{ id: 'not_started', label: 'Не начато' }, { id: 'in_work', label: 'В работе' }, { id: 'done', label: 'Выполнено' }], current: 'in_work', side: { label: 'Ждёт РП', tone: 'blue' } }) },
+      h(ui.HistoryFeed, { items: [
+        { id: 'e2', when: '23.10.2026', who: 'rp@x', text: '+5 м²', from: { label: 'Ждёт РП', tone: 'blue' }, to: { label: 'Принято', tone: 'green' }, note: 'ок' },
+        { id: 'e1', when: '22.10.2026', who: 'foreman@x', text: '+5 м²', to: { label: 'Ждёт РП', tone: 'blue' } }] }));
+  }
+  const box = mount(h(CardHarness));
+  const side = () => box.querySelector('[data-testid="p2-side"]');
+  assert.equal(side().querySelector('.p2-side__title').textContent, 'Окраска');
+  assert.equal(box.querySelector('[data-testid="p2-side-pos"]').textContent, '1 из 2', 'навигация — по отфильтрованному списку');
+  assert.equal(box.querySelector('[data-testid="p2-side-prev"]').disabled, true);
+  click(box.querySelector('[data-testid="p2-side-next"]'));
+  assert.equal(side().querySelector('.p2-side__title').textContent + ' · ' + side().querySelector('.p2-side__head .p2-reg__muted').textContent, 'Окраска · Корпус 10');
+  assert.equal(box.querySelector('[data-testid="p2-side-next"]').disabled, true);
+  const steps = qa(box, '[data-step]');
+  assert.deepEqual(steps.map((s) => s.className.replace('p2-steps__item', '').trim()), ['p2-steps__item--done', 'p2-steps__item--cur', '']);
+  assert.equal(steps[1].getAttribute('aria-current'), 'step');
+  assert.equal(box.querySelector('[data-testid="p2-steps-side"]').textContent, 'Ждёт РП');
+  const items = qa(box, '.p2-history__item');
+  assert.equal(items.length, 2);
+  assert.deepEqual(['p2-history-from', 'p2-history-to'].map((t) => items[0].querySelector(`[data-testid="${t}"]`).getAttribute('data-status')), ['blue', 'green'], 'было → стало цветными бейджами');
+  assert.equal(items[1].querySelector('[data-testid="p2-history-from"]'), null, 'первая запись — без «было»');
+  flushSync(() => { win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' })); });
+  assert.ok(box.querySelector('[data-testid="closed"]'), 'Esc закрывает карточку');
+  const empty = mount(h(ui.HistoryFeed, { items: [], empty: 'Факта ещё нет' }));
+  assert.equal(empty.textContent, 'Факта ещё нет');
+});
