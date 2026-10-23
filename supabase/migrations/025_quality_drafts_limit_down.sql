@@ -1,6 +1,13 @@
 -- P2-0018: откат 025_quality_drafts_limit_up.sql — лимит черновиков для всех (как в 023). Применять до 024_quality_contractor_dirs_down.sql.
 begin;
 
+do $$
+begin
+  if to_regprocedure('quality.contractor_only(uuid,uuid)') is not null then
+    raise exception 'Сначала откатите 026: 026_quality_contractor_scope_fix_down.sql' using errcode = 'P0001';
+  end if;
+end $$;
+
 create or replace function quality.on_directory_insert()
 returns trigger language plpgsql security definer set search_path = pg_catalog, core, planfact as $$
 declare

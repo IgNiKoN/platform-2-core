@@ -149,7 +149,7 @@ begin
   s := pg_temp.err(format('insert into quality.contractor_directory(project_code, canonical_key, display_name, inn, core_company_id) values (%L, ''chuzhoi_023'', ''Чужая 023'', ''7700000011'', %L)', p1, ca));
   reset role;
   -- после 024 подрядчик справочник только читает (вставка — отказ); в любом случае связи нет
-  res := res || pg_temp.t((s = 'OK') = (to_regprocedure('quality.contractor_only(uuid)') is null)
+  res := res || pg_temp.t((s = 'OK') = (to_regprocedure('quality.contractor_only(uuid)') is null and to_regprocedure('quality.contractor_only(uuid,uuid)') is null)
     and not exists (select 1 from quality.contractor_core_links where core_company_id = ca and canonical_key = 'chuzhoi_023'),
     'подрядчик: связи с фирмой нет (' || s || ')');
   perform pg_temp.as_user(uq1, ca);
