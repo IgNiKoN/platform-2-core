@@ -143,6 +143,7 @@ async function applyQuality(st: PlatformState): Promise<void> {
       cfg,
       createClient: createClient as never,
       serviceWorker: 'serviceWorker' in navigator ? navigator.serviceWorker as never : null,
+      dropDatabase: (name) => { try { indexedDB.deleteDatabase(name); } catch { /* нет IndexedDB — нечего удалять */ } },
       listProjects: async (companyId) => {
         const svc = createProjectsService();   // объекты — из ядра (src/platform/core)
         const rows = svc ? await svc.listProjects(companyId) : [];

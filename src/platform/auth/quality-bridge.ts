@@ -33,23 +33,56 @@ export function qualityCompanyFor(st: PlatformState): string | null {
   return cur && (cur.modules.includes('quality') || cur.modules.includes('construction')) ? cur.id : null;
 }
 
-/** Переключить устройство на базу и состояние синхронизации компании (null — без компании). true → нужна перезагрузка. */
-export function switchDeviceCompany(store: Store, next: string | null): boolean {
-  const cur = store.getItem(QUALITY_COMPANY_KEY) || '';
-  const nxt = next || '';
-  if (cur === nxt) return false;
+export const QUALITY_USER_KEY = 'platform2_quality_user';
+/** Старая общая база компании (до P2-0018), которую удалить после перезагрузки; её владелец — пока в ней неотправленное. */
+export const QUALITY_DROP_DB_KEY = 'platform2_quality_drop_db';
+export const QUALITY_LEGACY_OWNER_KEY = 'platform2_quality_legacy_owner';
+
+/** Ключ пользователя для имени локальной базы (без почты в имени): 16 hex-знаков от почты (FNV-1a, два прохода). */
+export function deviceUserKey(email: string): string {
+  const e = email.trim().toLowerCase();
+  const fnv = (seed: number): string => {
+    let h = seed >>> 0;
+    for (let i = 0; i < e.length; i++) { h ^= e.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, '0');
+  };
+  return fnv(0x811c9dc5) + fnv(0x2f2e1d0c);
+}
+
+/** Переключить устройство на базу и состояние синхронизации «компания + пользователь» (P2-0018: у каждого вошедшего
+ *  своя локальная база PLATFORM2_DB_<компания>_<пользователь>; null — без компании). true → нужна перезагрузка.
+ *  Старая общая база компании (до P2-0018): с неотправленными изменениями (rbi_cloud_dirty) остаётся первому вошедшему,
+ *  пока он их не отправит; иначе — удаляется после перезагрузки (её данные заново придут с сервера по правам вошедшего). */
+export function switchDeviceCompany(store: Store, next: string | null, user = ''): boolean {
+  const curC = store.getItem(QUALITY_COMPANY_KEY) || '';
+  const curU = curC ? store.getItem(QUALITY_USER_KEY) || '' : '';   // пользователь без компании — не база
+  const nxtC = next || '';
+  const nxtU = nxtC ? user : '';
+  if (curC === nxtC && curU === nxtU) return false;
+  const legacy = !!curC && !curU && curC === nxtC && !!nxtU;
+  if (legacy) {
+    const owner = store.getItem(QUALITY_LEGACY_OWNER_KEY);
+    if (store.getItem('rbi_cloud_dirty') === '1' && (!owner || owner === nxtU)) {
+      store.setItem(QUALITY_LEGACY_OWNER_KEY, nxtU);   // сначала отправить неотправленное — база этого пользователя
+      return false;
+    }
+    if (store.getItem('rbi_cloud_dirty') !== '1' || owner === null) store.setItem(QUALITY_DROP_DB_KEY, curC);
+  }
+  const slot = (c: string, u: string): string => (u ? c + ':' + u : c);
   const saved: Record<string, string> = {};
   for (const k of SYNC_STATE_KEYS) {
     const v = store.getItem(k);
     if (v !== null) saved[k] = v;
     store.removeItem(k);
   }
-  store.setItem(STASH_PREFIX + cur, JSON.stringify(saved));
+  if (legacy && store.getItem(QUALITY_DROP_DB_KEY) === curC) store.removeItem(STASH_PREFIX + curC);
+  else store.setItem(STASH_PREFIX + slot(curC, curU), JSON.stringify(saved));
   let restore: Record<string, string> = {};
-  try { restore = JSON.parse(store.getItem(STASH_PREFIX + nxt) || '{}') as Record<string, string>; } catch { restore = {}; }
+  try { restore = JSON.parse(store.getItem(STASH_PREFIX + slot(nxtC, nxtU)) || '{}') as Record<string, string>; } catch { restore = {}; }
   for (const k of SYNC_STATE_KEYS) if (typeof restore[k] === 'string') store.setItem(k, restore[k]);
-  store.removeItem(STASH_PREFIX + nxt);
-  if (nxt) store.setItem(QUALITY_COMPANY_KEY, nxt); else store.removeItem(QUALITY_COMPANY_KEY);
+  store.removeItem(STASH_PREFIX + slot(nxtC, nxtU));
+  if (nxtC) store.setItem(QUALITY_COMPANY_KEY, nxtC); else store.removeItem(QUALITY_COMPANY_KEY);
+  if (nxtU) store.setItem(QUALITY_USER_KEY, nxtU); else store.removeItem(QUALITY_USER_KEY);
   return true;
 }
 
@@ -203,6 +236,8 @@ export interface BridgeDeps {
   createClient: CreateClient;
   /** Объекты компании (pf_company_projects) — от имени вошедшего, клиентом платформы. */
   listProjects: (companyId: string) => Promise<QualityProject[]>;
+  /** Удалить локальную базу IndexedDB по имени (старая общая база компании, P2-0018). */
+  dropDatabase?: (name: string) => void;
   /** Кэш приложения (navigator.serviceWorker): ему — токен для закрытых файлов компании (sw.js, P2_STORAGE_TOKEN). */
   serviceWorker?: { controller: { postMessage(m: unknown): void } | null; addEventListener(t: 'message', cb: (e: { data: unknown }) => void): void } | null;
 }
@@ -230,7 +265,15 @@ function wireStorageToken(deps: BridgeDeps): void {
 export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): Promise<QualitySync | null> {
   if (st.mode === 'none' && !deps.store.getItem(QUALITY_COMPANY_KEY)) return null;
   const company = qualityCompanyFor(st);
-  if (switchDeviceCompany(deps.store, company)) { deps.reload(); return null; }
+  if (switchDeviceCompany(deps.store, company, company && st.email ? deviceUserKey(st.email) : '')) { deps.reload(); return null; }
+  // Старая общая база компании (до P2-0018) — удалить: эта страница уже открыла базу пользователя.
+  const drop = deps.store.getItem(QUALITY_DROP_DB_KEY);
+  if (drop && deps.dropDatabase) {
+    const base = (deps.win as { APP_CONFIG?: { LOCAL_DB_NAME?: string } }).APP_CONFIG?.LOCAL_DB_NAME || 'PLATFORM2_DB';
+    deps.dropDatabase(base + '_' + drop);
+    deps.store.removeItem(QUALITY_DROP_DB_KEY);
+    if (deps.store.getItem(QUALITY_LEGACY_OWNER_KEY) !== null && deps.store.getItem(QUALITY_COMPANY_KEY) === drop) deps.store.removeItem(QUALITY_LEGACY_OWNER_KEY);
+  }
   const rbi = (deps.win.RBI = deps.win.RBI || {});
   if (!company || !deps.platformClient || !deps.cfg || !st.email) { rbi.qualitySync = null; return null; }
   const prev = rbi.qualitySync as QualitySync | null | undefined;

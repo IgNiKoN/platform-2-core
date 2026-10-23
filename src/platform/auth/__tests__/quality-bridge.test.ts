@@ -3,7 +3,8 @@
  *  объект из ядра, роль из прав компании, локальное состояние компаний не смешивается. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyQualityBridge, companyConflict, parseAccess, pinAccess, qualityCompanyFor, roleFor, switchDeviceCompany, QUALITY_COMPANY_KEY } from '../quality-bridge.ts';
+import { applyQualityBridge, companyConflict, deviceUserKey, parseAccess, pinAccess, qualityCompanyFor, roleFor, switchDeviceCompany,
+  QUALITY_COMPANY_KEY, QUALITY_DROP_DB_KEY, QUALITY_LEGACY_OWNER_KEY, QUALITY_USER_KEY } from '../quality-bridge.ts';
 import type { PlatformState } from '../platform.service.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -85,7 +86,7 @@ function deps(over: N = {}) {
   const rpcCalls: N[] = [];
   const platformAuth = { getSession: async () => ({ data: { session: { access_token: 'TOKEN-1' } } }), getUser: async () => ({}) };
   const win: N = { appSettings: {}, syncConfig: { enabled: false }, RBI: {}, initSync: async () => { win.inits = (win.inits || 0) + 1; } };
-  const store = memStore({ [QUALITY_COMPANY_KEY]: A });
+  const store = memStore({ [QUALITY_COMPANY_KEY]: A, [QUALITY_USER_KEY]: deviceUserKey('tn@alfa.test'), ...(over.store || {}) });
   let reloads = 0;
   const d: N = {
     win, store, reload: () => { reloads++; },
@@ -248,4 +249,44 @@ test('режим обмена: Админ и Директор — «Вся ко�
   assert.deepEqual(await one(['quality.view']), ['full', 'full']);
   assert.deepEqual(await one(['quality.view', 'quality.manage']), ['full', 'full']);
   assert.deepEqual(await one(['quality.view', 'quality.edit']), ['personal', 'personal']);
+});
+
+test('своя локальная база у каждого пользователя компании (P2-0018): ключ без почты, смена пользователя — перезагрузка', () => {
+  const ua = deviceUserKey('tn@alfa.test'), ub = deviceUserKey('Other@Alfa.test ');
+  assert.match(ua, /^[0-9a-f]{16}$/);
+  assert.equal(deviceUserKey(' TN@alfa.test'), ua, 'регистр и пробелы не важны');
+  assert.notEqual(ua, ub);
+  const s = memStore({ [QUALITY_COMPANY_KEY]: A, [QUALITY_USER_KEY]: ua, rbi_sync_last_pull_at: 'T-a' });
+  assert.equal(switchDeviceCompany(s, A, ua), false);
+  assert.equal(switchDeviceCompany(s, A, ub), true, 'другой пользователь той же компании');
+  assert.equal(s.getItem(QUALITY_USER_KEY), ub);
+  assert.equal(s.getItem('rbi_sync_last_pull_at'), null, 'состояние синхронизации прошлого пользователя не переносится');
+  switchDeviceCompany(s, A, ua);
+  assert.equal(s.getItem('rbi_sync_last_pull_at'), 'T-a', 'своё состояние вернулось');
+  assert.equal(switchDeviceCompany(s, null), true);
+  assert.equal(s.getItem(QUALITY_USER_KEY), null);
+});
+
+test('старая общая база компании: без неотправленного — удаляется после перезагрузки; с неотправленным — остаётся первому, пока не отправит', async () => {
+  const ua = deviceUserKey('tn@alfa.test'), ub = deviceUserKey('other@alfa.test');
+  const clean = memStore({ [QUALITY_COMPANY_KEY]: A, rbi_sync_last_pull_at: 'T-old' });
+  assert.equal(switchDeviceCompany(clean, A, ua), true);
+  assert.equal(clean.getItem(QUALITY_DROP_DB_KEY), A);
+  assert.equal(clean.getItem('rbi_sync_last_pull_at'), null, 'новая база — полная загрузка');
+  // после перезагрузки мост удаляет старую базу
+  const { d } = deps({ store: { [QUALITY_DROP_DB_KEY]: A } });
+  const dropped: string[] = [];
+  d.dropDatabase = (n: string) => dropped.push(n);
+  await applyQualityBridge(st(), d);
+  assert.deepEqual(dropped, ['PLATFORM2_DB_' + A]);
+  assert.equal(d.store.getItem(QUALITY_DROP_DB_KEY), null);
+
+  const dirty = memStore({ [QUALITY_COMPANY_KEY]: A, rbi_cloud_dirty: '1' });
+  assert.equal(switchDeviceCompany(dirty, A, ua), false, 'есть неотправленное — работаем в старой базе');
+  assert.equal(dirty.getItem(QUALITY_LEGACY_OWNER_KEY), ua);
+  assert.equal(switchDeviceCompany(dirty, A, ub), true, 'другой пользователь — в свою базу, старую не трогаем');
+  assert.equal(dirty.getItem(QUALITY_DROP_DB_KEY), null);
+  const sent = memStore({ [QUALITY_COMPANY_KEY]: A, [QUALITY_LEGACY_OWNER_KEY]: ua });
+  assert.equal(switchDeviceCompany(sent, A, ua), true, 'отправил — переходим в свою базу');
+  assert.equal(sent.getItem(QUALITY_DROP_DB_KEY), A);
 });

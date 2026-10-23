@@ -3,11 +3,13 @@
 
 // P2-0016: при входе почтой у каждой компании своя локальная база (PLATFORM2_DB_<компания>); компанию записывает
 // src/platform/auth/quality-bridge.ts (ключ platform2_quality_company) и перезагружает страницу при её смене.
+// P2-0018: и у каждого пользователя компании — своя (PLATFORM2_DB_<компания>_<пользователь>, ключ platform2_quality_user).
 const DB_NAME = (function () {
     const base = (window.APP_CONFIG && window.APP_CONFIG.LOCAL_DB_NAME) || 'PLATFORM2_DB';
-    let company = '';
-    try { company = localStorage.getItem('platform2_quality_company') || ''; } catch (e) { company = ''; }
-    return /^[0-9a-f-]{36}$/i.test(company) ? base + '_' + company : base;
+    let company = '', user = '';
+    try { company = localStorage.getItem('platform2_quality_company') || ''; user = localStorage.getItem('platform2_quality_user') || ''; } catch (e) { company = ''; }
+    if (!/^[0-9a-f-]{36}$/i.test(company)) return base;
+    return /^[0-9a-f]{16}$/.test(user) ? base + '_' + company + '_' + user : base + '_' + company;
 }());
 // Повышаем версию только при изменении структуры IndexedDB
 const DB_VERSION = 29; // БЫЛО 28, СТАЛО 29 — units_v2 + паритет с self-heal bump (локально уже 29)
