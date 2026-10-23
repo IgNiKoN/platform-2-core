@@ -347,6 +347,21 @@ else {
       const directD = await fetch(`${URL_}/rest/v1/fact_entries?id=eq.${faJ.id}`, { method: 'DELETE', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaForeman}`, 'Accept-Profile': 'planfact', 'Content-Profile': 'planfact' } });
       check('запись факта не удалить через REST', !directD.ok, `статус ${directD.status}`);
       check('итог после исправления: факт 8', Number((await tt('alfaForeman'))?.fact_qty) === 8);
+      // --- P2-0019: «Закрыть через РП» (миграция 027) — p_require_approval: ждёт РП без перебора; права и изоляция прежние. ---
+      const fpBody = { p_project: pv, p_brigade: brigId, p_date: today, p_items: [{ position_id: posId, qty: 1 }], p_note: 'REST-тест', p_require_approval: true };
+      const fp = await rpc('pf_fact_add_batch', fpBody, tok.alfaForeman);
+      const fpJ = await j(fp);
+      if (fp.status === 404) { console.log('NOT RUN: миграция 027 не применена — проверки «через РП» пропущены'); fails++; }
+      else {
+        check('0019: «через РП» — пачка без перебора ждёт РП', fp.ok && fpJ.accepted === 0 && fpJ.pending === 1, `статус ${fp.status}`);
+        check('0019: в итог не вошло до решения РП', Number((await tt('alfaForeman'))?.fact_qty) === 8);
+        const fpq = (await j(await rpc('pf_fact_pending', { p_project: pv }, tok.alfaAdmin))).find((r) => r.position_id === posId && r.note === 'Закрытие через РП. REST-тест');
+        check('0019: в «Ждёт подтверждения» с пометкой «Закрытие через РП»', !!fpq);
+        check('0019: ПТО без fact.create — отказ', !(await rpc('pf_fact_add_batch', fpBody, tok.alfaPto)).ok);
+        check('0019: Бета-ПТО — отказ', !(await rpc('pf_fact_add_batch', fpBody, tok.betaPto)).ok);
+        check('0019: anon — отказ', !(await rpc('pf_fact_add_batch', fpBody)).ok);
+        if (fpq) check('0019: РП отклонил тестовую запись (итог не меняется)', (await rpc('pf_fact_decide', { p_entry: fpq.id, p_approve: false, p_note: 'REST-тест: уборка' }, tok.alfaAdmin)).ok && Number((await tt('alfaForeman'))?.fact_qty) === 8);
+      }
       const audF = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
       check('журнал компании: бригады и факт', ['brigades', 'fact_entries'].every((t) => audF.some((r) => r.table_name === t)));
       check('anon: pf_fact_add закрыт', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 1 })).ok);
