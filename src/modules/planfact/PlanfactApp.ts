@@ -50,6 +50,13 @@ export function routeFromHash(hash: string): { page: Page; sub: Sub } {
 /** Подвкладка «Факта» (P2-0017): #/planfact/fact — «Ввод», #/planfact/fact/chessboard — «Шахматка». */
 export type FactSub = 'entry' | 'chessboard';
 export const FACT_SUBS: { id: FactSub; label: string; path: string }[] = [{ id: 'entry', label: 'Ввод', path: '/fact' }, { id: 'chessboard', label: 'Шахматка', path: '/fact/chessboard' }];
+/** Подвкладка «ВОР» (P2-0019): #/planfact/vor — «Загрузка», #/planfact/vor/positions[?вид] — «Позиции» (реестр). */
+export type VorSub = 'load' | 'positions';
+export const VOR_SUBS: { id: VorSub; label: string; path: string }[] = [{ id: 'load', label: 'Загрузка', path: '/vor' }, { id: 'positions', label: 'Позиции', path: '/vor/positions' }];
+export function vorSubFromHash(hash: string): VorSub {
+  return String(hash || '').replace(/^#\/planfact\/?/, '').split('?')[0].split('/')[1] === 'positions' ? 'positions' : 'load';
+}
+
 export function factSubFromHash(hash: string): FactSub {
   return String(hash || '').replace(/^#\/planfact\/?/, '').split('/')[1] === 'chessboard' ? 'chessboard' : 'entry';
 }
@@ -73,6 +80,7 @@ export function canonicalHash(hash: string, a: RouteAccess): string | null {
     if (!subOk) return `${BASE}/directories/objects`;
   }
   if (r.page === 'fact' && parts.length > 1 && parts[1] !== '' && parts[1] !== 'chessboard') return `${BASE}/fact`;
+  if (r.page === 'vor' && parts.length > 1 && parts[1].split('?')[0] !== '' && parts[1].split('?')[0] !== 'positions') return `${BASE}/vor`;
   return null;
 }
 
@@ -86,6 +94,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const { auth, projects, vor: vorApi, estimate, fact: factApi, ks2: ks2Api, summary: summaryApi, onAccess } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [who, setWho] = useState('');
+  const [vorCount, setVorCount] = useState<number | null>(null);
   const [access, setAccess] = useState<AccessEntry[]>([]);
   const [route, setRoute] = useState(routeFromHash(window.location.hash));
   const [companies, setCompanies] = useState<CompanyAccess[]>([]);
@@ -186,6 +195,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   // «Смета»: только с правом planfact.estimate.manage (сервер проверяет каждый вызов).
   const est = route.page === 'estimate' && mode === 'authed' && canEstimate && estimate && vorApi;
   // «Факт»: при доступе к компании (права на просмотр/ввод/подтверждение сервер проверяет каждым вызовом).
+  const vsub = vorSubFromHash(window.location.hash);
   const fsub = factSubFromHash(window.location.hash);   // route обновляется при каждом переходе роутера — адрес уже текущий
   const fct = route.page === 'fact' && mode === 'authed' && companies.length > 0 && factApi && vorApi && projects;
   // «КС-2»: с правом planfact.ks2.view / ks2.edit хотя бы в одном проекте.
@@ -208,7 +218,8 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     : est
     ? h('div', { className: 'pf-root' }, h(EstimateTab, { api: estimate!, vor: vorApi! }))
     : vor
-    ? h('div', { className: 'pf-root' }, h(VorTab, { api: mode === 'authed' ? vorApi || null : null, projects: mode === 'authed' ? projects || null : null }))
+    ? h('div', { className: 'pf-root' }, h(VorTab, { api: mode === 'authed' ? vorApi || null : null, projects: mode === 'authed' ? projects || null : null,
+        sub: mode === 'authed' ? vsub : 'load', fact: mode === 'authed' ? factApi || null : null, summary: mode === 'authed' ? summaryApi || null : null, user: who, onCount: setVorCount }))
     : dirs && projects
     ? h(CompanyScope, { api: projects, render: (c) => route.sub === 'units' ? h(UnitsTab, { api: projects, company: c })
         : route.sub === 'brigades' && factApi ? h(BrigadesTab, { api: factApi, company: c })
@@ -231,7 +242,14 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     : est
     ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'Смета — тендерная стоимость по ВОР заказчика'))
     : vor
-    ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'ВОР — загрузка ведомости объёмов работ'))
+    ? h('div', { className: 'pf-root pf-dirhead' },
+        h('h2', { className: 'pf-title' }, vsub === 'positions' && mode === 'authed' ? 'ВОР — позиции' : 'ВОР — загрузка ведомости объёмов работ'),
+        mode === 'authed'
+          ? h('div', { className: 'pf-seg', role: 'tablist', 'data-testid': 'pf-vortabs' },
+              VOR_SUBS.map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': vsub === t.id, 'data-sub': t.id,
+                className: 'pf-seg-btn' + (vsub === t.id ? ' pf-seg-btn--active' : ''), onClick: () => nav(`${BASE}${t.path}`) },
+                t.id === 'positions' && vorCount !== null ? `${t.label} (${vorCount})` : t.label)))
+          : null)
     : dirs
     ? h('div', { className: 'pf-root pf-dirhead' },
         h('h2', { className: 'pf-title' }, 'Справочники'),

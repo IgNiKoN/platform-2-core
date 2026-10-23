@@ -10,6 +10,10 @@ import type { ColumnMap, EditableRole, ParseResult, ParsedRow, RowKind, SheetDat
 import { VorColumns } from './VorColumns.ts';
 import { VorDraft } from './VorDraft.ts';
 import { VorPositions } from './VorPositions.ts';
+import { PositionsRegistry, POSITIONS_REGISTRY_CSS } from './PositionsRegistry.ts';
+import type { PositionsRegistryProps } from './PositionsRegistry.ts';
+import type { FactApi } from '../fact/fact.service.ts';
+import type { SummaryApi } from '../summary/summary.service.ts';
 import type { ProjectsApi } from '../../../platform/core/projects.service.ts';
 import { VOR_MANAGE } from './vor.service.ts';
 import type { VorApi, VorImport, VorProfile, VorProject } from './vor.service.ts';
@@ -77,9 +81,16 @@ function RowView(props: { r: ParsedRow; warn?: string }): ReactElement {
     h('span', { className: 'vor-c-qty pf-num' }, fmt(r.qty), r.norm !== null ? h('span', { className: 'vor-norm' }, `норма ${fmt(r.norm)}`) : null));
 }
 
-export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | null; load?: (f: File) => Promise<LoadedFile> }): ReactElement {
+/** P2-0019: sub — подвкладка «Загрузка» / «Позиции» (реестр; нужны fact и summary — те же функции, что «Факт» и «Сводка»);
+ *  onCount — число позиций проекта для счётчика подвкладки; positionActions / positionTools — действия реестра (выгрузка, закрытие). */
+export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | null; load?: (f: File) => Promise<LoadedFile>;
+  sub?: 'load' | 'positions'; fact?: FactApi | null; summary?: SummaryApi | null; user?: string; onCount?: (n: number | null) => void;
+  positionActions?: (perms: string[], projectId: string, companyId: string) => PositionsRegistryProps['actions'];
+  positionTools?: PositionsRegistryProps['tools'] }): ReactElement {
   const load = props.load || loadFile;
   const api = props.api || null;
+  const registry = !!(api && props.fact && props.summary);
+  const sub = props.sub || 'load';
   const [openId, setOpenId] = useState('');
   const [projects, setProjects] = useState<VorProject[] | null>(api ? null : []);
   const [projectId, setProjectId] = useState('');
@@ -128,6 +139,12 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
     if (!api) return;
     void api.listProjects().then((list) => { setProjects(list); if (list.length) setProjectId(firstProjectId(list)); });
   }, []);
+
+  // Счётчик подвкладки «Позиции (N)» — позиции подтверждённых загрузок проекта.
+  useEffect(() => {
+    if (!props.onCount) return;
+    props.onCount(imports ? imports.filter((i) => i.status === 'confirmed').reduce((a, i) => a + (i.positions || 0), 0) : null);
+  }, [imports]);
 
   async function reloadImports(p: string): Promise<void> {
     if (!api || !p) return;
@@ -213,16 +230,31 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
       onBack: () => { setOpenId(''); void reloadImports(projectId); }, onChanged: () => { void api.listImports(projectId).then(setImports); } });
   }
 
+  const picker = api && projects
+    ? h('div', { className: 'pf-card pj-form' },
+        h('div', { className: 'pf-field pj-grow' }, 'Проект',
+          h(ProjectPicker, { list: projects, value: projectId, onChange: setProjectId, testId: 'vor-project', alwaysSelect: true })),
+        sub === 'load' && !canManage && perms.length ? h('span', { className: 'pf-muted', 'data-testid': 'vor-readonly' }, 'Только просмотр: загрузка ВОР доступна ПТО, РП и администратору.') : null)
+    : null;
+  if (api && sub === 'positions') {
+    const company = (projects || []).find((p) => p.id === projectId)?.company_id || '';
+    return h('div', { className: 'pj-tab vor-tab', 'data-testid': 'vor-tab' }, picker,
+      !projectId ? null
+        : registry
+          ? h(PositionsRegistry, { key: projectId, fact: props.fact!, summary: props.summary!, projectId, companyId: company, user: props.user || '',
+              actions: props.positionActions ? props.positionActions(perms, projectId, company) : undefined, tools: props.positionTools })
+          : h(VorPositions, { key: projectId, api, projectId }));
+  }
+
   return h('div', { className: 'pj-tab vor-tab', 'data-testid': 'vor-tab' },
-    api && projects
-      ? h('div', { className: 'pf-card pj-form' },
-          h('div', { className: 'pf-field pj-grow' }, 'Проект',
-            h(ProjectPicker, { list: projects, value: projectId, onChange: setProjectId, testId: 'vor-project', alwaysSelect: true })),
-          !canManage && perms.length ? h('span', { className: 'pf-muted', 'data-testid': 'vor-readonly' }, 'Только просмотр: загрузка ВОР доступна ПТО, РП и администратору.') : null)
-      : null,
+    picker,
     api ? h('h3', { className: 'pf-title un-title' }, 'Загрузки проекта') : null,
     api ? h(ImportsList, { items: imports, canManage, busy: !!saving, onDelete: (i) => { void removeImport(i); }, onOpen: (i) => setOpenId(i.id) }) : null,
-    api && imports && imports.some((i) => i.status === 'confirmed') ? h(VorPositions, { key: projectId, api, projectId }) : null,
+    api && imports && imports.some((i) => i.status === 'confirmed')
+      ? registry
+        ? h('div', { className: 'pf-muted', 'data-testid': 'vor-positions-hint' }, 'Позиции ВОР — на вкладке «Позиции»: фильтры, просроченные, история факта.')
+        : h(VorPositions, { key: projectId, api, projectId })
+      : null,
     api && !canManage ? null : h('div', { className: 'pf-card pj-form' },
       h('label', { className: 'pf-btn vor-file' + (busy ? ' vor-file--busy' : '') },
         busy ? 'Читаю файл…' : 'Загрузить Excel (.xlsx)',
@@ -280,7 +312,7 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
       : null);
 }
 
-export const VOR_CSS = `
+export const VOR_CSS = POSITIONS_REGISTRY_CSS + `
 .vor-file{position:relative;overflow:hidden;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-height:40px}
 .vor-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .vor-file--busy{opacity:.7;cursor:progress}

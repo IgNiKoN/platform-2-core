@@ -42,7 +42,7 @@ export const P2_REGISTRY_CSS = `
 .p2-reg__total{font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums}
 .p2-reg__counts{display:inline-flex;flex-wrap:wrap;gap:4px;margin-left:8px;vertical-align:middle}
 .p2-reg__group td{white-space:normal}
-.p2-reg__overlay{position:fixed;inset:0;z-index:1000;background:var(--p2-overlay);display:flex;justify-content:flex-end}
+.p2-reg__overlay{position:fixed;inset:0;z-index:10000;background:var(--p2-overlay);display:flex;justify-content:flex-end}
 .p2-reg__panel{width:min(380px,100%);height:100%;background:var(--card-bg);color:var(--text-main);display:flex;flex-direction:column;box-shadow:var(--p2-shadow)}
 .p2-reg__panel-head,.p2-reg__panel-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;border-bottom:1px solid var(--card-border)}
 .p2-reg__panel-foot{border-bottom:0;border-top:1px solid var(--card-border);justify-content:flex-end}
@@ -52,7 +52,7 @@ export const P2_REGISTRY_CSS = `
 .p2-reg__view{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:36px}
 .p2-reg__view-save{display:flex;gap:6px}
 .p2-reg__view-save .pj-input{flex:1 1 auto;min-width:0}
-.p2-side{position:fixed;top:0;right:0;bottom:0;z-index:900;width:min(460px,100%);background:var(--card-bg);color:var(--text-main);border-left:1px solid var(--card-border);box-shadow:var(--p2-shadow);display:flex;flex-direction:column}
+.p2-side{position:fixed;top:0;right:0;bottom:0;z-index:9000;width:min(460px,100%);background:var(--card-bg);color:var(--text-main);border-left:1px solid var(--card-border);box-shadow:var(--p2-shadow);display:flex;flex-direction:column}
 .p2-side__bar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--card-border)}
 .p2-side__bar .pf-btn{min-height:38px;padding:8px 10px}
 .p2-side__close{margin-left:auto}
@@ -77,6 +77,8 @@ export const P2_REGISTRY_CSS = `
 .p2-reg__table thead{display:none}
 .p2-reg__row{position:relative;background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;margin-bottom:8px;padding:8px 8px 8px 44px}
 .p2-reg__row td{border:0;padding:2px 0;display:flex;justify-content:space-between;gap:12px;text-align:right}
+.p2-reg__row--sel{background:var(--p2-status-blue-bg);border-color:var(--p2-status-blue-fg)}
+.p2-reg__row--sel td{background:transparent}
 .p2-reg__row td::before{content:attr(data-label);color:var(--text-muted);font-size:12px;text-align:left;flex-shrink:0}
 .p2-reg__row td.p2-reg__main{display:block;text-align:left;font-size:14px;padding-bottom:4px}
 .p2-reg__row td.p2-reg__main::before{content:none}
@@ -85,8 +87,11 @@ export const P2_REGISTRY_CSS = `
 .p2-reg__group{margin:8px 0 6px}
 .p2-reg__group td{background:transparent;padding:0}
 .p2-reg__panel{width:100%}
-.p2-reg__tools>.pf-btn,.p2-reg__tools>.p2-reg__toggle,.p2-reg__wrap{flex:1 1 calc(50% - 8px)}
+.p2-reg__tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+.p2-reg__tools>*{width:100%;min-width:0;box-sizing:border-box}
+.p2-reg__tools>.p2-reg__muted{grid-column:1/-1}
 .p2-reg__wrap>.pf-btn{width:100%}
+.p2-reg__groupby{justify-content:center;border:1px solid var(--card-border);border-radius:10px;padding:0 8px}
 .p2-reg__pop{left:0;right:auto}
 }
 `;
