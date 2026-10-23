@@ -166,7 +166,8 @@ window.triggerSync = async function (mode = 'silent') {
     // --- НОВОЕ: Проверка роли при синхронизации ---
     // --- НОВОЕ: Проверка роли при синхронизации ---
     // --- Проверка серверного профиля перед синхронизацией ---
-    try {
+    // P2-0016: при входе почтой роль и допуск — из прав компании (quality-bridge.ts), профиль PIN не читается.
+    if (!(window.RBI && window.RBI.qualitySync)) try {
         const { data: roleData, error: roleError } = await window.supabaseClient
             .from('rbi_engineer_profiles')
             .select('role, cloud_status, assigned_contractor, contractor_name, assigned_projects, settings')
@@ -455,9 +456,16 @@ window.triggerSync = async function (mode = 'silent') {
     window.getStoragePathFromPublicUrl = function (url, bucketName) {
         if (!url || !bucketName) return '';
         const marker = `/storage/v1/object/public/${bucketName}/`;
-        const idx = url.indexOf(marker);
+        let idx = url.indexOf(marker);
+        let len = marker.length;
+        if (idx === -1) {
+            // P2-0016: файлы компании — в бакете quality-<бакет>, путь <компания>/… (обёртка Storage моста не удвоит компанию)
+            const companyMarker = `/storage/v1/object/public/quality-${bucketName}/`;
+            idx = url.indexOf(companyMarker);
+            len = companyMarker.length;
+        }
         if (idx === -1) return '';
-        return decodeURIComponent(url.slice(idx + marker.length));
+        return decodeURIComponent(url.slice(idx + len));
     };
 
     window.dataUrlToBlob = function (dataUrl) {

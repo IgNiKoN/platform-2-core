@@ -1736,7 +1736,11 @@ console.log('[SettingsRender] settings.render.js markup mounted');
     function _subsectionAllowed(key) {
         if (key === 'company') return _companyAllowed();
         if (key === 'platform-admin') return _platformAdminAllowed();
-        if (key === 'admin' || key === 'quality' || key === 'construction') return _legacyAllowed();
+        if (key === 'admin') return _legacyAllowed();
+        if (key === 'quality' || key === 'construction') {   // P2-0016: почта — если модуль включён у компании
+            var sh = window.RBI && window.RBI.services && window.RBI.services.shell;
+            return sh && typeof sh.legacyModuleAllowed === 'function' ? sh.legacyModuleAllowed(key) : _legacyAllowed();
+        }
         return true;
     }
     function _syncCompanyTab() {

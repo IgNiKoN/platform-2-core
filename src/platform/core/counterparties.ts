@@ -28,8 +28,10 @@ export const REQUISITE_FIELDS: { key: keyof Requisites; label: string; placehold
 ];
 
 export interface Counterparty {
-  id: string; name: string; inn: string; kpp: string | null; kinds: CounterpartyKind[];
+  id: string; name: string; inn: string | null; kpp: string | null; kinds: CounterpartyKind[];
   requisites: Requisites; archived_at: string | null; updated_at: string;
+  /** P2-0016: подрядчик, добавленный в Качестве без ИНН, — черновик до дозаполнения ИНН. */
+  draft?: boolean;
 }
 
 /** Карточка контрагента объекта для документов (pf_project_counterparties). */

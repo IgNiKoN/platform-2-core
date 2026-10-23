@@ -12445,10 +12445,10 @@ function Qb(r) {
   }
   return a;
 }
-const Zb = { name: "", inn: "", kpp: "", kinds: [], requisites: {} }, Fb = (r) => ({ name: r.name, inn: r.inn, kpp: r.kpp || "", kinds: [...r.kinds], requisites: { ...r.requisites } });
+const Zb = { name: "", inn: "", kpp: "", kinds: [], requisites: {} }, Fb = (r) => ({ name: r.name, inn: r.inn || "", kpp: r.kpp || "", kinds: [...r.kinds], requisites: { ...r.requisites } });
 function Wb(r, a) {
   const l = a.trim().toLowerCase();
-  return l ? r.name.toLowerCase().includes(l) || /^\d+$/.test(l.replace(/\s/g, "")) && r.inn.includes(l.replace(/\s/g, "")) : !0;
+  return l ? r.name.toLowerCase().includes(l) || /^\d+$/.test(l.replace(/\s/g, "")) && (r.inn || "").includes(l.replace(/\s/g, "")) : !0;
 }
 function e_(r) {
   const { core: a, companyId: l } = r, [s, c] = A.useState(null), [h, f] = A.useState(!1), [m, g] = A.useState(!1), [y, b] = A.useState(""), [p, S] = A.useState(null), [E, x] = A.useState(""), [D, j] = A.useState(""), [H, L] = A.useState(!1);
@@ -12656,8 +12656,14 @@ function e_(r) {
             S({ id: Y.id, d: Fb(Y) }), x(""), j("");
           }
         },
-        A.createElement("span", { className: "cp-name" }, Y.name, Y.archived_at ? A.createElement("span", { className: "co-badge cp-badge" }, "архив") : null),
-        A.createElement("span", { className: "cp-inn" }, "ИНН " + Y.inn + (Y.kpp ? " · КПП " + Y.kpp : "")),
+        A.createElement(
+          "span",
+          { className: "cp-name" },
+          Y.name,
+          Y.archived_at ? A.createElement("span", { className: "co-badge cp-badge" }, "архив") : null,
+          Y.draft ? A.createElement("span", { className: "co-badge cp-badge", "data-testid": "cp-draft" }, "из Качества · нужен ИНН") : null
+        ),
+        A.createElement("span", { className: "cp-inn" }, Y.inn ? "ИНН " + Y.inn + (Y.kpp ? " · КПП " + Y.kpp : "") : "ИНН не указан"),
         A.createElement("span", { className: "cp-kind" }, Xb(Y.kinds))
       )) : A.createElement(
         "div",

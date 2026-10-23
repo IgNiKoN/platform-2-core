@@ -1,18 +1,23 @@
 /**
  * Вход платформы (Vite-бандл → js/dist/platform/platform.js, без React). Подключает оболочка (app-shell.showAuthGate) при открытии.
- * Решает, кто на устройстве: вошедший почтой (сессия Supabase), по старому PIN Quality или демо; иначе — экран «Вход» поверх оболочки.
+ * Решает, кто на устройстве: вошедший почтой (сессия Supabase) или демо; иначе — экран «Вход» поверх оболочки (P2-0016: PIN-входа в 2.0 нет).
  * Публикует состояние для меню и Настроек: window.RBI.platformMenuAccess (событие rbi:platform-access) и window.RBI.platform2.
+ * Качество/Стройконтроль при входе почтой — мост quality-bridge.ts (window.RBI.qualitySync).
  */
+import { createClient } from '@supabase/supabase-js';
 import { createAuthService, getClient, readAuthConfig } from './auth.service.ts';
+import { applyQualityBridge } from './quality-bridge.ts';
+import { createProjectsService } from '../core/projects.service.ts';
+import type { QualityProject } from './quality-bridge.ts';
 import { createPlatform } from './platform.service.ts';
 import type { Platform, PlatformState } from './platform.service.ts';
 import { LOGIN_CSS, renderLoginScreen } from './login-screen.ts';
 import { showShellUser, restoreShellUser } from './shell-user.ts';
 
 type Rbi = Record<string, unknown> & {
-  services?: { shell?: { renderSidebar?: () => void; renderMobileModuleMenu?: () => void }; config?: { isCloudEnabled?: () => boolean; getCloudDisabledMessage?: () => string } };
+  services?: { shell?: { renderSidebar?: () => void; renderMobileModuleMenu?: () => void } };
 };
-type Win = Window & { RBI?: Rbi; syncConfig?: { enabled?: boolean }; AppRouter?: { navigate?: (p: string, replace?: boolean) => void }; AppModeManager?: { renderBottomNav?: () => void } };
+type Win = Window & { RBI?: Rbi; AppRouter?: { navigate?: (p: string, replace?: boolean) => void }; AppModeManager?: { renderBottomNav?: () => void } };
 
 const OVERLAY_ID = 'auth-gate-overlay';
 const STYLE_ID = 'p2-login-style';
@@ -22,11 +27,6 @@ let started: Promise<PlatformState> | null = null;
 
 function w(): Win { return window as Win; }
 function rbi(): Rbi { const x = w(); x.RBI = x.RBI || {}; return x.RBI; }
-
-function cloudEnabled(): boolean {
-  const c = rbi().services?.config;
-  return !!(c && typeof c.isCloudEnabled === 'function' && c.isCloudEnabled());
-}
 
 function ensureStyle(): void {
   if (document.getElementById(STYLE_ID)) return;
@@ -46,8 +46,8 @@ function getPlatform(): Platform {
     auth,
     rpc: client ? async (fn) => { const r = await client.rpc(fn); return { data: r.data, error: r.error }; } : null,
     storage: (() => { try { return window.localStorage; } catch { return null; } })(),
-    // По PIN — только когда облако Quality включено (сборка «выпуск») и прежний код подключился.
-    pinActive: () => cloudEnabled() && !!(w().syncConfig && w().syncConfig!.enabled)
+    // P2-0016: в Платформе 2.0 вход только почтой (+ демо); PIN — в старом приложении РБИ.
+    pinActive: () => false
   });
   platform.subscribe(apply);
   if (auth && auth.onAuthChange) auth.onAuthChange(() => { void platform!.refresh(); });
@@ -69,9 +69,7 @@ function showLogin(): void {
       if (res.ok) goHome();
       return res;
     },
-    onDemo: () => { p.chooseDemo(); go('#/planfact/vor'); },
-    pinEnabled: cloudEnabled(),
-    pinDisabledMessage: rbi().services?.config?.getCloudDisabledMessage?.() || 'Облачный вход отключён'
+    onDemo: () => { p.chooseDemo(); go('#/planfact/vor'); }
   });
   o.classList.remove('hidden');
 }
@@ -129,6 +127,34 @@ function apply(st: PlatformState): void {
   }
   if (st.mode === 'none') showLogin(); else hideLogin();
   postCacheAllowlist();
+  void applyQuality(st);
+}
+
+/** Качество и Стройконтроль при входе почтой: синхронизация в хранилище компании (P2-0016). */
+async function applyQuality(st: PlatformState): Promise<void> {
+  try {
+    const cfg = readAuthConfig();
+    const pc = getClient();
+    await applyQualityBridge(st, {
+      win: window as never,
+      store: window.localStorage,
+      reload: () => window.location.reload(),
+      platformClient: pc,
+      cfg,
+      createClient: createClient as never,
+      serviceWorker: 'serviceWorker' in navigator ? navigator.serviceWorker as never : null,
+      listProjects: async (companyId) => {
+        const svc = createProjectsService();   // объекты — из ядра (src/platform/core)
+        const rows = svc ? await svc.listProjects(companyId) : [];
+        return rows.filter((p) => !p.archived_at).map((p): QualityProject => ({ id: p.id, name: p.name }));
+      }
+    });
+    const shell = rbi().services?.shell;
+    if (shell && typeof shell.renderSidebar === 'function') shell.renderSidebar();
+    if (shell && typeof shell.renderMobileModuleMenu === 'function') shell.renderMobileModuleMenu();
+  } catch (e) {
+    console.warn('[Platform2] Качество: подключение к хранилищу компании не удалось', e);
+  }
 }
 
 /** Кэш приложения (sw.js): файлы модулей Platform 2.0 — только положенных этому входу, остальные удаляются. */

@@ -1,13 +1,20 @@
 /* Файл: js/services/storage/storage-db.core.js — перенесено из js/storage.js без изменения логики */
 /* Файл: js/storage.js */
 
-// P2-0013: имя локальной базы — из переключателя сборки (config.service.js): выпуск — RBI_QUALITY_DB, разработка — PLATFORM2_DB.
-const DB_NAME = (window.APP_CONFIG && window.APP_CONFIG.LOCAL_DB_NAME) || 'PLATFORM2_DB';
+// P2-0016: при входе почтой у каждой компании своя локальная база (PLATFORM2_DB_<компания>); компанию записывает
+// src/platform/auth/quality-bridge.ts (ключ platform2_quality_company) и перезагружает страницу при её смене.
+const DB_NAME = (function () {
+    const base = (window.APP_CONFIG && window.APP_CONFIG.LOCAL_DB_NAME) || 'PLATFORM2_DB';
+    let company = '';
+    try { company = localStorage.getItem('platform2_quality_company') || ''; } catch (e) { company = ''; }
+    return /^[0-9a-f-]{36}$/i.test(company) ? base + '_' + company : base;
+}());
 // Повышаем версию только при изменении структуры IndexedDB
 const DB_VERSION = 29; // БЫЛО 28, СТАЛО 29 — units_v2 + паритет с self-heal bump (локально уже 29)
 
 // Глобально отдаём версию БД в интерфейс диагностики
 window.RBI_DB_VERSION = DB_VERSION;
+window.RBI_DB_NAME = DB_NAME;   // P2-0016: «Сброс данных» удаляет базу текущей компании
 
 const STORES = {
     // --- НОВЫЕ ТАБЛИЦЫ ДЛЯ СТРОЙКОНТРОЛЯ ---

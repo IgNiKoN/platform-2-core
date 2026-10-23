@@ -1,5 +1,13 @@
 -- P2-0015: откат 017_project_links_up.sql (заказчик/генподрядчик объекта). Применять до 017_counterparties_down.sql.
 
+do $$
+begin
+  if exists (select 1 from pg_constraint where conrelid = 'core.projects'::regclass and conname = 'projects_customer_fk' and confdeltype = 'a') then
+    raise exception 'Сначала откатите 017a_core_review' using errcode = 'P0001';
+  end if;
+end $$;
+
+
 drop function if exists public.pf_project_set_counterparties(uuid, uuid, uuid);
 drop function if exists public.pf_project_counterparties(uuid);
 drop function if exists core.counterparty_card(uuid);

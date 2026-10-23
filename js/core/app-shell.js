@@ -66,9 +66,17 @@
     });
   }
 
-  /** P2-0013: вошедшему почтой пункты старого Quality / Стройконтроля и заглушки не показываются (они — по старому входу). */
-  function showLegacyModules() {
-    return platformEntryMode() !== 'email';
+  /**
+   * P2-0016: модуль старого Quality (quality, construction, construction-v2, knowledge) в меню этого входа?
+   * Почта — только Качество и Стройконтроль, если модуль включён у текущей компании (RBI.platformMenuAccess) и мост
+   * синхронизации с хранилищем компании подключён (RBI.qualitySync); «База знаний» отдельным пунктом — нет. Демо и «никто» — как раньше.
+   */
+  function legacyModuleAllowed(id) {
+    if (platformEntryMode() !== 'email') return true;
+    var access = (window.RBI && window.RBI.platformMenuAccess) || {};
+    var base = id === 'construction-v2' ? 'construction' : id;
+    if (base !== 'quality' && base !== 'construction') return false;
+    return access[base] === true && !!(window.RBI && window.RBI.qualitySync);
   }
 
   function _i18n() {
@@ -117,6 +125,7 @@
   var ShellService = {
     platformEntryMode: platformEntryMode,
     isPlatformModuleAllowed: isPlatformModuleAllowed,
+    legacyModuleAllowed: legacyModuleAllowed,
     getContentRoot: function () {
       return document.getElementById('app-content');
     },
@@ -298,9 +307,9 @@
       };
 
       var html = '';
-      var legacy = showLegacyModules();
+      var legacy = platformEntryMode() !== 'email';   // заглушки модулей — как раньше, не при входе почтой
       BUSINESS_MODULES.forEach(function (mod) {
-        if (!legacy) return;
+        if (!legacyModuleAllowed(mod.id)) return;
         if (roleAllowedIds.indexOf(mod.id) === -1) return;
         if (selected.indexOf(mod.id) === -1) return;
         if (mod.id === 'knowledge' && !knowledgePeer) return;
@@ -449,10 +458,10 @@
         'construction-v2': _navLabel('construction_v2', 'Стройконтроль в2 (тест)')
       };
       var html = '';
-      var legacy = showLegacyModules();
 
+      var legacy = platformEntryMode() !== 'email';   // заглушки модулей — как раньше, не при входе почтой
       BUSINESS_MODULES.forEach(function (mod) {
-        if (!legacy) return;
+        if (!legacyModuleAllowed(mod.id)) return;
         if (roleAllowedIds.indexOf(mod.id) === -1) return;
         if (selected.indexOf(mod.id) === -1) return;
         if (mod.id === 'knowledge' && !knowledgePeer) return;

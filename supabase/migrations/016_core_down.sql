@@ -1,5 +1,12 @@
 -- P2-0015: откат 016_core_up.sql — таблицы ядра обратно в `planfact`, функции — как до 016.
--- Перед откатом 016 нужно откатить 017 (схема `core` должна остаться пустой).
+-- Перед откатом 016 нужно откатить 017a → 017_project_links → 017_counterparties (схема `core` должна остаться пустой).
+
+do $$
+begin
+  if to_regclass('core.counterparties') is not null then
+    raise exception 'Сначала откатите 017a, 017_project_links и 017_counterparties' using errcode = 'P0001';
+  end if;
+end $$;
 
 do $$
 declare
@@ -31,7 +38,7 @@ begin
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where p.prokind = 'f'
        and (n.nspname = 'planfact'
-            or (n.nspname = 'public' and (array_to_string(p.proconfig, ',') like '%planfact%' or p.prosrc ~ 'core\.')))
+            or (n.nspname = 'public' and (array_to_string(p.proconfig, ',') like '%planfact%' or p.prosrc ~ '(?<![''A-Za-z0-9_])core\.(companies|company_members|platform_admins|module_catalog|company_modules|permission_catalog|role_templates|role_template_permissions|company_roles|company_role_permissions|role_assignments|projects|locations|units|work_types|audit_log)(?![A-Za-z0-9_])')))
   loop
     v_path := substr(r.sp, length('search_path=') + 1);
     if v_path is not null and v_path ~ ', core$' then

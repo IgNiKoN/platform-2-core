@@ -14,13 +14,14 @@ const MENU = [
   { id: 'company', label: 'Компания', section: 'settings', order: 60, path: '#/company', requiresAccess: true }
 ];
 
-function shell(mode: string, access: Record<string, boolean>): N {
+function shell(mode: string, access: Record<string, boolean>, qualitySync: unknown = null): N {
   const win: N = new Window({ url: 'http://localhost/#/settings' });
   win.document.body.innerHTML = '<div id="app-sidebar"></div><div class="mobile-module-menu-wrap"><div id="mobile-module-menu" class="hidden"></div></div>';
   win.RBI = {
     moduleLoader: { getMenuItems: () => MENU, getById: (id: string) => ({ id, menu: MENU.find((m) => m.id === id) }) },
     platform2: { getState: () => ({ mode }) },
     platformMenuAccess: access,
+    qualitySync,
     services: { permissions: { getAllowedModules: () => ['quality', 'construction', 'knowledge'] } }
   };
   const code = readFileSync(new URL('../../../../js/core/app-shell.js', import.meta.url), 'utf8');
@@ -41,6 +42,18 @@ test('почта, модуль выключен у компании (или не
   assert.deepEqual(sidebar(win), ['Настройки']);
   assert.deepEqual(mobile(win), []);
   assert.equal(win.RBI.services.shell.isPlatformModuleAllowed('planfact'), false);
+});
+
+test('почта (P2-0016): Качество и Стройконтроль — если модуль включён у компании и хранилище компании подключено', () => {
+  const on = shell('email', { quality: true, construction: true }, { active: true });
+  const s = sidebar(on);
+  assert.ok(s.includes('Качество') && s.includes('Стройконтроль'), s.join(', '));
+  assert.ok(!s.includes('База знаний'));
+  assert.equal(on.RBI.services.shell.legacyModuleAllowed('construction-v2'), true);
+  const onlyQ = sidebar(shell('email', { quality: true }, { active: true }));
+  assert.ok(onlyQ.includes('Качество') && !onlyQ.includes('Стройконтроль'), onlyQ.join(', '));
+  const noBridge = sidebar(shell('email', { quality: true, construction: true }, null));
+  assert.ok(!noBridge.includes('Качество'), 'без подключённого хранилища компании — пункта нет');
 });
 
 test('PIN (старый вход): Quality / Стройконтроль как раньше, пунктов Platform 2.0 нет — даже если флаг остался', () => {
