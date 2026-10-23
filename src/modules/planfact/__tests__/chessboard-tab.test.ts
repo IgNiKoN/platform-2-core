@@ -129,3 +129,77 @@ test('«Этажи × виды работ»: колонки — виды, эта
   assert.equal(again.querySelector('[data-view="works"]').getAttribute('aria-selected'), 'true');
   win.localStorage.removeItem('pf-chess-view');
 });
+
+const { toPercent, qtyStep } = await import('../fact/FactEntryForm.ts');
+function typeIn(input: N, value: string): void {
+  Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+  input.dispatchEvent(new win.Event('input', { bubbles: true }));
+}
+function pickSel(sel: N, value: string): void {
+  Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype, 'value')!.set!.call(sel, value);
+  sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+}
+async function openCell(el: N, row: string, col: string) { cell(el, row, col).click(); for (let i = 0; i < 3; i++) await tick(); return el.querySelector('[data-testid="cb-info"]'); }
+
+test('плитки «до X %» считают от плана, остаток не уходит в минус; шаг ±', () => {
+  assert.equal(toPercent(120, 30, 50), 30, 'до 50 % из 120 при факте 30 → +30');
+  assert.equal(toPercent(120, 30, 100), 90);
+  assert.equal(toPercent(120, 100, 50), 0, 'уже больше 50 % — 0, не минус');
+  assert.equal(toPercent(0.3, 0.1, 100), 0.2);
+  assert.equal(qtyStep(4), 0.1); assert.equal(qtyStep(120), 1);
+});
+
+test('быстрый факт из ячейки: список позиций места, плитка → «Внести» через FactApi.add, ячейка обновилась; история (N)', async () => {
+  win.localStorage.removeItem('pf-chess-view');
+  const s = setup();
+  const el = await mount(s);
+  pickSel(el.querySelector('[data-testid="cb-work"]'), 'wt'); await tick();
+  assert.match(cell(el, 'эт. 1', 's1').textContent, /0 %/);
+  const panel = await openCell(el, 'эт. 1', 's1');
+  const rows = panel.querySelectorAll('[data-position-id]');
+  assert.deepEqual([...rows].map((r: N) => r.getAttribute('data-position-id')), ['pa1', 'pa2']);
+  assert.match(rows[0].textContent, /Секция 1 · кв\. 1/);
+  rows[0].querySelector('[data-testid="cb-enter"]').click(); for (let i = 0; i < 3; i++) await tick();
+  const form = panel.querySelector('[data-testid="ft-form"]');
+  assert.match(form.querySelector('[data-testid="ft-quick-sum"]').textContent, /Осталось 20 м²/);
+  assert.match(form.querySelector('[data-testid="ft-quick-history"]').textContent, /История \(0\)/);
+  const tiles = [...form.querySelectorAll('.ft-step')].map((b: N) => b.textContent);
+  assert.deepEqual(tiles, ['до 25 %+5 м²', 'до 50 %+10 м²', 'до 75 %+15 м²', 'до 100 %+20 м²']);
+  form.querySelector('[data-pct="50"]').click(); await tick();
+  assert.equal(form.querySelector('[data-testid="ft-qty"]').value, '10');
+  form.querySelector('[data-testid="ft-plus"]').click(); await tick();
+  assert.equal(form.querySelector('[data-testid="ft-qty"]').value, '11');
+  form.querySelector('[data-testid="ft-minus"]').click(); await tick();
+  pickSel(form.querySelector('[data-testid="ft-brigade"]'), 'b1'); await tick();
+  form.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true })); for (let i = 0; i < 6; i++) await tick();
+  const add = s.calls.filter((c: N) => c.fn === 'add');
+  assert.equal(add.length, 1, 'отправка — тот же FactApi.add');
+  assert.equal((add[0].args as N).qty, 10);
+  assert.match(el.querySelector('[data-testid="cb-notice"]').textContent, /Записано: 10 м²/);
+  assert.match(cell(el, 'эт. 1', 's1').textContent, /25 %/, 'ячейка перерисована после ответа сервера');
+  assert.match(el.querySelector('[data-position-id="pa1"]').textContent, /10 из 20 м²/);
+});
+
+test('перебор допуска → «ждёт подтверждения» в ячейке; только чтение — без кнопок ввода; «Закрыть этаж» — пачкой через addBatch', async () => {
+  const s = setup();
+  const el = await mount(s);
+  const panel = await openCell(el, 'эт. 2', 's1');
+  panel.querySelector('[data-testid="cb-enter"]').click(); for (let i = 0; i < 3; i++) await tick();
+  const form = panel.querySelector('[data-testid="ft-form"]');
+  typeIn(form.querySelector('[data-testid="ft-qty"]'), '150');
+  pickSel(form.querySelector('[data-testid="ft-brigade"]'), 'b1'); await tick();
+  form.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true })); for (let i = 0; i < 6; i++) await tick();
+  assert.match(el.querySelector('[data-testid="cb-notice"]').textContent, /ждёт подтверждения РП/);
+  assert.ok(cell(el, 'эт. 2', 's1').querySelector('[data-mark="pending"]'), 'значок «ждёт подтверждения»');
+
+  const p2 = await openCell(el, 'эт. 1', 's2');
+  p2.querySelector('[data-testid="cb-floor-close"]').click(); for (let i = 0; i < 3; i++) await tick();
+  const close = p2.querySelector('[data-testid="ft-close"]');
+  assert.ok(close, 'окно «Закрыть целиком» (FloorClose)');
+
+  const ro = await mount(setup(POS, NODES, ['planfact.fact.view']));
+  const rp = await openCell(ro, 'эт. 1', 's1');
+  assert.equal(rp.querySelectorAll('[data-testid="cb-enter"]').length, 0, 'без права ввода — кнопок нет');
+  assert.equal(rp.querySelector('[data-testid="cb-floor-close"]'), null);
+  assert.equal(rp.querySelectorAll('[data-testid="cb-history"]').length, 2, 'история — для просмотра');
+});

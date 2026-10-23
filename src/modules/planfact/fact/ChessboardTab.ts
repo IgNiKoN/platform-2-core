@@ -7,11 +7,14 @@
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { ProjectsApi } from '../../../platform/core/projects.service.ts';
-import type { FactApi, FactPosition } from './fact.service.ts';
+import type { Brigade, FactApi, FactPosition } from './fact.service.ts';
+import { FactEntryForm } from './FactEntryForm.ts';
+import { FactHistory } from './FactHistory.ts';
+import { FloorClose } from './FloorClose.ts';
 import { ChessCell, ChessScale, CHESS_STATE_LABEL } from '../../../platform/ui/index.ts';
-import { buildingsOf, cellKey, indexPlaces, loadPlaces, placePositions, sectionGrid, sectionsOf, unplacedIn, workGrid, workTypesOf } from './chessboard.ts';
+import { buildingsOf, cellKey, cellPositions, indexPlaces, loadPlaces, placePositions, sectionGrid, sectionsOf, unplacedIn, workGrid, workTypesOf } from './chessboard.ts';
 import type { CellValue, Grid, PlaceIndex, Placement, Ref } from './chessboard.ts';
-import { fmtPct, fmtQty, remainder } from './fact.ts';
+import { fmtPct, fmtQty, percent, remainder } from './fact.ts';
 
 const ALL = '';
 type View = 'sections' | 'works';
@@ -62,22 +65,62 @@ function GridTable(props: { grid: Grid; corner: string; sel: Sel | null; onPick:
         }))))));
 }
 
-/** Сводка выбранной ячейки: план, факт, остаток, позиции, «ждёт подтверждения». */
-function CellInfo(props: { title: string; v: CellValue; onClose: () => void }): ReactElement {
-  const { title, v, onClose } = props;
-  return h('div', { className: 'pf-card cb-info', 'data-testid': 'cb-info' },
-    h('div', { className: 'ft-sheet-head' }, h('b', null, title), h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: onClose }, 'Закрыть')),
-    h('div', { className: 'cb-info-nums' },
-      v.kind === 'volume' ? h('span', null, `План ${fmtQty(v.plan)} ${v.unit}`) : null,
-      v.kind === 'volume' ? h('span', null, `Факт ${fmtQty(v.fact)} ${v.unit} · ${fmtPct(v.pct)}`) : null,
-      v.kind === 'volume' ? h('span', null, `Остаток ${fmtQty(remainder(v.plan, v.fact))} ${v.unit}`) : null,
-      h('span', null, `Закрыто позиций ${v.closed} из ${v.total}`),
-      v.pending ? h('span', { className: 'ft-pending' }, `Ждёт подтверждения РП: ${v.pending} поз. (${fmtQty(v.pendingQty)})`) : null,
-      v.rejected ? h('span', { className: 'ft-bad' }, `Отклонено РП: ${v.rejected} поз.`) : null));
+/** Где позиция внутри ячейки: квартира («Секция 1 · кв. 5») или «на этаже»; путь без названия корпуса. */
+const where = (p: FactPosition): string => (p.location_type === 'apartment' ? p.location_path.split(' · ').slice(1).filter((x) => !/^эт\.|этаж/i.test(x)).join(' · ') : 'на этаже');
+
+export interface CellCtx { api: FactApi; projectId: string; me: string; canCreate: boolean; canApprove: boolean; brigades: Brigade[]; lastBrigade: string; onBrigade: (id: string) => void }
+
+/** Панель ячейки: сводка, позиции места, окно быстрого ввода по позиции, «История», «Закрыть этаж». На ПК — сбоку, на телефоне — шторкой. */
+function CellPanel(props: { ctx: CellCtx; title: string; v: CellValue; list: FactPosition[]; floor: boolean; onClose: () => void; onChanged: (msg: string) => void }): ReactElement {
+  const { ctx, title, v, list, floor, onClose, onChanged } = props;
+  const [openId, setOpenId] = useState('');
+  const [historyId, setHistoryId] = useState('');
+  const [count, setCount] = useState<number | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [notice, setNotice] = useState('');
+  const openForm = (id: string): void => {
+    setOpenId(openId === id ? '' : id); setHistoryId(''); setClosing(false); setNotice(''); setCount(null);
+    if (openId !== id) void ctx.api.history(id).then((r) => setCount(r.ok ? r.value.length : null));
+  };
+  const done = (msg: string): void => { setOpenId(''); setClosing(false); setNotice(msg); onChanged(msg); };
+  const histPos = historyId ? list.find((p) => p.position_id === historyId) : undefined;
+  return h('div', { className: 'cb-panel-wrap' },
+    h('div', { className: 'cb-backdrop', onClick: onClose, 'aria-hidden': 'true' }),
+    h('div', { className: 'pf-card cb-info cb-panel', role: 'dialog', 'aria-label': title, 'data-testid': 'cb-info' },
+      h('div', { className: 'ft-sheet-head' }, h('b', null, title), h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'cb-close', onClick: onClose }, 'Закрыть')),
+      h('div', { className: 'cb-info-nums' },
+        v.kind === 'volume' ? h('span', null, `План ${fmtQty(v.plan)} ${v.unit} · факт ${fmtQty(v.fact)} ${v.unit} · ${fmtPct(v.pct)}`) : null,
+        v.kind === 'volume' ? h('span', null, `Остаток ${fmtQty(remainder(v.plan, v.fact))} ${v.unit}`) : null,
+        h('span', null, `Закрыто позиций ${v.closed} из ${v.total}`),
+        v.pending ? h('span', { className: 'ft-pending' }, `Ждёт подтверждения РП: ${v.pending} поз. (${fmtQty(v.pendingQty)})`) : null,
+        v.rejected ? h('span', { className: 'ft-bad' }, `Отклонено РП: ${v.rejected} поз.`) : null),
+      notice ? h('div', { className: 'pj-notice', role: 'status', 'data-testid': 'cb-notice' }, notice) : null,
+      floor && ctx.canCreate && !closing && list.some((p) => remainder(p.plan_qty, p.fact_qty) > 0)
+        ? h('div', { className: 'pj-actions' }, h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'cb-floor-close', onClick: () => { setClosing(true); setOpenId(''); setHistoryId(''); } }, 'Закрыть этаж'))
+        : null,
+      closing ? h(FloorClose, { api: ctx.api, projectId: ctx.projectId, place: { id: '', name: title }, positions: list, brigades: ctx.brigades, lastBrigade: ctx.lastBrigade, onBrigade: ctx.onBrigade,
+        onClose: () => setClosing(false), onDone: done }) : null,
+      histPos ? h(FactHistory, { api: ctx.api, pos: histPos, me: ctx.me, canApprove: ctx.canApprove, canCreate: ctx.canCreate, onClose: () => setHistoryId(''), onChanged: () => onChanged('') }) : null,
+      h('div', { className: 'cb-list', 'data-testid': 'cb-list' }, list.map((p) => {
+        const pct = percent(p.fact_qty, p.plan_qty);
+        return h('div', { key: p.position_id, className: 'cb-pos', 'data-position-id': p.position_id },
+          h('div', { className: 'cb-pos-head' },
+            h('div', { className: 'cb-pos-name' }, h('b', null, p.work_name), h('span', { className: 'pf-muted' }, where(p))),
+            h('span', { className: 'cb-pos-nums' }, `${fmtQty(p.fact_qty)} из ${fmtQty(p.plan_qty)} ${p.unit_code}`, h('b', null, ` ${fmtPct(pct)}`))),
+          p.pending_count ? h('div', { className: 'ft-pending' }, `Ждёт подтверждения РП: ${fmtQty(p.pending_qty)} ${p.unit_code}`) : null,
+          p.last_rejected_note ? h('div', { className: 'ft-bad' }, `Отклонено РП: ${p.last_rejected_note}`) : null,
+          openId === p.position_id
+            ? h(FactEntryForm, { api: ctx.api, pos: p, brigades: ctx.brigades, lastBrigade: ctx.lastBrigade, onBrigade: ctx.onBrigade, onCancel: () => setOpenId(''), onSaved: done,
+                quick: { historyCount: count, onHistory: () => { setHistoryId(p.position_id); setOpenId(''); } } })
+            : h('div', { className: 'pj-actions' },
+                ctx.canCreate ? h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'cb-enter', onClick: () => openForm(p.position_id) }, 'Внести факт') : null,
+                h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'cb-history', onClick: () => { setHistoryId(historyId === p.position_id ? '' : p.position_id); setOpenId(''); setClosing(false); } }, 'История')));
+      }))));
 }
 
-export function ChessboardTab(props: { api: FactApi; projects: ProjectsApi; projectId: string }): ReactElement {
-  const { api, projects, projectId } = props;
+export function ChessboardTab(props: { projects: ProjectsApi; ctx: CellCtx }): ReactElement {
+  const { projects, ctx } = props;
+  const { api, projectId } = ctx;
   const [data, setData] = useState<{ idx: PlaceIndex; positions: FactPosition[]; pl: Placement } | null>(null);
   const [error, setError] = useState('');
   const [building, setBuilding] = useState<string | null>(null);
@@ -99,6 +142,11 @@ export function ChessboardTab(props: { api: FactApi; projects: ProjectsApi; proj
       setError(e instanceof Error && e.message ? e.message : 'Не удалось загрузить места объекта');
       setData(none);
     }
+  }
+  /** После ввода: перечитать позиции с сервера (сетка и панель пересчитываются, выбор ячейки сохраняется). */
+  async function refresh(): Promise<void> {
+    const r = await api.positions(projectId, null);
+    if (r.ok) setData((d) => (d ? { idx: d.idx, positions: r.value, pl: placePositions(r.value, d.idx) } : d));
   }
   useEffect(() => { if (projectId) { setBuilding(null); setWork(ALL); setSection(ALL); setOpen(new Set()); void load(projectId); } }, [projectId]);
 
@@ -148,7 +196,8 @@ export function ChessboardTab(props: { api: FactApi; projects: ProjectsApi; proj
     h('div', { className: 'cb-layout' + (selV ? ' cb-layout--side' : '') },
       h(GridTable, { grid, corner: view === 'works' ? 'Этаж / квартира' : 'Этаж', sel, onPick: (s) => setSel(sel && sel.row === s.row && sel.col === s.col ? null : s), testId: 'cb-grid',
         open: view === 'works' ? open : undefined, onToggle: view === 'works' ? toggle : undefined }),
-      selV && sel ? h(CellInfo, { title: `${rowLabel(sel.row)} · ${colLabel(sel.col)}`, v: selV, onClose: () => setSel(null) }) : null));
+      selV && sel ? h(CellPanel, { key: `${sel.row}|${sel.col}`, ctx, title: `${rowLabel(sel.row)} · ${colLabel(sel.col)}`, v: selV, list: cellPositions(data.positions, selV),
+        floor: !grid.rows.find((r) => r.key === sel.row)?.parent, onClose: () => setSel(null), onChanged: () => { void refresh(); } }) : null));
 }
 
 export const CHESSBOARD_CSS = `
@@ -162,6 +211,15 @@ export const CHESSBOARD_CSS = `
 .p2-chess__table tr.cb-sub th[scope=row]{padding-left:28px;font-weight:400;font-size:12px}
 .cb-layout{display:flex;flex-direction:column;gap:10px;min-width:0}
 .cb-info{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
+.cb-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1190}
+.cb-panel{position:fixed;left:0;right:0;bottom:0;z-index:1200;max-height:85vh;overflow-y:auto;border-radius:16px 16px 0 0;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 24px rgba(0,0,0,.25)}
+.cb-list{display:flex;flex-direction:column}
+.cb-pos{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid var(--card-border)}
+.cb-pos-head{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:space-between;align-items:baseline}
+.cb-pos-name{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
+.cb-pos-name .pf-muted{font-size:12px}
+.cb-pos-nums{font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .cb-info-nums{display:flex;flex-direction:column;gap:4px;font-size:13px;font-variant-numeric:tabular-nums}
-@media (min-width:1100px){.cb-layout--side{display:grid;grid-template-columns:minmax(0,1fr) 340px;align-items:start}.cb-layout--side .cb-info{position:sticky;top:12px}}
+@media (min-width:1100px){.cb-layout--side{display:grid;grid-template-columns:minmax(0,1fr) 380px;align-items:start}.cb-backdrop{display:none}
+.cb-panel{position:sticky;top:12px;left:auto;right:auto;bottom:auto;z-index:auto;max-height:calc(100vh - 120px);border-radius:var(--rbi-radius-md,8px);box-shadow:none;padding-bottom:14px}}
 `;
