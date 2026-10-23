@@ -593,6 +593,43 @@ else {
       }
       await q(`contractors?id=eq.${stampQ}-ctr`, 'alfaAdmin', cA, { method: 'DELETE' });
       check(`018: «туда-обратно» по таблицам quality: ${rt} из ${tables.length}`, rt === tables.length);
+
+      // 018d через настоящий Storage API: закрытый бакет компании, путь <компания>/…
+      const st = (path, k, init = {}) => fetch(`${URL_}/storage/v1/object/${path}`, { ...init, headers: { apikey: ANON, Authorization: `Bearer ${tok[k] || ANON}`, ...(init.headers || {}) } });
+      const fileA = `quality-inspection-photos/${cA}/REST-018/${stampQ}.txt`;
+      const up = await st(fileA, 'alfaAdmin', { method: 'POST', body: 'REST-018', headers: { 'Content-Type': 'text/plain' } });
+      check('018d: админ Альфы загружает файл в папку своей компании', up.ok, `статус ${up.status}`);
+      check('018d: админ Альфы скачивает файл', (await st(`authenticated/${fileA}`, 'alfaAdmin')).status === 200);
+      check('018d: ПТО Альфы (просмотр) скачивает файл', (await st(`authenticated/${fileA}`, 'alfaPto')).status === 200);
+      check('018d: ПТО Беты не скачивает файл Альфы', (await st(`authenticated/${fileA}`, 'betaPto')).status !== 200);
+      check('018d: по публичной ссылке файл не отдаётся', (await fetch(`${URL_}/storage/v1/object/public/${fileA}`)).status !== 200);
+      check('018d: anon не скачивает файл', (await st(`authenticated/${fileA}`, null)).status !== 200);
+      const upB = await st(`quality-inspection-photos/${cA}/REST-018/${stampQ}-beta.txt`, 'betaPto', { method: 'POST', body: 'x', headers: { 'Content-Type': 'text/plain' } });
+      check('018d: ПТО Беты не загружает в папку Альфы', !upB.ok, `статус ${upB.status}`);
+      const upP = await st(`quality-inspection-photos/${cA}/REST-018/${stampQ}-pto.txt`, 'alfaPto', { method: 'POST', body: 'x', headers: { 'Content-Type': 'text/plain' } });
+      check('018d: ПТО Альфы (без права записи) не загружает', !upP.ok, `статус ${upP.status}`);
+      const delB = await st('quality-inspection-photos', 'betaPto', { method: 'DELETE', body: JSON.stringify({ prefixes: [fileA.slice('quality-inspection-photos/'.length)] }), headers: { 'Content-Type': 'application/json' } });
+      check('018d: ПТО Беты не удаляет файл Альфы', (await st(`authenticated/${fileA}`, 'alfaAdmin')).status === 200, `статус удаления ${delB.status}`);
+      const delA = await st('quality-inspection-photos', 'alfaAdmin', { method: 'DELETE', body: JSON.stringify({ prefixes: [fileA.slice('quality-inspection-photos/'.length)] }), headers: { 'Content-Type': 'application/json' } });
+      check('018d: админ Альфы удаляет файл', delA.ok && (await st(`authenticated/${fileA}`, 'alfaAdmin')).status !== 200, `статус ${delA.status}`);
+
+      // 018e: подрядчик из Качества → черновик в «Контрагентах» → справочник Качества на всех объектах компании
+      const ctrName = `REST-018 Подрядчик ${stampQ}`, ctrKey = `rest-018-${stampQ}`;
+      const dIns = await q('contractor_directory', 'alfaAdmin', cA, { method: 'POST', body: JSON.stringify({ project_code: pRest, canonical_key: ctrKey, display_name: ctrName }) });
+      check('018e: админ Альфы добавляет подрядчика в Качестве', dIns.ok, `статус ${dIns.status}`);
+      const cpA = await j(await rpc('pf_counterparties_list', { p_company: cA, p_include_archived: false }, tok.alfaAdmin));
+      const cp = Array.isArray(cpA) ? cpA.find((c) => c.name === ctrName) : null;
+      check('018e: подрядчик появился в «Контрагентах» Альфы черновиком без ИНН', !!cp && cp.draft === true && !cp.inn && cp.kinds.includes('contractor'), JSON.stringify(cp));
+      const cpB = await j(await rpc('pf_counterparties_list', { p_company: cB, p_include_archived: false }, tok.betaPto));
+      check('018e: Бета этого подрядчика не видит', Array.isArray(cpB) && !cpB.some((c) => c.name === ctrName));
+      const dirRows = await j(await q(`contractor_directory?select=project_code&canonical_key=eq.${ctrKey}`, 'alfaAdmin', cA));
+      const projA = (await j(await rpc('pf_company_projects', { p_company: cA }, tok.alfaAdmin))).filter((p) => !p.archived_at).map((p) => p.id);
+      check('018e: подрядчик есть в справочнике Качества на всех объектах Альфы', Array.isArray(dirRows) && projA.every((p) => dirRows.some((r) => r.project_code === p)),
+        `объектов ${projA.length}, строк ${Array.isArray(dirRows) ? dirRows.length : dirRows}`);
+      check('018e: Бета не видит справочник Альфы', await cnt('contractor_directory', 'betaPto', cA, `&canonical_key=eq.${ctrKey}`) === 0);
+      // уборка: контрагент — в архив (удаления контрагентов нет), строки справочника Качества — удалить
+      if (cp) await rpc('pf_counterparties_archive', { p_id: cp.id, p_archived: true }, tok.alfaAdmin);
+      await q(`contractor_directory?canonical_key=eq.${ctrKey}`, 'alfaAdmin', cA, { method: 'DELETE' });
     } finally {
       if (asgQ) check('018: назначение ПТО на объект автопроверок отозвано', (await rpc('pf_revoke_assignment', { p_assignment: asgQ }, tok.alfaAdmin)).ok);
       await setMods(false);
