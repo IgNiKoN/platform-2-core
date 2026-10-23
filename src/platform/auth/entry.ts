@@ -6,7 +6,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { createAuthService, getClient, readAuthConfig } from './auth.service.ts';
-import { applyQualityBridge } from './quality-bridge.ts';
+import { applyQualityBridge, QUALITY_COMPANY_KEY, QUALITY_USER_KEY } from './quality-bridge.ts';
 import { createProjectsService } from '../core/projects.service.ts';
 import type { QualityProject } from './quality-bridge.ts';
 import { createPlatform } from './platform.service.ts';
@@ -150,6 +150,10 @@ async function applyQuality(st: PlatformState): Promise<void> {
         return rows.filter((p) => !p.archived_at).map((p): QualityProject => ({ id: p.id, name: p.name }));
       }
     });
+    // P2-0018: кэшу приложения — текущий «компания + пользователь» (закрытые файлы другого входа он удалит).
+    const ls = window.localStorage, company = ls.getItem(QUALITY_COMPANY_KEY) || '';
+    const slot = company ? company + ':' + (ls.getItem(QUALITY_USER_KEY) || '') : '';
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: 'P2_STORAGE_SLOT', slot });
     const shell = rbi().services?.shell;
     if (shell && typeof shell.renderSidebar === 'function') shell.renderSidebar();
     if (shell && typeof shell.renderMobileModuleMenu === 'function') shell.renderMobileModuleMenu();
