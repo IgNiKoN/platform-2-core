@@ -22,3 +22,13 @@ SQL Editor в Chrome владельца; файл → буфер в UTF-8, md5 �
 | `tests/server/022_quality_contractors_fix.sql` | md5 `f7680e7b…`; предупреждение «destructive» — `delete` тестовой строки внутри теста (весь тест откатывается) → «ОТЧЁТ (откат): FAIL всего: 0» |
 | `npm run test:server` | **325 PASS, ИТОГ: PASS** |
 | Снимок RBI после | 74 \| 43 \| f926b2db… \| a920ba97… \| d09a3113… — **= до** |
+
+## Доработка 1 — 023 на сервере (23.10.2026, разрешение владельца «Да, применить»)
+
+| Шаг | Результат |
+|---|---|
+| Снимок RBI до | 74 \| 43 \| f926b2db… \| a920ba97… \| d09a3113… |
+| `023_quality_scope_fix_up.sql` | md5 `80d242edcb3135beea7c74f322bb7472`; предупреждение «update без where» (заполнение `core_created_by` черновиков из `owner_auth_user_id`) → «Success. No rows returned» |
+| `tests/server/023_quality_scope_fix.sql` | md5 `1736df1a…`; «ОТЧЁТ (откат): FAIL всего: 0» |
+| `npm run test:server` | 1-й прогон: 324 PASS, 3 FAIL — «туда-обратно» ждал, что ПТО видит черновик и очередь админа (по новому правилу — только свои); ожидание исправлено. 2-й прогон: **325 PASS** |
+| Снимок RBI после | 74 \| 43 \| f926b2db… \| a920ba97… \| d09a3113… — **= до** |

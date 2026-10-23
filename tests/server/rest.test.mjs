@@ -588,7 +588,9 @@ else {
         const seenBeta = await cnt(t, 'betaPto', cB, `&${key}`);
         const seenBetaHdr = await cnt(t, 'betaPto', cA, `&${key}`);
         const del = await q(`${t}?${key}`, 'alfaAdmin', cA, { method: 'DELETE', headers: { Prefer: 'return=representation' } });
-        const okT = got.core_company_id === cA && seenPto === 1 && seenBeta === 0 && seenBetaHdr === 0 && del.ok;
+        // P2-0018 (023): черновики и очередь — только свои (ПТО чужие не видит)
+        const ptoSees = ['rbi_draft_sessions', 'rbi_sync_queue'].includes(t) ? 0 : 1;
+        const okT = got.core_company_id === cA && seenPto === ptoSees && seenBeta === 0 && seenBetaHdr === 0 && del.ok;
         if (okT) rt++; else check(`018: ${t} — туда-обратно`, false, `компания ${got.core_company_id === cA}, ПТО ${seenPto}, Бета ${seenBeta}/${seenBetaHdr}, удаление ${del.status}`);
       }
       await q(`contractors?id=eq.${stampQ}-ctr`, 'alfaAdmin', cA, { method: 'DELETE' });
