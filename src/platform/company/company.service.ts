@@ -3,6 +3,7 @@
  */
 import { getClient } from '../auth/auth.service.ts';
 import { fetchMyProjects } from '../core/projects.service.ts';
+import { createCoreService } from '../core/core.service.ts';
 
 export interface CompanyRef { company_id: string; company_name: string }
 export interface CatalogRow { action: string; description: string }
@@ -10,7 +11,10 @@ export interface RoleRow { id: string; name: string; template_code: string | nul
 export interface MemberRow {
   user_id: string; email: string | null; assignment_id: string | null; role_id: string | null; role_name: string | null;
   project_id: string | null; project_name: string | null; valid_from: string | null; valid_to: string | null; is_active: boolean | null;
+  /** P2-0018: фирма подрядчика назначения (контрагент ядра). */
+  counterparty_id?: string | null; counterparty_name?: string | null;
 }
+export interface ContractorRef { id: string; name: string; draft?: boolean }
 export interface ProjectRef { id: string; name: string; company_id: string; archived_at?: string | null }
 export interface CompanyAuditRow {
   at: string; actor_email: string | null; action: string; record_id: string; subject_email: string | null;
@@ -29,7 +33,9 @@ export interface CompanyApi {
   renameRole(roleId: string, name: string): Promise<Result>;
   setRoleActions(roleId: string, actions: string[]): Promise<Result>;
   deleteRole(roleId: string): Promise<Result>;
-  assignRole(userId: string, roleId: string, projectId: string | null, validTo: string | null): Promise<Result<string>>;
+  /** Действующие контрагенты компании вида «подрядчик» — фирма для назначения роли с quality.scope.contractor. */
+  listContractors(companyId: string): Promise<ContractorRef[]>;
+  assignRole(userId: string, roleId: string, projectId: string | null, validTo: string | null, counterpartyId?: string | null): Promise<Result<string>>;
   revoke(assignmentId: string): Promise<Result>;
 }
 
@@ -70,7 +76,9 @@ export function createCompanyService(): CompanyApi | null {
     renameRole: (id, name) => call('pf_rename_role', { p_role: id, p_name: name }),
     setRoleActions: (id, actions) => call('pf_set_role_actions', { p_role: id, p_actions: actions }),
     deleteRole: (id) => call('pf_delete_role', { p_role: id }),
-    assignRole: (u, r, p, to) => call<string>('pf_assign_role', { p_user: u, p_role: r, p_project: p, p_valid_to: to }),
+    listContractors: async (co) => ((await createCoreService()?.listCounterparties(co, false)) || [])   // REUSE: контрагенты — ядро
+      .filter((x) => x.kinds.includes('contractor')).map((x) => ({ id: x.id, name: x.name, draft: x.draft })),
+    assignRole: (u, r, p, to, cp) => call<string>('pf_assign_role', { p_user: u, p_role: r, p_project: p, p_valid_to: to, ...(cp ? { p_counterparty: cp } : {}) }),
     revoke: (id) => call('pf_revoke_assignment', { p_assignment: id })
   };
 }

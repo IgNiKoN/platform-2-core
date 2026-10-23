@@ -53,14 +53,39 @@ export function switchDeviceCompany(store: Store, next: string | null): boolean 
   return true;
 }
 
-/** Роль экрана Качества по правам компании (ROLE_MATRIX permission.service.js). Права всё равно проверяет сервер (RLS). */
-export function roleFor(actions: string[], templates: string[]): string {
+/** Роль экрана Качества по правам компании (ROLE_MATRIX permission.service.js). Область записей держит сервер (020,
+ *  quality.row_visible); экрану — роль с тем же разрезом или шире, чтобы его фильтры не прятали то, что отдал сервер:
+ *  manage → «Админ»; своя фирма → «Подрядчик»; правка Качества → «Инженер СК» (свои записи); остальной просмотр
+ *  (Руководство, РП, Прораб, ПТО, Заказчик) → «Директор» — только просмотр, объекты ограничивает сервер
+ *  (решение владельца 23.10.2026: у «РП» старого экрана фильтр по стройобъектам, а не по объектам компании). */
+export function roleFor(actions: string[]): string {
   const has = (a: string): boolean => actions.includes(a);
   if (has('quality.manage') || has('construction.manage')) return 'manager';
+  if (has('quality.scope.contractor')) return 'contractor';
   if (has('quality.edit')) return 'engineer';
-  if (templates.includes('contractor_rep') && actions.length > 0) return 'contractor';
   if (has('quality.view') || has('construction.view') || has('construction.edit')) return 'director';
   return 'guest';
+}
+
+/** Доступ из quality.my_access: projects — назначенные объекты (null — вся компания), contractor — фирма назначения. */
+export interface QualityAccess { actions: string[]; templates: string[]; projects: string[] | null; contractor: string }
+export function parseAccess(data: unknown): QualityAccess {
+  const d = (data && typeof data === 'object' ? data : {}) as { actions?: unknown; templates?: unknown; projects?: unknown; contractor?: unknown };
+  const c = (d.contractor && typeof d.contractor === 'object' ? d.contractor : {}) as { name?: unknown };
+  return {
+    actions: Array.isArray(d.actions) ? d.actions.map(String) : [],
+    templates: Array.isArray(d.templates) ? d.templates.map(String) : [],
+    projects: Array.isArray(d.projects) ? d.projects.map(String) : null,
+    contractor: typeof c.name === 'string' ? c.name : ''
+  };
+}
+
+/** Поля доступа экрана Качества при входе почтой — только из моста: загрузка сохранённых на устройстве настроек
+ *  (Object.assign из user_prefs — в т.ч. прошлого пользователя) их не перетирает; чтение и сохранение — как обычно. */
+export function pinAccess(settings: Record<string, unknown>, values: Record<string, unknown>): void {
+  for (const [k, v] of Object.entries(values)) {
+    Object.defineProperty(settings, k, { configurable: true, enumerable: true, get: () => v, set: () => { /* значение держит мост */ } });
+  }
 }
 
 type CreateClient = (url: string, key: string, opts: Record<string, unknown>) => SupabaseClient;
@@ -214,26 +239,32 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
   wireStorageToken(deps);
   const client = createQualityClient(deps.createClient, deps.cfg, company, deps.platformClient);
   deps.win.supabaseClient = client;
-  const projects = await deps.listProjects(company).catch(() => [] as QualityProject[]);
+  const loadAccess = async (pid: string | null): Promise<QualityAccess> => {
+    const { data, error } = await client.rpc('my_access', { p_project: pid });
+    return parseAccess(error ? null : data);
+  };
+  // «Синхронизация команды» — только свои объекты (назначения роли); вся компания — все объекты.
+  const scope = (await loadAccess(null)).projects;
+  const projects = (await deps.listProjects(company).catch(() => [] as QualityProject[]))
+    .filter((p) => scope === null || scope.includes(p.id));
   const savedProject = deps.store.getItem(PROJECT_PREFIX + company);
   const projectId = projects.some((p) => p.id === savedProject) ? savedProject
     : projects.length === 1 ? projects[0].id : null;
   const cur = st.companies.find((c) => c.id === company);
   const email = st.email;
 
-  const loadAccess = async (pid: string | null): Promise<{ actions: string[]; templates: string[] }> => {
-    const { data, error } = await client.rpc('my_access', { p_project: pid });
-    const d = (!error && data && typeof data === 'object' ? data : {}) as { actions?: unknown; templates?: unknown };
-    return {
-      actions: Array.isArray(d.actions) ? d.actions.map(String) : [],
-      templates: Array.isArray(d.templates) ? d.templates.map(String) : []
-    };
-  };
-  const applyRole = (a: { actions: string[]; templates: string[] }): void => {
+  const applyRole = (a: QualityAccess): void => {
     sync.actions = a.actions;
-    sync.role = roleFor(a.actions, a.templates);
-    const s = deps.win.appSettings;
-    if (s) { s.userRole = sync.role; s.cloudStatus = 'approved'; s.engineerName = email; }
+    sync.role = roleFor(a.actions);
+    // Фирма подрядчика — из назначения роли (020); объекты экрану не передаются: их держит сервер.
+    if (deps.win.appSettings) pinAccess(deps.win.appSettings, { userRole: sync.role, cloudStatus: 'approved', engineerName: email,
+      contractorName: a.contractor, assignedContractor: a.contractor, assignedProjects: [], assigned_projects: [] });
+    // Руководящим ролям экрана (Админ, Директор) — режим «Вся команда», как делал профиль старого Качества (sync-engine).
+    const c = deps.win.syncConfig;
+    if (c && (sync.role === 'manager' || sync.role === 'director') && c.syncMode !== 'full') {
+      c.syncMode = 'full';
+      deps.store.setItem('rbi_sync_config', JSON.stringify(c));
+    }
   };
   const writeConfig = (pid: string | null): void => {
     const c = (deps.win.syncConfig = deps.win.syncConfig || {});

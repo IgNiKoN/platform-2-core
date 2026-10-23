@@ -3,7 +3,7 @@
  *  объект из ядра, роль из прав компании, локальное состояние компаний не смешивается. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyQualityBridge, companyConflict, qualityCompanyFor, roleFor, switchDeviceCompany, QUALITY_COMPANY_KEY } from '../quality-bridge.ts';
+import { applyQualityBridge, companyConflict, parseAccess, pinAccess, qualityCompanyFor, roleFor, switchDeviceCompany, QUALITY_COMPANY_KEY } from '../quality-bridge.ts';
 import type { PlatformState } from '../platform.service.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,13 +29,36 @@ test('компания Качества: только вход почтой и �
   assert.equal(qualityCompanyFor(st({ mode: 'none', companyId: null })), null);
 });
 
-test('роль экрана Качества — из действий компании', () => {
-  assert.equal(roleFor(['quality.view', 'quality.edit', 'quality.manage'], ['company_admin']), 'manager');
-  assert.equal(roleFor(['quality.view', 'quality.edit', 'construction.view'], ['qc_engineer']), 'engineer');
-  assert.equal(roleFor(['quality.view', 'construction.view', 'construction.edit'], ['contractor_rep']), 'contractor');
-  assert.equal(roleFor(['quality.view', 'construction.view', 'construction.edit'], ['foreman']), 'director');
-  assert.equal(roleFor(['quality.view'], ['customer']), 'director');
-  assert.equal(roleFor([], ['economist']), 'guest');
+test('роль экрана Качества — из прав компании (020): та же область, что у сервера, или шире', () => {
+  assert.equal(roleFor(['quality.view', 'quality.edit', 'quality.manage', 'quality.scope.company']), 'manager');
+  assert.equal(roleFor(['quality.view', 'quality.edit', 'construction.view', 'construction.edit']), 'engineer');
+  assert.equal(roleFor(['quality.view', 'construction.view', 'construction.edit', 'quality.scope.contractor']), 'contractor');
+  assert.equal(roleFor(['quality.view', 'construction.view', 'quality.scope.company']), 'director', 'Руководство');
+  assert.equal(roleFor(['quality.view', 'construction.view']), 'director', 'РП / Прораб / ПТО / Заказчик — только просмотр');
+  assert.equal(roleFor(['quality.view', 'quality.edit', 'quality.manage', 'quality.scope.contractor']), 'manager', 'manage важнее фирмы');
+  assert.equal(roleFor([]), 'guest');
+});
+
+test('доступ из my_access: объекты (null — вся компания) и фирма подрядчика', () => {
+  assert.deepEqual(parseAccess({ actions: ['quality.view'], templates: ['pto'], projects: [P1], contractor: null }),
+    { actions: ['quality.view'], templates: ['pto'], projects: [P1], contractor: '' });
+  assert.deepEqual(parseAccess({ actions: [], projects: null, contractor: { id: 'k', name: 'ООО «Альфа-Строй»', keys: [] } }),
+    { actions: [], templates: [], projects: null, contractor: 'ООО «Альфа-Строй»' });
+  assert.deepEqual(parseAccess(null), { actions: [], templates: [], projects: null, contractor: '' });
+});
+
+test('мост: подрядчик — фирма в настройках экрана, объекты экрану не передаются; список объектов — только свои', async () => {
+  const { d, win } = deps({ projects: [{ id: P1, name: 'Спутник' }, { id: P2, name: 'Второй' }],
+    access: { actions: ['quality.view', 'construction.view', 'construction.edit', 'quality.scope.contractor'], templates: ['contractor_rep'],
+      projects: [P2], contractor: { name: 'ООО «Альфа-Строй»' } } });
+  win.appSettings.assignedProjects = ['старый'];
+  const sync = await applyQualityBridge(st(), d);
+  assert.deepEqual(sync!.projects.map((p) => p.id), [P2]);
+  assert.equal(sync!.projectId, P2, 'один свой объект — выбран сам');
+  assert.equal(win.appSettings.userRole, 'contractor');
+  assert.equal(win.appSettings.contractorName, 'ООО «Альфа-Строй»');
+  assert.equal(win.appSettings.assignedContractor, 'ООО «Альфа-Строй»');
+  assert.deepEqual(win.appSettings.assignedProjects, []);
 });
 
 test('смена компании на устройстве: состояние синхронизации откладывается и возвращается, ключи не смешиваются', () => {
@@ -101,7 +124,7 @@ test('мост: один объект — выбран сам; код проек
   assert.equal(win.syncConfig.engineerName, 'tn@alfa.test');
   assert.equal(win.syncConfig.pinHash, null);
   assert.equal(JSON.parse(store.getItem('rbi_sync_config')!).projectCode, P1);
-  assert.deepEqual(rpcCalls[0], { fn: 'my_access', args: { p_project: P1 } });
+  assert.deepEqual(rpcCalls.map((c) => c.args.p_project), [null, P1], 'сначала область объектов, затем права на выбранном объекте');
   assert.equal(win.appSettings.userRole, 'engineer');
   assert.equal(win.appSettings.cloudStatus, 'approved');
   assert.equal(win.inits, 1);
@@ -199,4 +222,30 @@ test('ключи по компании (021): цель upsert старого к�
   assert.deepEqual(calls.map((c) => [c.t, c.o]), [['rbi_inspections', { onConflict: 'core_company_id,id', ignoreDuplicates: false }],
     ['project_settings', { onConflict: 'core_company_id,project_code' }], ['rbi_tasks', undefined]]);
   assert.equal(win.supabaseClient.from('rbi_tasks').select(), 'sel');
+});
+
+test('поля доступа экрана — из моста: загрузка старых настроек устройства (Object.assign) их не перетирает', async () => {
+  const set: N = { theme: 'x' };
+  pinAccess(set, { userRole: 'director', contractorName: '' });
+  Object.assign(set, { userRole: 'manager', contractorName: 'Чужая фирма', theme: 'y' });
+  assert.equal(set.userRole, 'director');
+  assert.equal(set.contractorName, '');
+  assert.equal(set.theme, 'y', 'прочие настройки — как обычно');
+  assert.equal(JSON.parse(JSON.stringify(set)).userRole, 'director', 'сохраняется значение моста');
+  pinAccess(set, { userRole: 'engineer' });
+  assert.equal(set.userRole, 'engineer', 'мост обновляет при смене объекта');
+  const { d, win } = deps({ access: { actions: ['quality.view'], templates: [] } });
+  win.appSettings.userRole = 'manager';
+  await applyQualityBridge(st(), d);
+  Object.assign(win.appSettings, { userRole: 'manager', assignedProjects: ['старый'] });
+  assert.equal(win.appSettings.userRole, 'director');
+  assert.deepEqual(win.appSettings.assignedProjects, []);
+});
+
+test('режим обмена: Админ и Директор — «Вся команда» (full), инженер — как выбрал (по умолчанию «Только мои»)', async () => {
+  const one = async (actions: string[]) => { const { d, win, store } = deps({ access: { actions, templates: [] } }); await applyQualityBridge(st(), d);
+    return [win.syncConfig.syncMode, JSON.parse(store.getItem('rbi_sync_config')!).syncMode]; };
+  assert.deepEqual(await one(['quality.view']), ['full', 'full']);
+  assert.deepEqual(await one(['quality.view', 'quality.manage']), ['full', 'full']);
+  assert.deepEqual(await one(['quality.view', 'quality.edit']), ['personal', 'personal']);
 });

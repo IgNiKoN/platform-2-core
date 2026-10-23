@@ -41,6 +41,7 @@ function fakeApi(opts: { fail?: string } = {}) {
   ];
   const res = <T = null>(value: T): Result<T> => opts.fail ? { ok: false, message: opts.fail } : { ok: true, value };
   const api: CompanyApi = {
+    async listContractors() { return [{ id: 'k1', name: 'ООО «Альфа-Строй»' }, { id: 'k2', name: 'Бета Монтаж', draft: true }]; },
     async myAdminCompanies() { return [{ company_id: 'c1', company_name: 'Альфа' }]; },
     async catalog() { return CATALOG; },
     async listRoles() { return roles; },
