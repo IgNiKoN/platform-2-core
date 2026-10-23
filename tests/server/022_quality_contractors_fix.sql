@@ -60,6 +60,19 @@ begin
   perform pg_temp.as_user(ua, ca);
   s := pg_temp.err(format('insert into quality.contractor_directory(project_code, canonical_key, display_name, core_company_id) values (%L, ''adm_022'', ''Админа 022'', %L)', pa, ca));
   res := res || pg_temp.t(s = 'OK', 'лимит — у каждого пользователя свой (' || s || ')');
+  -- 025: администратор (право вести «Контрагентов») лимитом не ограничен
+  reset role;
+  if exists (select 1 from pg_proc where proname = 'on_directory_insert' and pronamespace = 'quality'::regnamespace
+             and prosrc like '%025: лимит%') then
+    for i in 1..20 loop
+      perform set_config('request.jwt.claim.sub', ua::text, true);
+      insert into core.audit_log(company_id, table_name, record_id, action, actor, new_data)
+        values (ca, 'counterparties', gen_random_uuid(), 'INSERT', ua, '{"source": "quality"}');
+    end loop;
+    perform pg_temp.as_user(ua, ca);
+    s := pg_temp.err(format('insert into quality.contractor_directory(project_code, canonical_key, display_name, core_company_id) values (%L, ''adm2_022'', ''Админа-2 022'', %L)', pa, ca));
+    res := res || pg_temp.t(s = 'OK', 'администратор после 20 за сутки — без лимита (' || s || ')');
+  end if;
 
   -- 3. Правка в ядре не воскрешает удалённую в Качестве строку
   reset role;

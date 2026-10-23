@@ -7,6 +7,10 @@ begin
   if to_regprocedure('quality.contractor_only(uuid)') is null then
     raise exception '024 не применена — откатывать нечего' using errcode = 'P0001';
   end if;
+  if exists (select 1 from pg_proc where proname = 'on_directory_insert' and pronamespace = 'quality'::regnamespace
+             and prosrc like '%025: лимит%') then
+    raise exception 'Сначала откатите 025: 025_quality_drafts_limit_down.sql' using errcode = 'P0001';
+  end if;
 end $$;
 
 do $$
