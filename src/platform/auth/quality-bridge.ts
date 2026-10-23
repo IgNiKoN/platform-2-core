@@ -78,7 +78,26 @@ export function createQualityClient(createClient: CreateClient, cfg: { url: stri
     get(target, prop, receiver) {
       if (prop === 'auth') return platformClient.auth;
       if (prop === 'storage') return storage;
+      if (prop === 'from') return (table: string) => companyKeys(target.from(table) as unknown as Record<string, unknown>);
       return Reflect.get(target, prop, receiver);
+    }
+  });
+}
+
+/** Цель upsert с компанией: ключи записей Качества — (core_company_id, …) (021); компанию строки ставит сервер. */
+export function companyConflict(onConflict: string | undefined): string | undefined {
+  if (!onConflict) return onConflict;
+  const cols = onConflict.split(',').map((c) => c.trim()).filter(Boolean);
+  return (cols.includes('core_company_id') ? cols : ['core_company_id', ...cols]).join(',');
+}
+/** Таблица Качества: старый код пишет upsert(…, { onConflict: 'id' }) — уходит onConflict 'core_company_id,id'. */
+function companyKeys<T extends Record<string, unknown>>(builder: T): T {
+  return new Proxy(builder, {
+    get(target, prop, receiver) {
+      const v = Reflect.get(target, prop, receiver);
+      if (prop !== 'upsert' || typeof v !== 'function') return v;
+      return (values: unknown, opts?: { onConflict?: string } & Record<string, unknown>) =>
+        v.call(target, values, opts?.onConflict ? { ...opts, onConflict: companyConflict(opts.onConflict) } : opts);
     }
   });
 }

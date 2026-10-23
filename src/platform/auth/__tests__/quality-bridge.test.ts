@@ -3,7 +3,7 @@
  *  объект из ядра, роль из прав компании, локальное состояние компаний не смешивается. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyQualityBridge, qualityCompanyFor, roleFor, switchDeviceCompany, QUALITY_COMPANY_KEY } from '../quality-bridge.ts';
+import { applyQualityBridge, companyConflict, qualityCompanyFor, roleFor, switchDeviceCompany, QUALITY_COMPANY_KEY } from '../quality-bridge.ts';
 import type { PlatformState } from '../platform.service.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -181,4 +181,22 @@ test('файлы: клиент моста отдаёт обёрнутый Storag
   onMsg!({ data: { type: 'P2_STORAGE_TOKEN_REQUEST' } });
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(posted.length, 2);
+});
+
+test('ключи по компании (021): цель upsert старого клиента дополняется core_company_id, прочее — без изменений', async () => {
+  assert.equal(companyConflict('id'), 'core_company_id,id');
+  assert.equal(companyConflict('project_code, raw_name'), 'core_company_id,project_code,raw_name');
+  assert.equal(companyConflict('core_company_id,id'), 'core_company_id,id');
+  assert.equal(companyConflict(undefined), undefined);
+  const { d, win } = deps();
+  const calls: N[] = [];
+  d.createClient = (_u: string, _k: string, opts: N) => ({ opts, rpc: async () => ({ data: {}, error: null }), storage: { from: () => ({}) },
+    from: (t: string) => ({ t, schema: 'quality', upsert: (v: N, o: N) => { calls.push({ t, v, o }); return 'q'; }, select: () => 'sel' }) });
+  await applyQualityBridge(st(), d);
+  assert.equal(win.supabaseClient.from('rbi_inspections').upsert([{ id: 'x' }], { onConflict: 'id', ignoreDuplicates: false }), 'q');
+  win.supabaseClient.from('project_settings').upsert({ project_code: P1 }, { onConflict: 'project_code' });
+  win.supabaseClient.from('rbi_tasks').upsert([{ id: 'y' }]);
+  assert.deepEqual(calls.map((c) => [c.t, c.o]), [['rbi_inspections', { onConflict: 'core_company_id,id', ignoreDuplicates: false }],
+    ['project_settings', { onConflict: 'core_company_id,project_code' }], ['rbi_tasks', undefined]]);
+  assert.equal(win.supabaseClient.from('rbi_tasks').select(), 'sel');
 });
