@@ -5,3 +5,5 @@ export type { Status, SeriesKind, LegendItem } from './primitives.ts';
 export { ChartCard, LineChart, BarChart } from './charts.ts';
 export type { ChartTable, LineSeries, Bar } from './charts.ts';
 export { compactNumber, compactRub, dayMonth, monthLabel, daysBetween, niceStep } from './format.ts';
+export { ChessCell, ChessScale, CHESS_STATE_LABEL, P2_CHESS_CSS } from './chess.ts';
+export type { ChessState } from './chess.ts';

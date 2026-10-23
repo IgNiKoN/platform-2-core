@@ -14,6 +14,7 @@ import type { HintRow } from './fact.ts';
 import { FactHistory } from './FactHistory.ts';
 import { FactPending } from './FactPending.ts';
 import { FloorClose } from './FloorClose.ts';
+import { ChessboardTab } from './ChessboardTab.ts';
 import { firstProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';
 
 const PAGE = 100;
@@ -22,8 +23,10 @@ const lastKey = (company: string): string => `pf-last-brigade:${company}`;
 function readLast(company: string): string { try { return window.localStorage.getItem(lastKey(company)) || ''; } catch { return ''; } }
 function writeLast(company: string, id: string): void { try { window.localStorage.setItem(lastKey(company), id); } catch { /* без хранилища — просто не запомним */ } }
 
-export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsApi; me: string }): ReactElement {
+/** mode — подвкладка «Факта»: «Ввод» (по умолчанию) или «Шахматка» (P2-0017); объект выбирается общим списком. */
+export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsApi; me: string; mode?: 'entry' | 'chessboard' }): ReactElement {
   const { api, vor, projects, me } = props;
+  const mode = props.mode || 'entry';
   const [list, setList] = useState<VorProject[] | null>(null);
   const [perms, setPerms] = useState<Record<string, string[]>>({});
   const [projectId, setProjectId] = useState('');
@@ -100,6 +103,12 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
 
   if (list === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   if (!list.length) return h('div', { className: 'pf-muted', 'data-testid': 'ft-noaccess' }, 'Нет доступа к факту: раздел доступен прорабу, руководителю проекта и другим ролям с правом просмотра факта.');
+
+  if (mode === 'chessboard') {
+    return h('div', { className: 'pj-tab ft-tab ft-tab--wide', 'data-testid': 'ft-tab' },
+      h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
+      projectId ? h(ChessboardTab, { api, projects, projectId }) : null);
+  }
 
   const rel = (pos: FactPosition): string => {
     const base = place ? place.path : '';
@@ -228,6 +237,7 @@ function EntryForm(props: { api: FactApi; pos: FactPosition; brigades: Brigade[]
 
 export const FACT_CSS = `
 .ft-tab{max-width:900px}
+.ft-tab--wide{max-width:none}
 .ft-crumbs{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
 .ft-crumb-wrap{display:inline-flex;gap:6px;align-items:center}
 .ft-crumb{border:0;background:transparent;color:var(--primary);font-weight:700;font-size:14px;min-height:36px;padding:0 6px;border-radius:8px;cursor:pointer}

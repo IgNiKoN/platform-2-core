@@ -47,6 +47,13 @@ export function routeFromHash(hash: string): { page: Page; sub: Sub } {
   return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'fact' ? 'fact' : parts[0] === 'ks2' ? 'ks2' : parts[0] === 'summary' ? 'summary' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'summary', sub: parts[1] === 'units' ? 'units' : parts[1] === 'brigades' ? 'brigades' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
 }
 
+/** Подвкладка «Факта» (P2-0017): #/planfact/fact — «Ввод», #/planfact/fact/chessboard — «Шахматка». */
+export type FactSub = 'entry' | 'chessboard';
+export const FACT_SUBS: { id: FactSub; label: string; path: string }[] = [{ id: 'entry', label: 'Ввод', path: '/fact' }, { id: 'chessboard', label: 'Шахматка', path: '/fact/chessboard' }];
+export function factSubFromHash(hash: string): FactSub {
+  return String(hash || '').replace(/^#\/planfact\/?/, '').split('/')[1] === 'chessboard' ? 'chessboard' : 'entry';
+}
+
 /** Что доступно вошедшему (то же правило, что выбор экрана ниже). */
 export interface RouteAccess { company: boolean; estimate: boolean; ks2: boolean; fact: boolean; brigades: boolean }
 
@@ -65,6 +72,7 @@ export function canonicalHash(hash: string, a: RouteAccess): string | null {
     const subOk = parts[1] === r.sub && !((r.sub === 'prices' || r.sub === 'overheads') && !a.estimate) && !(r.sub === 'brigades' && !a.brigades);
     if (!subOk) return `${BASE}/directories/objects`;
   }
+  if (r.page === 'fact' && parts.length > 1 && parts[1] !== '' && parts[1] !== 'chessboard') return `${BASE}/fact`;
   return null;
 }
 
@@ -178,6 +186,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   // «Смета»: только с правом planfact.estimate.manage (сервер проверяет каждый вызов).
   const est = route.page === 'estimate' && mode === 'authed' && canEstimate && estimate && vorApi;
   // «Факт»: при доступе к компании (права на просмотр/ввод/подтверждение сервер проверяет каждым вызовом).
+  const fsub = factSubFromHash(window.location.hash);   // route обновляется при каждом переходе роутера — адрес уже текущий
   const fct = route.page === 'fact' && mode === 'authed' && companies.length > 0 && factApi && vorApi && projects;
   // «КС-2»: с правом planfact.ks2.view / ks2.edit хотя бы в одном проекте.
   const k2 = route.page === 'ks2' && mode === 'authed' && canKs2 && ks2Api && vorApi;
@@ -195,7 +204,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     : k2
     ? h('div', { className: 'pf-root' }, h(Ks2Tab, { api: ks2Api!, vor: vorApi! }))
     : fct
-    ? h('div', { className: 'pf-root' }, h(FactTab, { api: factApi!, vor: vorApi!, projects: projects!, me: who }))
+    ? h('div', { className: 'pf-root' }, h(FactTab, { api: factApi!, vor: vorApi!, projects: projects!, me: who, mode: fsub }))
     : est
     ? h('div', { className: 'pf-root' }, h(EstimateTab, { api: estimate!, vor: vorApi! }))
     : vor
@@ -214,7 +223,11 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     : k2
     ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'КС-2 — акты о приёмке выполненных работ'))
     : fct
-    ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'Факт — выполненные объёмы'))
+    ? h('div', { className: 'pf-root pf-dirhead' },
+        h('h2', { className: 'pf-title' }, 'Факт — выполненные объёмы'),
+        h('div', { className: 'pf-seg', role: 'tablist', 'data-testid': 'pf-facttabs' },
+          FACT_SUBS.map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': fsub === t.id, 'data-sub': t.id,
+            className: 'pf-seg-btn' + (fsub === t.id ? ' pf-seg-btn--active' : ''), onClick: () => nav(`${BASE}${t.path}`) }, t.label))))
     : est
     ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'Смета — тендерная стоимость по ВОР заказчика'))
     : vor

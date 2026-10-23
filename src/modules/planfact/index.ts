@@ -33,6 +33,7 @@ import type { EstimateApi } from './estimate/estimate.service.ts';
 import type { VorApi } from './vor/vor.service.ts';
 import { createFactService } from './fact/fact.service.ts';
 import { FACT_CSS } from './fact/FactTab.ts';
+import { CHESSBOARD_CSS } from './fact/ChessboardTab.ts';
 import type { FactApi } from './fact/fact.service.ts';
 import { createKs2Service } from './ks2/ks2.service.ts';
 import type { Ks2Api } from './ks2/ks2.service.ts';
@@ -46,7 +47,7 @@ import { SUMMARY_PROJECT_CSS } from './summary/ProjectView.ts';
 import { SUMMARY_GAP_CSS } from './summary/Ks2Gap.ts';
 import { DASHBOARD_CSS } from './summary/Dashboard.ts';
 import { ATTENTION_CSS } from './summary/Attention.ts';
-import { P2_UI_CSS } from '../../platform/ui/index.ts';
+import { P2_CHESS_CSS, P2_UI_CSS } from '../../platform/ui/index.ts';
 import { createDataService } from './data.service.ts';
 import type { DataApi } from './data.service.ts';
 import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
@@ -125,7 +126,7 @@ function ensureStyle(doc: Document): void {
   if (doc.getElementById(STYLE_ID)) return;
   const style = doc.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = P2_UI_CSS + PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS + KS2_CSS + KS2_ACT_CSS + KS2_TPL_CSS + SUMMARY_CSS + SUMMARY_PROJECT_CSS + SUMMARY_GAP_CSS + DASHBOARD_CSS + ATTENTION_CSS;
+  style.textContent = P2_UI_CSS + P2_CHESS_CSS + PLANFACT_CSS + PLANFACT_AUTH_CSS + PLANFACT_WORKS_CSS + PLANFACT_TABS_CSS + SCOPE_CSS + PROJECTS_CSS + LOCATIONS_CSS + UNITS_CSS + VOR_CSS + VOR_COLUMNS_CSS + VOR_DRAFT_CSS + VOR_WORKS_CSS + VOR_POSITIONS_CSS + PRICES_CSS + PRICES_IMPORT_CSS + ESTIMATE_CSS + OVERHEADS_CSS + KP_CSS + FACT_CSS + CHESSBOARD_CSS + KS2_CSS + KS2_ACT_CSS + KS2_TPL_CSS + SUMMARY_CSS + SUMMARY_PROJECT_CSS + SUMMARY_GAP_CSS + DASHBOARD_CSS + ATTENTION_CSS;
   doc.head.appendChild(style);
 }
 
