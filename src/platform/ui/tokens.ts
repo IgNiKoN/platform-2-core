@@ -5,7 +5,10 @@
  * Серии графика: светлая пара #2a6f9e / #b9741f (поверхность #ffffff), тёмная #4f93c9 / #b98235 (поверхности #172331, #1e293b, #1c2b39) —
  * валидатор палитры: полоса светлоты, насыщенность, различимость при дальтонизме ΔE ≥ 19, контраст ≥ 3:1 — PASS в обеих темах.
  * Статус (светофор) — всегда слово + иконка + цвет, никогда только цвет.
+ * P2-0019: синий статус («ждёт подтверждения»), затемнение и тень всплывающих панелей; стили реестра (registry/styles.ts) — в той же строке.
  */
+import { P2_REGISTRY_CSS } from './registry/styles.ts';
+
 export const P2_DARK_THEMES = ['dark', 'rbi-dark', 'rbi-dark-v2', 'rbi-dark-v3'] as const;
 
 const dark = P2_DARK_THEMES.map((t) => `html[data-theme="${t}"]`).join(',');
@@ -16,14 +19,16 @@ export const P2_UI_CSS = `
 --p2-chart-muted:rgba(28,43,57,.30);--p2-chart-track:#e7e9ec;--p2-chart-surface:var(--card-bg);
 --p2-status-green-bg:#dcefe2;--p2-status-green-fg:#1d5c30;--p2-status-yellow-bg:#f5e8d3;--p2-status-yellow-fg:#6b4710;
 --p2-status-red-bg:#f6dcd5;--p2-status-red-fg:#7a2a17;--p2-status-grey-bg:#e7e9ec;--p2-status-grey-fg:#4a4a4a;
---p2-status-red-line:rgba(205,90,62,.55);--p2-status-yellow-line:rgba(196,154,95,.65)
+--p2-status-red-line:rgba(205,90,62,.55);--p2-status-yellow-line:rgba(196,154,95,.65);
+--p2-status-blue-bg:#dde8f3;--p2-status-blue-fg:#1f4e79;--p2-overlay:rgba(0,0,0,.35);--p2-shadow:0 8px 24px rgba(0,0,0,.18);
 }
 ${dark}{
 --p2-chart-fact:#4f93c9;--p2-chart-plan:#b98235;--p2-chart-grid:rgba(255,255,255,.10);--p2-chart-muted:rgba(255,255,255,.30);
 --p2-chart-track:rgba(255,255,255,.10);
 --p2-status-green-bg:rgba(36,161,72,.20);--p2-status-green-fg:#9fdcb0;--p2-status-yellow-bg:rgba(196,154,95,.22);--p2-status-yellow-fg:#e8c995;
 --p2-status-red-bg:rgba(205,90,62,.24);--p2-status-red-fg:#f3b3a0;--p2-status-grey-bg:rgba(255,255,255,.08);--p2-status-grey-fg:#c2cad3;
---p2-status-red-line:rgba(205,90,62,.70);--p2-status-yellow-line:rgba(196,154,95,.75)
+--p2-status-red-line:rgba(205,90,62,.70);--p2-status-yellow-line:rgba(196,154,95,.75);
+--p2-status-blue-bg:rgba(79,147,201,.24);--p2-status-blue-fg:#b3d4ee;--p2-overlay:rgba(0,0,0,.55);--p2-shadow:0 8px 24px rgba(0,0,0,.45);
 }
 .p2-num{font-variant-numeric:tabular-nums}
 .p2-kpi{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--rbi-radius-md,8px);padding:14px 16px;display:flex;flex-direction:column;gap:6px;min-width:0}
@@ -42,6 +47,7 @@ ${dark}{
 .p2-badge--yellow{background:var(--p2-status-yellow-bg);color:var(--p2-status-yellow-fg)}
 .p2-badge--red{background:var(--p2-status-red-bg);color:var(--p2-status-red-fg)}
 .p2-badge--grey{background:var(--p2-status-grey-bg);color:var(--p2-status-grey-fg)}
+.p2-badge--blue{background:var(--p2-status-blue-bg);color:var(--p2-status-blue-fg)}
 .p2-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--text-muted);margin:0;padding:0;list-style:none}
 .p2-legend__item{display:inline-flex;align-items:center;gap:6px}
 .p2-chart{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--rbi-radius-md,8px);padding:16px 20px;display:flex;flex-direction:column;gap:10px;min-width:0}
@@ -65,4 +71,4 @@ ${dark}{
 .p2-chart{padding:14px}
 .p2-kpi__value{font-size:18px}
 }
-`;
+` + P2_REGISTRY_CSS;
