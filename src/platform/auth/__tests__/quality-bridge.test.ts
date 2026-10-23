@@ -134,3 +134,51 @@ test('мост: смена компании / выход — перезагру�
   assert.equal(z.reloads(), 0, 'демо без прежней компании — без перезагрузки');
   assert.equal(z.created.length, 0, 'клиент хранилища не создаётся');
 });
+
+// --- этап 5: файлы компании ---
+import { companyStorage, companyPath, companyBucket } from '../quality-bridge.ts';
+
+test('файлы: бакет РБИ → закрытый бакет компании, путь всегда с id компании (без удвоения)', async () => {
+  assert.equal(companyBucket('inspection-photos'), 'quality-inspection-photos');
+  assert.equal(companyBucket('quality-reports'), 'quality-reports');
+  assert.equal(companyPath(A, 'P/inspection/1/a.jpg'), A + '/P/inspection/1/a.jpg');
+  assert.equal(companyPath(A, A + '/x.jpg'), A + '/x.jpg');
+  assert.equal(companyPath(A, '/x.jpg'), A + '/x.jpg');
+  const calls: N[] = [];
+  const raw = { from: (b: string) => {
+    const api: N = { bucket: b };
+    for (const m of ['upload', 'getPublicUrl', 'list', 'remove', 'move', 'download', 'createSignedUrls']) api[m] = function (this: N, ...args: N[]) { calls.push([this.bucket, m, args]); return m; };
+    return api;
+  } };
+  const st = companyStorage(raw as N, A);
+  st.from('inspection-photos').upload('P/1.jpg', 'BLOB', { upsert: true });
+  st.from('reports').getPublicUrl('r1.pdf');
+  st.from('inspection-photos').list('P', { search: 'x' });
+  st.from('inspection-photos').remove(['P/1.jpg', A + '/P/2.jpg']);
+  st.from('library-docs').move('a', 'b');
+  assert.deepEqual(calls, [
+    ['quality-inspection-photos', 'upload', [A + '/P/1.jpg', 'BLOB', { upsert: true }]],
+    ['quality-reports', 'getPublicUrl', [A + '/r1.pdf']],
+    ['quality-inspection-photos', 'list', [A + '/P', { search: 'x' }]],
+    ['quality-inspection-photos', 'remove', [[A + '/P/1.jpg', A + '/P/2.jpg']]],
+    ['quality-library-docs', 'move', [A + '/a', A + '/b']]
+  ]);
+});
+
+test('файлы: клиент моста отдаёт обёрнутый Storage; токен — кэшу приложения (сразу и по запросу)', async () => {
+  const { d, win } = deps();
+  const posted: N[] = [];
+  let onMsg: ((e: N) => void) | null = null;
+  d.serviceWorker = { controller: { postMessage: (m: N) => posted.push(m) }, addEventListener: (_t: string, cb: N) => { onMsg = cb; } };
+  d.platformClient.auth.onAuthStateChange = () => ({ data: { subscription: { unsubscribe() {} } } });
+  d.createClient = (url: string, key: string, opts: N) => ({ opts, rpc: async () => ({ data: {}, error: null }),
+    storage: { from: (b: string) => ({ getPublicUrl: (p: string) => ({ data: { publicUrl: `${url}/storage/v1/object/public/${b}/${p}` } }) }) } });
+  await applyQualityBridge(st(), d);
+  assert.equal(win.supabaseClient.storage.from('inspection-photos').getPublicUrl('P/a.jpg').data.publicUrl,
+    `https://srv/storage/v1/object/public/quality-inspection-photos/${A}/P/a.jpg`);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(posted, [{ type: 'P2_STORAGE_TOKEN', token: 'TOKEN-1' }]);
+  onMsg!({ data: { type: 'P2_STORAGE_TOKEN_REQUEST' } });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(posted.length, 2);
+});

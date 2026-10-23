@@ -456,9 +456,16 @@ window.triggerSync = async function (mode = 'silent') {
     window.getStoragePathFromPublicUrl = function (url, bucketName) {
         if (!url || !bucketName) return '';
         const marker = `/storage/v1/object/public/${bucketName}/`;
-        const idx = url.indexOf(marker);
+        let idx = url.indexOf(marker);
+        let len = marker.length;
+        if (idx === -1) {
+            // P2-0016: файлы компании — в бакете quality-<бакет>, путь <компания>/… (обёртка Storage моста не удвоит компанию)
+            const companyMarker = `/storage/v1/object/public/quality-${bucketName}/`;
+            idx = url.indexOf(companyMarker);
+            len = companyMarker.length;
+        }
         if (idx === -1) return '';
-        return decodeURIComponent(url.slice(idx + marker.length));
+        return decodeURIComponent(url.slice(idx + len));
     };
 
     window.dataUrlToBlob = function (dataUrl) {

@@ -142,6 +142,7 @@ async function applyQuality(st: PlatformState): Promise<void> {
       platformClient: pc,
       cfg,
       createClient: createClient as never,
+      serviceWorker: 'serviceWorker' in navigator ? navigator.serviceWorker as never : null,
       listProjects: async (companyId) => {
         const svc = createProjectsService();   // объекты — из ядра (src/platform/core)
         const rows = svc ? await svc.listProjects(companyId) : [];

@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.59.96';
+const SW_VERSION = '18.59.97';
 // P2-0013: «разработка / выпуск» — из единственного переключателя js/services/config.service.js (выпуск: rbi-quality-* вместо старой версии).
 importScripts('./js/services/config.service.js');
 const CACHE_PREFIX = (self.APP_CONFIG && self.APP_CONFIG.SW_CACHE_PREFIX) || 'platform2-';
@@ -375,9 +375,50 @@ self.addEventListener('activate', event => {
 });
 
 // 4. ПЕРЕХВАТ ЗАПРОСОВ
+// P2-0016 (ADR-068): файлы компаний — в закрытых бакетах quality-*. Ссылки в записях Качества остаются «публичного» вида
+// (…/object/public/quality-…); кэш приложения подставляет вход вошедшего (токен присылает страница — сообщение P2_STORAGE_TOKEN)
+// и берёт файл по …/object/authenticated/…. Только сервер платформы (APP_CONFIG.P2_SUPABASE_URL). Нет связи — офлайн-кэш.
+let p2StorageToken = null;
+let p2TokenKnown = false;   // страница уже сообщила (в т.ч. «вышли» — null): не ждать
+let p2TokenWaiters = [];
+const P2_STORAGE_ORIGIN = (() => { try { return new URL(self.APP_CONFIG.P2_SUPABASE_URL).origin; } catch (e) { return ''; } })();
+
+function isCompanyFileUrl(url) {
+  return !!P2_STORAGE_ORIGIN && url.startsWith(P2_STORAGE_ORIGIN + '/storage/v1/object/public/quality-');
+}
+
+async function p2Token() {
+  if (p2TokenKnown) return p2StorageToken;
+  const list = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+  list.forEach((c) => c.postMessage({ type: 'P2_STORAGE_TOKEN_REQUEST' }));
+  return new Promise((resolve) => {
+    p2TokenWaiters.push(resolve);
+    setTimeout(() => resolve(p2StorageToken), 3000);
+  });
+}
+
+async function fetchCompanyFile(request) {
+  const token = await p2Token();
+  const url = request.url.replace('/storage/v1/object/public/', '/storage/v1/object/authenticated/');
+  try {
+    const res = await fetch(url, { headers: token ? { Authorization: 'Bearer ' + token, apikey: self.APP_CONFIG.P2_SUPABASE_ANON_KEY } : {} });
+    if (res.ok) return res;
+    const cached = await caches.match(request, { ignoreVary: true });
+    return cached || res;
+  } catch (e) {
+    const cached = await caches.match(request, { ignoreVary: true });
+    return cached || Response.error();
+  }
+}
+
 self.addEventListener('fetch', event => {
   if (!event.request.url.startsWith('http')) return;
   if (event.request.method !== 'GET') return;
+
+  if (isCompanyFileUrl(event.request.url)) {
+    event.respondWith(fetchCompanyFile(event.request));
+    return;
+  }
 
   // ✅ НОВОЕ: Полностью пропускаем запросы к облачному хранилищу (Storage)
   if (event.request.url.includes('/storage/v1/object/public/')) {
@@ -472,6 +513,13 @@ self.addEventListener('message', (event) => {
     allowedModules = event.data.modules.slice();
     console.log('[SW] RBI_SW_ALLOWLIST:', allowedModules.join(','));
     event.waitUntil(purgeDisallowedBusinessCache());
+  }
+  if (event.data && event.data.type === 'P2_STORAGE_TOKEN') {
+    p2StorageToken = typeof event.data.token === 'string' && event.data.token ? event.data.token : null;
+    p2TokenKnown = true;
+    const w = p2TokenWaiters; p2TokenWaiters = [];
+    w.forEach((r) => r(p2StorageToken));
+    return;
   }
   if (event.data && event.data.type === 'P2_SW_ALLOWLIST' && Array.isArray(event.data.modules)) {
     p2AllowedModules = event.data.modules.slice();

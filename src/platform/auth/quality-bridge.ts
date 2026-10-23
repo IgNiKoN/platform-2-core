@@ -73,12 +73,58 @@ export function createQualityClient(createClient: CreateClient, cfg: { url: stri
     db: { schema: 'quality' },
     global: { headers: { 'x-company-id': companyId } }
   });
+  const storage = companyStorage(qc.storage as unknown as StorageLike, companyId);
   return new Proxy(qc, {
     get(target, prop, receiver) {
       if (prop === 'auth') return platformClient.auth;
+      if (prop === 'storage') return storage;
       return Reflect.get(target, prop, receiver);
     }
   });
+}
+
+/** Бакет компании для бакета РБИ: файлы компаний — в закрытых quality-<бакет> (018d). */
+export function companyBucket(bucket: string): string {
+  return bucket.startsWith('quality-') ? bucket : 'quality-' + bucket;
+}
+/** Путь файла компании: всегда начинается с id компании (правила Storage 018d берут компанию из первой папки). */
+export function companyPath(companyId: string, path: string): string {
+  const p = String(path || '').replace(/^\/+/, '');
+  return p === companyId || p.startsWith(companyId + '/') ? p : companyId + '/' + p;
+}
+
+type BucketApi = Record<string, (...args: unknown[]) => unknown>;
+interface StorageLike { from(bucket: string): BucketApi }
+/** Методы бакета: какие аргументы — пути (первый; у move/copy — два; у remove/createSignedUrls — массив). */
+const PATH_ARGS: Record<string, 'first' | 'two' | 'list'> = {
+  upload: 'first', update: 'first', download: 'first', getPublicUrl: 'first', createSignedUrl: 'first',
+  createSignedUploadUrl: 'first', uploadToSignedUrl: 'first', info: 'first', exists: 'first', list: 'first',
+  move: 'two', copy: 'two', remove: 'list', createSignedUrls: 'list'
+};
+
+/** Обёртка Storage: старый код пишет «inspection-photos», «reports»… — файл уходит в бакет и папку компании. */
+export function companyStorage(storage: StorageLike, companyId: string): StorageLike {
+  return {
+    from(bucket: string): BucketApi {
+      const api = storage.from(companyBucket(bucket));
+      return new Proxy(api, {
+        get(target, prop, receiver) {
+          const v = Reflect.get(target, prop, receiver);
+          const kind = typeof prop === 'string' ? PATH_ARGS[prop] : undefined;
+          if (typeof v !== 'function' || !kind) return typeof v === 'function' ? v.bind(target) : v;
+          return (...args: unknown[]) => {
+            const a = args.slice();
+            if (kind === 'list') a[0] = Array.isArray(a[0]) ? (a[0] as string[]).map((p) => companyPath(companyId, p)) : a[0];
+            else {
+              a[0] = companyPath(companyId, (a[0] as string) ?? '');
+              if (kind === 'two') a[1] = companyPath(companyId, a[1] as string);
+            }
+            return (v as (...x: unknown[]) => unknown).apply(target, a);
+          };
+        }
+      });
+    }
+  };
 }
 
 export interface QualityProject { id: string; name: string }
@@ -113,6 +159,27 @@ export interface BridgeDeps {
   createClient: CreateClient;
   /** Объекты компании (pf_company_projects) — от имени вошедшего, клиентом платформы. */
   listProjects: (companyId: string) => Promise<QualityProject[]>;
+  /** Кэш приложения (navigator.serviceWorker): ему — токен для закрытых файлов компании (sw.js, P2_STORAGE_TOKEN). */
+  serviceWorker?: { controller: { postMessage(m: unknown): void } | null; addEventListener(t: 'message', cb: (e: { data: unknown }) => void): void } | null;
+}
+
+let swWired = false;
+/** Токен вошедшего — кэшу приложения: сразу, при обновлении сессии и по запросу кэша (после его перезапуска). */
+function wireStorageToken(deps: BridgeDeps): void {
+  const sw = deps.serviceWorker;
+  const pc = deps.platformClient;
+  if (!sw || !pc || swWired) return;
+  swWired = true;
+  const post = async (): Promise<void> => {
+    const token = (await pc.auth.getSession()).data.session?.access_token ?? null;
+    if (sw.controller) sw.controller.postMessage({ type: 'P2_STORAGE_TOKEN', token });
+  };
+  sw.addEventListener('message', (e) => {
+    const d = e.data as { type?: string } | null;
+    if (d && d.type === 'P2_STORAGE_TOKEN_REQUEST') void post();
+  });
+  pc.auth.onAuthStateChange(() => { void post(); });
+  void post();
 }
 
 /** Применить состояние платформы к Качеству. Возвращает активный мост или null. */
@@ -125,6 +192,7 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
   const prev = rbi.qualitySync as QualitySync | null | undefined;
   if (prev && prev.companyId === company) return prev;
 
+  wireStorageToken(deps);
   const client = createQualityClient(deps.createClient, deps.cfg, company, deps.platformClient);
   deps.win.supabaseClient = client;
   const projects = await deps.listProjects(company).catch(() => [] as QualityProject[]);
