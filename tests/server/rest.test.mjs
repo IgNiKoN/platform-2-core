@@ -507,13 +507,20 @@ else {
     const q = (path, k, company, init = {}) => fetch(`${URL_}/rest/v1/${path}`, { ...init, headers: H(k, company, init.headers) });
     const stampQ = 'REST-018-' + Date.now();
     await setMods(true);
+    let asgQ = null;
     try {
       const pRest = (await j(await rpc('pf_company_projects', { p_company: cA }, tok.alfaAdmin))).find((p) => p.name === REST_PROJECT)?.id;
       check('018: объект автопроверок Альфы найден', !!pRest);
+      // ПТО Альфы — на время проверок 018 назначен на объект автопроверок (назначение из блока ВОР к этому моменту отозвано)
+      const ptoU = (await j(await rpc('pf_list_company_members', { p_company: cA }, tok.alfaAdmin))).find((m) => m.email === 'alfa-pto@test.invalid')?.user_id;
+      const ptoR = (await j(await rpc('pf_list_company_roles', { p_company: cA }, tok.alfaAdmin))).find((x) => x.template_code === 'pto')?.id;
+      const aQ = await rpc('pf_assign_role', { p_user: ptoU, p_role: ptoR, p_project: pRest }, tok.alfaAdmin);
+      check('018: ПТО Альфы назначен на объект автопроверок', aQ.ok, `статус ${aQ.status}`);
+      if (aQ.ok) asgQ = await j(aQ);
       // Запись админом Альфы в 5 таблиц: проектная, настройки компании, Стройконтроль v2, библиотека, СК
       const rows = {
         rbi_inspections: { id: stampQ + '-insp', project_code: pRest },
-        sk_records: { id: stampQ + '-sk', project_code: pRest },
+        sk_records: { id: stampQ + '-sk', project_code: pRest, sk_number: stampQ, sk_unique_key: `${pRest}_${stampQ}` },   // номер и ключ СК обязательны (как в public)
         construction_defects_v2: { id: stampQ + '-def' },
         shared_docs: { id: stampQ + '-doc', project_code: pRest },
         rbi_company_settings: { company_id: 'rbi' },
@@ -523,7 +530,8 @@ else {
         const got = r.ok ? (await r.json())[0] : await r.text();
         check(`018: ${t} — админ Альфы пишет, запись привязана к Альфе`, r.ok && got.core_company_id === cA, r.ok ? '' : `статус ${r.status} ${String(got).slice(0, 160)}`);
       }
-      const cnt = async (t, k, company, filter) => { const r = await q(`${t}?select=id${filter || ''}`, k, company); return r.ok ? (await r.json()).length : -r.status; };
+      // select=* — у части таблиц нет колонки id (rbi_company_settings, allowed_projects, project_settings)
+      const cnt = async (t, k, company, filter) => { const r = await q(`${t}?select=*${filter || ''}`, k, company); return r.ok ? (await r.json()).length : -r.status; };
       check('018: ПТО Альфы (просмотр) видит проверку', await cnt('rbi_inspections', 'alfaPto', cA, `&id=eq.${stampQ}-insp`) === 1);
       const ptoW = await q('rbi_inspections', 'alfaPto', cA, { method: 'POST', body: JSON.stringify({ id: stampQ + '-pto', project_code: pRest }) });
       check('018: ПТО Альфы (без права записи) — запись отклонена', !ptoW.ok, `статус ${ptoW.status}`);
@@ -586,6 +594,7 @@ else {
       await q(`contractors?id=eq.${stampQ}-ctr`, 'alfaAdmin', cA, { method: 'DELETE' });
       check(`018: «туда-обратно» по таблицам quality: ${rt} из ${tables.length}`, rt === tables.length);
     } finally {
+      if (asgQ) check('018: назначение ПТО на объект автопроверок отозвано', (await rpc('pf_revoke_assignment', { p_assignment: asgQ }, tok.alfaAdmin)).ok);
       await setMods(false);
     }
   }
