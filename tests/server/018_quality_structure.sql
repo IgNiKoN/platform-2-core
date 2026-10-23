@@ -24,7 +24,7 @@ create or replace function pg_temp.idx(s text, t text) returns text language sql
 do $$
 declare r record; res text := ''; n int := 0; v text;
 begin
-  for r in select tablename t from pg_tables where schemaname = 'quality' order by 1 loop
+  for r in select tablename t from pg_tables where schemaname = 'quality' and tablename <> 'contractor_core_links' order by 1 loop
     n := n + 1;
     if to_regclass('public.' || r.t) is null then res := res || pg_temp.t(false, r.t || ': нет public.' || r.t); continue; end if;
     res := res || pg_temp.t(pg_temp.cols('quality', r.t) = pg_temp.cols('public', r.t), r.t || ': колонки отличаются');

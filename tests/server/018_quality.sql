@@ -71,7 +71,8 @@ begin
   select count(*) into n from information_schema.role_table_grants where table_schema = 'quality' and grantee in ('anon', 'PUBLIC');
   res := res || pg_temp.t(n = 0, 'anon/PUBLIC — без прав на таблицы quality (' || n || ')');
   select count(*), string_agg(tgrelid::regclass::text, ', ') into n, s from pg_trigger tg join pg_class c on c.oid = tg.tgrelid
-   join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname = 'quality' and not tg.tgisinternal and tg.tgname not like '%_bind_company';
+   join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname = 'quality' and not tg.tgisinternal and tg.tgname not like '%_bind_company'
+     and tg.tgname <> 'contractor_directory_to_core';   -- 018e: подрядчик из Качества → «Контрагенты»
   res := res || pg_temp.t(n = 0, 'в quality только триггер привязки к компании (лишние: ' || coalesce(s, '—') || ')');
   select count(*), string_agg(p.proname, ', ') into n, s from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
    where ns.nspname = 'quality' and has_function_privilege('anon', p.oid, 'execute');
@@ -83,7 +84,7 @@ begin
                      from pg_trigger tg where tg.tgrelid = c.oid and tg.tgname like '%_bind_company') a,
                   (select regexp_match(qual, '\{([^}]*)\}') from pg_policies p where p.schemaname = 'quality' and p.tablename = c.relname and p.cmd = 'SELECT') m
              from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
-            where ns.nspname = 'quality' and c.relkind = 'r' order by 1 loop
+            where ns.nspname = 'quality' and c.relkind = 'r' and c.relname <> 'contractor_core_links' order by 1 loop
     t := r.tbl; ntab := ntab + 1;
     if r.a is null or r.m is null then res := res || pg_temp.t(false, t || ': нет триггера привязки или политики чтения'); continue; end if;
     cls := r.a[1]; haspc := r.a[2] = '1';
@@ -192,5 +193,11 @@ begin
   res := res || pg_temp.t(n = 2, 'настройки — по строке на компанию (' || n || ')');
 
   res := res || pg_temp.t(ntab = 55, 'проверено таблиц: ' || ntab || ' из 55');
+  -- служебная таблица 018e (связь подрядчиков с ядром) — клиенту не выдана
+  if to_regclass('quality.contractor_core_links') is not null then
+    select count(*) into n from information_schema.role_table_grants
+     where table_schema = 'quality' and table_name = 'contractor_core_links' and grantee in ('anon', 'authenticated', 'PUBLIC');
+    res := res || pg_temp.t(n = 0, 'quality.contractor_core_links — без прав клиента (' || n || ')');
+  end if;
   raise exception E'ОТЧЁТ (откат), таблиц %:\n%\nFAIL всего: %', ntab, res, (length(res) - length(replace(res, 'FAIL', ''))) / 4;
 end $$;

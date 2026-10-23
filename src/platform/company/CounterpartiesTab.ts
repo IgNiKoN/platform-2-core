@@ -11,13 +11,13 @@ import type { Counterparty, CounterpartyDraft, CounterpartyKind, Requisites } fr
 
 const EMPTY: CounterpartyDraft = { name: '', inn: '', kpp: '', kinds: [], requisites: {} };
 const draftOf = (c: Counterparty): CounterpartyDraft =>
-  ({ name: c.name, inn: c.inn, kpp: c.kpp || '', kinds: [...c.kinds], requisites: { ...c.requisites } });
+  ({ name: c.name, inn: c.inn || '', kpp: c.kpp || '', kinds: [...c.kinds], requisites: { ...c.requisites } });
 
 /** Поиск: часть названия (без регистра) или цифры ИНН. */
 export function matchCounterparty(c: Counterparty, q: string): boolean {
   const s = q.trim().toLowerCase();
   if (!s) return true;
-  return c.name.toLowerCase().includes(s) || (/^\d+$/.test(s.replace(/\s/g, '')) && c.inn.includes(s.replace(/\s/g, '')));
+  return c.name.toLowerCase().includes(s) || (/^\d+$/.test(s.replace(/\s/g, '')) && (c.inn || '').includes(s.replace(/\s/g, '')));
 }
 
 export function CounterpartiesTab(props: { core: CoreApi; companyId: string }): ReactElement {
@@ -114,8 +114,9 @@ export function CounterpartiesTab(props: { core: CoreApi; companyId: string }): 
       list.length
         ? list.map((c) => h('button', { key: c.id, type: 'button', className: 'cp-row' + (edit?.id === c.id ? ' cp-row--active' : ''), 'data-cp-id': c.id,
             onClick: () => { setEdit({ id: c.id, d: draftOf(c) }); setError(''); setNotice(''); } },
-            h('span', { className: 'cp-name' }, c.name, c.archived_at ? h('span', { className: 'co-badge cp-badge' }, 'архив') : null),
-            h('span', { className: 'cp-inn' }, 'ИНН ' + c.inn + (c.kpp ? ' · КПП ' + c.kpp : '')),
+            h('span', { className: 'cp-name' }, c.name, c.archived_at ? h('span', { className: 'co-badge cp-badge' }, 'архив') : null,
+              c.draft ? h('span', { className: 'co-badge cp-badge', 'data-testid': 'cp-draft' }, 'из Качества · нужен ИНН') : null),
+            h('span', { className: 'cp-inn' }, c.inn ? 'ИНН ' + c.inn + (c.kpp ? ' · КПП ' + c.kpp : '') : 'ИНН не указан'),
             h('span', { className: 'cp-kind' }, kindLabels(c.kinds))))
         : h('div', { className: 'pj-empty pf-muted cp-empty', 'data-testid': 'cp-empty' },
             rows.length ? 'Ничего не найдено.' : 'Контрагентов пока нет. Добавьте заказчика — потом его можно выбрать в карточке объекта.')));
