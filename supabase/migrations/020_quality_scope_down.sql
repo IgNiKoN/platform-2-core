@@ -8,6 +8,10 @@ begin
   if to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is null then
     raise exception '020 не применена — откатывать нечего' using errcode = 'P0001';
   end if;
+  if exists (select 1 from pg_constraint where conname = 'allowed_projects_pkey' and conrelid = 'quality.allowed_projects'::regclass
+             and pg_get_constraintdef(oid) like '%core_company_id%') then
+    raise exception 'Сначала откатите 021: 021_quality_keys_down.sql' using errcode = 'P0001';
+  end if;
 end $$;
 
 do $$

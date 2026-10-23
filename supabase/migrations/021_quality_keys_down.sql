@@ -10,6 +10,10 @@ begin
                  and pg_get_constraintdef(oid) like '%core_company_id%') then
     raise exception '021 не применена — откатывать нечего' using errcode = 'P0001';
   end if;
+  if exists (select 1 from pg_proc where proname = 'on_directory_insert' and pronamespace = 'quality'::regnamespace
+             and prosrc like '%20 новых подрядчиков%') then
+    raise exception 'Сначала откатите 022: 022_quality_contractors_fix_down.sql' using errcode = 'P0001';
+  end if;
 end $$;
 
 alter table quality.allowed_projects drop constraint allowed_projects_pkey, add constraint allowed_projects_pkey PRIMARY KEY (code);

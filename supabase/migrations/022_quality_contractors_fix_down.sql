@@ -1,6 +1,17 @@
--- P2-0018: откат 022_quality_contractors_fix_up.sql — функции подрядчиков как в 018e (push_contractor — как в 021).
+-- P2-0018: откат 022_quality_contractors_fix_up.sql — функции подрядчиков как в 018e (push_contractor — как в 021). Применять после 023_down.
 -- Строки справочника, скрытые 022 (архивные подрядчики), остаются скрытыми (данные). Применять до 021_quality_keys_down.sql.
 begin;
+
+do $$
+begin   -- сторожа порядка (ревью P2-0018)
+  if not exists (select 1 from pg_proc where proname = 'on_directory_insert' and pronamespace = 'quality'::regnamespace
+             and prosrc like '%20 новых подрядчиков%') then
+    raise exception '022 не применена — откатывать нечего' using errcode = 'P0001';
+  end if;
+  if to_regprocedure('quality.member_by_email(uuid,text)') is not null then
+    raise exception 'Сначала откатите 023: 023_quality_scope_fix_down.sql' using errcode = 'P0001';
+  end if;
+end $$;
 
 create or replace function quality.push_contractor(p_cp core.counterparties)
 returns void language plpgsql security definer set search_path = pg_catalog, core as $$
