@@ -72,7 +72,8 @@ begin
   res := res || pg_temp.t(n = 0, 'anon/PUBLIC — без прав на таблицы quality (' || n || ')');
   select count(*), string_agg(tgrelid::regclass::text, ', ') into n, s from pg_trigger tg join pg_class c on c.oid = tg.tgrelid
    join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname = 'quality' and not tg.tgisinternal and tg.tgname not like '%_bind_company'
-     and tg.tgname <> 'contractor_directory_to_core';   -- 018e: подрядчик из Качества → «Контрагенты»
+     and tg.tgname <> 'contractor_directory_to_core'    -- 018e: подрядчик из Качества → «Контрагенты»
+     and tg.tgname not like '%_set_author';             -- 020: автор записи
   res := res || pg_temp.t(n = 0, 'в quality только триггер привязки к компании (лишние: ' || coalesce(s, '—') || ')');
   select count(*), string_agg(p.proname, ', ') into n, s from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
    where ns.nspname = 'quality' and has_function_privilege('anon', p.oid, 'execute');
@@ -176,7 +177,8 @@ begin
   -- 8. Назначение на объект: технадзор Альфы на «Спутнике» видит проверку этого объекта, но не настройки компании
   perform pg_temp.as_user(ua_qc, ca);
   n := pg_temp.cnt('select count(*) from quality.rbi_inspections');
-  res := res || pg_temp.t(n = 1, 'технадзор объекта видит проверку объекта (' || n || ')');
+  -- после 020 инженер СК видит только свои проверки (проверку создал админ)
+  res := res || pg_temp.t(n = case when to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null then 0 else 1 end, 'технадзор объекта видит проверку объекта (' || n || ')');
   s := pg_temp.err(i_e);
   res := res || pg_temp.t(s <> 'OK', 'технадзор не меняет настройки компании (' || s || ')');
   reset role;

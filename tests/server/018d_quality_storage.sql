@@ -78,7 +78,8 @@ begin
   -- прораб: Стройконтроль — пишет; Качество — только смотрит
   perform pg_temp.as_user(ufor);
   s := pg_temp.err(format('insert into storage.objects(bucket_id, name) values (''quality-construction-defects'', %L)', ca || '/T018d/f.jpg'));
-  res := res || pg_temp.t(s = 'OK', 'прораб загружает фото замечания Стройконтроля (' || s || ')');
+  -- после 020 прораб — только просмотр
+  res := res || pg_temp.t((s = 'OK') = not (to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null), 'прораб загружает фото замечания Стройконтроля (' || s || ')');
   s := pg_temp.err(format('insert into storage.objects(bucket_id, name) values (''quality-inspection-photos'', %L)', ca || '/T018d/f.jpg'));
   res := res || pg_temp.t(s <> 'OK', 'прораб не загружает фото проверки Качества (' || s || ')');
   n := pg_temp.cnt('select count(*) from storage.objects where bucket_id = ''quality-inspection-photos''');
