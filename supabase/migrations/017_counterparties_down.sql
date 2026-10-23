@@ -1,6 +1,13 @@
 -- P2-0015: откат 017_counterparties_up.sql (контрагенты, право, updated_at/deleted_at ядра). Применять до 016_core_down.sql.
 -- Удаляет контрагентов. Записи журнала о них остаются (журнал неизменяем).
 
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'core' and table_name = 'projects' and column_name = 'customer_id') then
+    raise exception 'Сначала откатите 017_project_links' using errcode = 'P0001';
+  end if;
+end $$;
+
 drop function if exists public.pf_counterparties_list(uuid, boolean);
 drop function if exists public.pf_counterparties_save(uuid, uuid, text, text, text, text[], jsonb);
 drop function if exists public.pf_counterparties_archive(uuid, boolean);
