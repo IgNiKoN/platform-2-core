@@ -13,7 +13,7 @@ export interface MemberRow {
 export interface ProjectRef { id: string; name: string; company_id: string; archived_at?: string | null }
 export interface CompanyAuditRow {
   at: string; actor_email: string | null; action: string; record_id: string; subject_email: string | null;
-  old_data: Record<string, unknown> | null; new_data: Record<string, unknown> | null;
+  old_data: Record<string, unknown> | null; new_data: Record<string, unknown> | null; table_name?: string;
 }
 export type Result<T = null> = { ok: true; value: T } | { ok: false; message: string };
 

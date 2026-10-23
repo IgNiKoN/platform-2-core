@@ -7,10 +7,8 @@ import { mapCompanyError } from './company.service.ts';
 import type { PlanNodeType } from '../../services/locations/types.ts';
 import type { Result } from './company.service.ts';
 
-export interface CompanyAccess {
-  company_id: string; company_name: string;
-  can_manage_projects: boolean; can_manage_units: boolean; can_manage_roles: boolean;
-}
+import type { CompanyAccess } from '../core/core.service.ts';
+export type { CompanyAccess } from '../core/core.service.ts';
 export interface ProjectItem {
   id: string; name: string; code: string | null; archived_at: string | null; created_at: string; can_manage: boolean;
 }

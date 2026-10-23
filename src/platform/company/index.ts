@@ -9,6 +9,8 @@ import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { CompanyApp, COMPANY_CSS, COMPANY_ROUTE_EVENT } from './CompanyApp.ts';
 import { createCompanyService } from './company.service.ts';
+import { createCoreService } from '../core/core.service.ts';
+import type { CoreApi } from '../core/core.service.ts';
 import type { CompanyApi } from './company.service.ts';
 import { createAuthService, readAuthConfig } from '../auth/auth.service.ts';
 import type { AuthApi } from '../auth/auth.service.ts';
@@ -20,12 +22,14 @@ let root: Root | null = null;
 let mountedEl: HTMLElement | null = null;
 let auth: AuthApi | null | undefined;
 let api: CompanyApi | null = null;
+let core: CoreApi | null = null;
 
 function getAuth(): AuthApi | null {
   if (auth === undefined) {
     const cfg = readAuthConfig();
     auth = cfg ? createAuthService(cfg) : null;
     api = auth ? createCompanyService() : null;
+    core = auth ? createCoreService() : null;
   }
   return auth;
 }
@@ -48,7 +52,7 @@ export function mount(el: HTMLElement): void {
   root = createRoot(el);
   const r = root;
   const a = getAuth();
-  flushSync(() => r.render(createElement(CompanyApp, { auth: a, api })));
+  flushSync(() => r.render(createElement(CompanyApp, { auth: a, api, core })));
 }
 
 export function unmount(): void {

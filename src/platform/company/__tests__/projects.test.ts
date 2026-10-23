@@ -29,8 +29,8 @@ type N = any;
 const click = (b: N) => b.dispatchEvent(new win.Event('click', { bubbles: true }));
 const submit = (f: N) => f.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }));
 
-export const ACCESS_ADMIN: CompanyAccess = { company_id: 'c1', company_name: 'Альфа', can_manage_projects: true, can_manage_units: true, can_manage_roles: true };
-export const ACCESS_READ: CompanyAccess = { company_id: 'c1', company_name: 'Альфа', can_manage_projects: false, can_manage_units: false, can_manage_roles: false };
+export const ACCESS_ADMIN: CompanyAccess = { company_id: 'c1', company_name: 'Альфа', can_manage_projects: true, can_manage_units: true, can_manage_roles: true, can_manage_counterparties: true };
+export const ACCESS_READ: CompanyAccess = { company_id: 'c1', company_name: 'Альфа', can_manage_projects: false, can_manage_units: false, can_manage_roles: false, can_manage_counterparties: false };
 
 const P = (id: string, name: string, over: Partial<ProjectItem> = {}): ProjectItem =>
   ({ id, name, code: null, archived_at: null, created_at: '2026-10-21T00:00:00Z', can_manage: true, ...over });

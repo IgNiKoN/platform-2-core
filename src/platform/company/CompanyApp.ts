@@ -1,7 +1,8 @@
 /**
  * Раздел платформы «Компания» (администратор компании): вход — общая форма платформы, вкладки «Роли» / «Сотрудники» / «Журнал».
  * Доступ решает сервер (pf_my_admin_companies → security.roles.assign); без права — понятное сообщение.
- * P2-0011: открытая вкладка — только адрес оболочки #/settings/company/<roles|members|audit> (назад/вперёд, F5, ссылка).
+ * P2-0011: открытая вкладка — только адрес оболочки #/settings/company/<roles|members|counterparties|audit> (назад/вперёд, F5, ссылка).
+ * P2-0015: вкладка «Контрагенты» — справочник ядра (сервис src/platform/core).
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -11,27 +12,30 @@ import { CompanyRoles } from './CompanyRoles.ts';
 import { CompanyMembers, COMPANY_MEMBERS_CSS } from './CompanyMembers.ts';
 import { CompanyAudit } from './CompanyAudit.ts';
 import type { CompanyApi, CompanyRef } from './company.service.ts';
+import { CounterpartiesTab, COUNTERPARTIES_CSS } from './CounterpartiesTab.ts';
+import type { CoreApi } from '../core/core.service.ts';
 
 type Mode = 'loading' | 'login' | 'noaccess' | 'ready';
-type Tab = 'roles' | 'members' | 'audit';
+type Tab = 'roles' | 'members' | 'counterparties' | 'audit';
 
 const BASE = '#/settings/company';
 /** Событие раздела: адрес #/settings/company… показан снова (index.ts — при повторном монтировании в тот же контейнер). */
 export const COMPANY_ROUTE_EVENT = 'company:route';
-/** #/settings/company[/roles|/members|/audit] → вкладка; без вкладки и неизвестная — «Роли». */
+/** #/settings/company[/roles|/members|/counterparties|/audit] → вкладка; без вкладки и неизвестная — «Роли». */
 export function tabFromHash(hash: string): Tab {
   const t = String(hash || '').replace(/^#\/settings\/company\/?/, '').split('/')[0];
-  return t === 'members' || t === 'audit' ? t : 'roles';
+  return t === 'members' || t === 'counterparties' || t === 'audit' ? t : 'roles';
 }
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'roles', label: 'Роли' },
   { id: 'members', label: 'Сотрудники' },
+  { id: 'counterparties', label: 'Контрагенты' },
   { id: 'audit', label: 'Журнал' }
 ];
 
-export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null }): ReactElement {
-  const { auth, api } = props;
+export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null; core?: CoreApi | null }): ReactElement {
+  const { auth, api, core } = props;
   const [mode, setMode] = useState<Mode>('loading');
   const [who, setWho] = useState('');
   const [companies, setCompanies] = useState<CompanyRef[]>([]);
@@ -103,14 +107,15 @@ export function CompanyApp(props: { auth: AuthApi | null; api: CompanyApi | null
             className: 'co-tab' + (tab === t.id ? ' co-tab--active' : ''), onClick: () => go(t.id) }, t.label)))),
       tab === 'roles' ? h(CompanyRoles, { api, companyId, key: companyId }) : null,
       tab === 'members' ? h(CompanyMembers, { api, companyId, me: who, key: companyId }) : null,
+      tab === 'counterparties' && core ? h(CounterpartiesTab, { core, companyId, key: companyId }) : null,
       tab === 'audit' ? h(CompanyAudit, { api, companyId, key: companyId }) : null));
 }
 
-export const COMPANY_CSS = COMPANY_MEMBERS_CSS + `
+export const COMPANY_CSS = COMPANY_MEMBERS_CSS + COUNTERPARTIES_CSS + `
 .co-root{max-width:1200px}
 .co-head{margin-bottom:16px}
 .co-tabs{display:flex;flex-wrap:nowrap;gap:var(--rbi-subtab-gap,6px);padding:4px;border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg);overflow-x:auto;-webkit-overflow-scrolling:touch}
-.co-tab{flex:1 1 0;min-width:5rem;min-height:40px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;padding:8px 12px;border-radius:8px;border:0;background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;text-align:center}
+.co-tab{flex:1 1 0;min-width:max-content;min-height:40px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;padding:8px 12px;border-radius:8px;border:0;background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;text-align:center}
 .co-tab--active{background:var(--accent,var(--primary));color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .co-select{margin-left:8px;font-size:12px;padding:6px 8px;border:1px solid var(--card-border);border-radius:8px;background:var(--card-bg);color:var(--text-main)}
 .co-split{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:16px;align-items:start}

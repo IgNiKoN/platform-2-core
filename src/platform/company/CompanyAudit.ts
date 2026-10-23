@@ -10,6 +10,11 @@ const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
 
 export function auditText(r: CompanyAuditRow): string {
   const o = r.old_data || {}, n = r.new_data || {};
+  if (r.table_name === 'counterparties') {
+    if (r.action === 'INSERT') return `Добавлен контрагент «${str(n.name)}», ИНН ${str(n.inn)}`;
+    if (o.archived !== n.archived) return `Контрагент «${str(n.name)}» ${n.archived ? 'перенесён в архив' : 'возвращён из архива'}`;
+    return `Изменён контрагент «${str(n.name)}»`;
+  }
   const actions = (d: Record<string, unknown>) => (Array.isArray(d.actions) ? (d.actions as string[]) : []);
   switch (r.action) {
     case 'ROLE_CREATE': return `Создана роль «${str(n.name)}»`;
