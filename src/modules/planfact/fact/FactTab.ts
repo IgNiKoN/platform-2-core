@@ -4,16 +4,18 @@
  * у РП — список «На подтверждение». Накопленный факт и % считает сервер (Σ принятых записей); права и допуск перебора — тоже.
  */
 import { createElement as h, useEffect, useState } from 'react';
-import type { FormEvent, ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import type { VorApi, VorProject } from '../vor/vor.service.ts';
 import type { LocationNode, ProjectsApi } from '../../../platform/core/projects.service.ts';
 import type { Brigade, FactApi, FactPosition } from './fact.service.ts';
 import { FACT_APPROVE, FACT_CREATE, FACT_VIEW } from './fact.service.ts';
-import { fmtPct, fmtQty, parseQty, percent, remainder, todayMoscow, vorHints } from './fact.ts';
+import { fmtPct, fmtQty, percent, remainder, vorHints } from './fact.ts';
 import type { HintRow } from './fact.ts';
 import { FactHistory } from './FactHistory.ts';
 import { FactPending } from './FactPending.ts';
 import { FloorClose } from './FloorClose.ts';
+import { ChessboardTab } from './ChessboardTab.ts';
+import { FactEntryForm } from './FactEntryForm.ts';
 import { firstProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';
 
 const PAGE = 100;
@@ -22,8 +24,10 @@ const lastKey = (company: string): string => `pf-last-brigade:${company}`;
 function readLast(company: string): string { try { return window.localStorage.getItem(lastKey(company)) || ''; } catch { return ''; } }
 function writeLast(company: string, id: string): void { try { window.localStorage.setItem(lastKey(company), id); } catch { /* без хранилища — просто не запомним */ } }
 
-export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsApi; me: string }): ReactElement {
+/** mode — подвкладка «Факта»: «Ввод» (по умолчанию) или «Шахматка» (P2-0017); объект выбирается общим списком. */
+export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsApi; me: string; mode?: 'entry' | 'chessboard' }): ReactElement {
   const { api, vor, projects, me } = props;
+  const mode = props.mode || 'entry';
   const [list, setList] = useState<VorProject[] | null>(null);
   const [perms, setPerms] = useState<Record<string, string[]>>({});
   const [projectId, setProjectId] = useState('');
@@ -101,6 +105,12 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
   if (list === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   if (!list.length) return h('div', { className: 'pf-muted', 'data-testid': 'ft-noaccess' }, 'Нет доступа к факту: раздел доступен прорабу, руководителю проекта и другим ролям с правом просмотра факта.');
 
+  if (mode === 'chessboard') {
+    return h('div', { className: 'pj-tab ft-tab ft-tab--wide', 'data-testid': 'ft-tab' },
+      h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
+      projectId ? h(ChessboardTab, { projects, ctx: { api, projectId, me, canCreate, canApprove, brigades, lastBrigade, onBrigade: rememberBrigade } }) : null);
+  }
+
   const rel = (pos: FactPosition): string => {
     const base = place ? place.path : '';
     const own = pos.location_path;
@@ -108,7 +118,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
   };
 
   function entryForm(pos: FactPosition): ReactElement {
-    return h(EntryForm, { key: pos.position_id, api, pos, brigades, lastBrigade, onBrigade: rememberBrigade, onCancel: () => setOpenId(''),
+    return h(FactEntryForm, { key: pos.position_id, api, pos, brigades, lastBrigade, onBrigade: rememberBrigade, onCancel: () => setOpenId(''),
       onSaved: (msg) => { setOpenId(''); setNotice(msg); void refresh(); } });
   }
 
@@ -173,61 +183,9 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
     body);
 }
 
-/** Форма ввода факта по позиции: объём, дата, бригада (по умолчанию последняя), люди, чел.-ч, примечание. */
-function EntryForm(props: { api: FactApi; pos: FactPosition; brigades: Brigade[]; lastBrigade: string; onBrigade: (id: string) => void; onCancel: () => void; onSaved: (msg: string) => void }): ReactElement {
-  const { api, pos, brigades, lastBrigade, onBrigade, onCancel, onSaved } = props;
-  const [qty, setQty] = useState('');
-  const [brigade, setBrigade] = useState(brigades.some((b) => b.id === lastBrigade) ? lastBrigade : '');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const q = parseQty(qty);
-  const after = q !== null && q > 0 ? percent(pos.fact_qty + q, pos.plan_qty) : null;
-  const over = q !== null && pos.fact_qty + q > pos.plan_qty + 1e-9;
-
-  async function submit(ev: FormEvent): Promise<void> {
-    ev.preventDefault();
-    if (busy) return;
-    const f = ev.currentTarget as HTMLFormElement;
-    const val = (k: string): string => (f.elements.namedItem(k) as HTMLInputElement).value.trim();
-    if (q === null || q <= 0) { setError('Введите объём больше нуля'); return; }
-    if (!brigade) { setError('Выберите бригаду'); return; }
-    const date = val('date');
-    if (!date) { setError('Укажите дату'); return; }
-    if (date > todayMoscow()) { setError('Дата не может быть в будущем'); return; }
-    const workers = val('workers') === '' ? null : Number(val('workers'));
-    const mh = val('man_hours') === '' ? null : parseQty(val('man_hours'));
-    if (workers !== null && (!Number.isInteger(workers) || workers < 0)) { setError('Людей — целое число'); return; }
-    if (val('man_hours') !== '' && mh === null) { setError('Чел.-ч — число'); return; }
-    setBusy(true); setError('');
-    onBrigade(brigade);
-    const r = await api.add(pos.position_id, { brigadeId: brigade, date, qty: q, workers, manHours: mh, note: val('note') });
-    setBusy(false);
-    if (!r.ok) { setError(r.message); return; }
-    onSaved(r.value.status === 'pending_approval'
-      ? `Записано, но объём выше допуска плана — ждёт подтверждения РП (в итог пока не входит)`
-      : `Записано: ${fmtQty(q)} ${pos.unit_code}`);
-  }
-
-  return h('form', { className: 'ft-form', onSubmit: (e: FormEvent) => { void submit(e); }, 'data-testid': 'ft-form' },
-    h('div', { className: 'ft-form-grid' },
-      h('label', { className: 'pf-field' }, `Объём, ${pos.unit_code}`, h('input', { name: 'qty', type: 'text', inputMode: 'decimal', autoComplete: 'off', className: 'pj-input pf-num', value: qty, 'data-testid': 'ft-qty', onChange: (e) => setQty((e.target as HTMLInputElement).value) })),
-      h('label', { className: 'pf-field' }, 'Дата', h('input', { name: 'date', type: 'date', className: 'pj-input', defaultValue: todayMoscow(), max: todayMoscow(), 'data-testid': 'ft-date' })),
-      h('label', { className: 'pf-field' }, 'Бригада',
-        h('select', { name: 'brigade', className: 'pj-input', value: brigade, 'data-testid': 'ft-brigade', onChange: (e) => setBrigade((e.target as HTMLSelectElement).value) },
-          h('option', { value: '' }, '— выберите —'), brigades.map((b) => h('option', { key: b.id, value: b.id }, b.name)))),
-      h('label', { className: 'pf-field' }, 'Людей', h('input', { name: 'workers', type: 'number', min: 0, inputMode: 'numeric', className: 'pj-input pf-num' })),
-      h('label', { className: 'pf-field' }, 'Чел.-ч', h('input', { name: 'man_hours', type: 'text', inputMode: 'decimal', className: 'pj-input pf-num' })),
-      h('label', { className: 'pf-field pj-grow' }, 'Примечание', h('input', { name: 'note', type: 'text', className: 'pj-input', maxLength: 300 }))),
-    !brigades.length ? h('div', { className: 'pf-error' }, 'Нет бригад. Попросите ПТО или руководителя добавить их в «Справочники → Бригады».') : null,
-    after !== null ? h('div', { className: over ? 'ft-warn' : 'pf-muted', 'data-testid': 'ft-after' }, over ? `После записи: ${fmtPct(after)} — больше плана; если выше допуска, потребуется подтверждение РП` : `После записи: ${fmtPct(after)}`) : null,
-    error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
-    h('div', { className: 'pj-actions' },
-      h('button', { type: 'submit', className: 'pf-btn', disabled: busy, 'data-testid': 'ft-save' }, 'Записать'),
-      h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: onCancel }, 'Отмена')));
-}
-
 export const FACT_CSS = `
 .ft-tab{max-width:900px}
+.ft-tab--wide{max-width:none}
 .ft-crumbs{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
 .ft-crumb-wrap{display:inline-flex;gap:6px;align-items:center}
 .ft-crumb{border:0;background:transparent;color:var(--primary);font-weight:700;font-size:14px;min-height:36px;padding:0 6px;border-radius:8px;cursor:pointer}
