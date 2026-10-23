@@ -104,3 +104,28 @@ test('подвкладка «Шахматка» в адресе: #/planfact/fact
   assert.equal(canonicalHash('#/planfact/fact/xyz', all), '#/planfact/fact');
   assert.equal(canonicalHash('#/planfact/fact/chessboard', { ...all, fact: false }), '#/planfact');
 });
+
+test('«Этажи × виды работ»: колонки — виды, этаж раскрывается до квартир, % по объёму; выбор вида запоминается', async () => {
+  win.localStorage.removeItem('pf-chess-view');
+  const s = setup();
+  await s.api.add('pa1', { brigadeId: 'b1', date: '2026-10-20', qty: 20, workers: null, manHours: null, note: '' });
+  const el = await mount(s);
+  el.querySelector('[data-view="works"]').click(); await tick();
+  assert.equal(win.localStorage.getItem('pf-chess-view'), 'works');
+  const grid = el.querySelector('[data-testid="cb-grid"]');
+  assert.deepEqual([...grid.querySelectorAll('thead th')].map((t: N) => t.textContent), ['Этаж / квартира', 'Окраска стен'], 'подставной сервер даёт всем позициям один вид работ (wt) — одна колонка');
+  assert.ok(el.querySelector('[data-testid="cb-section"]'), 'выбор секции');
+  assert.equal(grid.querySelectorAll('tr.cb-sub').length, 0, 'квартиры свёрнуты');
+  const tg = grid.querySelector('tr[data-row="эт. 1"] [data-testid="cb-toggle"]');
+  assert.match(tg.textContent, /эт\. 1.*2/);
+  tg.click(); await tick();
+  const subs = [...grid.querySelectorAll('tr.cb-sub th')].map((t: N) => t.textContent);
+  assert.deepEqual(subs, ['Секция 1 · кв. 1', 'Секция 1 · кв. 2']);
+  const kv1 = el.querySelector('tr.cb-sub td [data-testid="p2-chess-cell"]');
+  assert.equal(kv1.getAttribute('data-state'), 'done');
+  assert.ok(el.querySelector('.p2-chess').className.includes('p2-chess'), 'прокрутка вбок — внутри обёртки таблицы');
+  // Повторное открытие — тот же вид.
+  const again = await mount(setup());
+  assert.equal(again.querySelector('[data-view="works"]').getAttribute('aria-selected'), 'true');
+  win.localStorage.removeItem('pf-chess-view');
+});

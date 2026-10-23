@@ -1,5 +1,6 @@
 /**
- * «План/Факт → Факт → Шахматка» (P2-0017): что сделано на каждом этаже. Вид «Этажи × секции» (корпус и вид работ на выбор).
+ * «План/Факт → Факт → Шахматка» (P2-0017): что сделано на каждом этаже. Два вида с переключателем (выбор запоминается на устройстве):
+ * «Этажи × секции» (корпус и вид работ на выбор) и «Этажи/квартиры × виды работ» (корпус и секция; этаж раскрывается до квартир).
  * Данные — те же pf_fact_positions (план, принятый факт, «ждёт подтверждения» считает сервер) и дерево мест ядра; расчёт ячеек —
  * fact/chessboard.ts. Своих данных экран не хранит. Права (просмотр, ввод) проверяет сервер.
  */
@@ -8,11 +9,15 @@ import type { ReactElement } from 'react';
 import type { ProjectsApi } from '../../../platform/core/projects.service.ts';
 import type { FactApi, FactPosition } from './fact.service.ts';
 import { ChessCell, ChessScale, CHESS_STATE_LABEL } from '../../../platform/ui/index.ts';
-import { buildingsOf, cellKey, indexPlaces, loadPlaces, placePositions, sectionGrid, unplacedIn, workTypesOf } from './chessboard.ts';
+import { buildingsOf, cellKey, indexPlaces, loadPlaces, placePositions, sectionGrid, sectionsOf, unplacedIn, workGrid, workTypesOf } from './chessboard.ts';
 import type { CellValue, Grid, PlaceIndex, Placement, Ref } from './chessboard.ts';
 import { fmtPct, fmtQty, remainder } from './fact.ts';
 
 const ALL = '';
+type View = 'sections' | 'works';
+const VIEW_KEY = 'pf-chess-view';
+function readView(): View { try { return window.localStorage.getItem(VIEW_KEY) === 'works' ? 'works' : 'sections'; } catch { return 'sections'; } }
+function writeView(v: View): void { try { window.localStorage.setItem(VIEW_KEY, v); } catch { /* без хранилища — просто не запомним */ } }
 
 /** Главное число и подпись ячейки: % по объёму или «закрыто X из Y». */
 export function cellText(v: CellValue): { main: string; sub: string } {
@@ -34,14 +39,19 @@ export function cellLabel(row: string, col: string, v: CellValue): string {
 interface Sel { row: string; col: string }
 
 /** Таблица шахматки: первая колонка закреплена, прокрутка вбок — внутри таблицы. */
-function GridTable(props: { grid: Grid; corner: string; sel: Sel | null; onPick: (s: Sel) => void; testId: string }): ReactElement {
-  const { grid, corner, sel, onPick, testId } = props;
+function GridTable(props: { grid: Grid; corner: string; sel: Sel | null; onPick: (s: Sel) => void; testId: string; open?: Set<string>; onToggle?: (row: string) => void }): ReactElement {
+  const { grid, corner, sel, onPick, testId, open, onToggle } = props;
+  const rows = grid.rows.filter((r) => !r.parent || (open && open.has(r.parent)));
   return h('div', { className: 'p2-chess', 'data-testid': testId },
     h('table', { className: 'p2-chess__table' },
       h('thead', null, h('tr', null, h('th', { scope: 'col' }, corner),
         grid.cols.map((c) => h('th', { key: c.id, scope: 'col', title: c.name, className: sel && sel.col === c.id ? 'p2-chess__hot' : undefined }, c.name)))),
-      h('tbody', null, grid.rows.map((r) => h('tr', { key: r.key, 'data-row': r.key },
-        h('th', { scope: 'row', className: sel && sel.row === r.key ? 'p2-chess__hot' : undefined }, r.label),
+      h('tbody', null, rows.map((r) => h('tr', { key: r.key, 'data-row': r.key, className: r.parent ? 'cb-sub' : undefined },
+        h('th', { scope: 'row', className: sel && sel.row === r.key ? 'p2-chess__hot' : undefined },
+          r.childCount && onToggle
+            ? h('button', { type: 'button', className: 'cb-toggle', 'aria-expanded': !!open && open.has(r.key), 'data-testid': 'cb-toggle', title: 'Квартиры этажа', onClick: () => onToggle(r.key) },
+                h('span', { 'aria-hidden': 'true', className: 'cb-caret' }, open && open.has(r.key) ? '▾' : '▸'), r.label, h('span', { className: 'cb-kids' }, String(r.childCount)))
+            : r.label),
         grid.cols.map((c) => {
           const v = grid.cells.get(cellKey(r.key, c.id))!;
           const t = cellText(v);
@@ -73,6 +83,9 @@ export function ChessboardTab(props: { api: FactApi; projects: ProjectsApi; proj
   const [building, setBuilding] = useState<string | null>(null);
   const [work, setWork] = useState(ALL);
   const [sel, setSel] = useState<Sel | null>(null);
+  const [view, setView] = useState<View>(readView);
+  const [section, setSection] = useState(ALL);
+  const [open, setOpen] = useState<Set<string>>(new Set());
 
   async function load(pid: string): Promise<void> {
     setData(null); setError(''); setSel(null);
@@ -87,14 +100,18 @@ export function ChessboardTab(props: { api: FactApi; projects: ProjectsApi; proj
       setData(none);
     }
   }
-  useEffect(() => { if (projectId) { setBuilding(null); setWork(ALL); void load(projectId); } }, [projectId]);
+  useEffect(() => { if (projectId) { setBuilding(null); setWork(ALL); setSection(ALL); setOpen(new Set()); void load(projectId); } }, [projectId]);
 
   const blds: Ref[] = useMemo(() => (data ? buildingsOf(data.idx) : []), [data]);
   const b = building !== null && blds.some((x) => x.id === building) ? building : (blds[0] ? blds[0].id : null);
   const works = useMemo(() => (data ? workTypesOf(data.pl.placed.filter((it) => (it.floor.building ? it.floor.building.id : '') === b).map((it) => it.pos)) : []), [data, b]);
   const w = work && works.some((x) => x.id === work) ? work : null;
-  const grid = useMemo(() => (data && b !== null ? sectionGrid(data.idx, data.pl, b, w) : null), [data, b, w]);
-  const loose = data && b !== null ? unplacedIn(data.idx, data.pl, b, w) : [];
+  const secs = useMemo(() => (data && b !== null ? sectionsOf(data.idx, b) : []), [data, b]);
+  const sc = view === 'works' && section !== ALL && secs.some((x) => x.id === section) ? section : null;
+  const grid = useMemo(() => (data && b !== null ? (view === 'works' ? workGrid(data.idx, data.pl, b, sc) : sectionGrid(data.idx, data.pl, b, w)) : null), [data, b, w, view, sc]);
+  const loose = data && b !== null ? unplacedIn(data.idx, data.pl, b, view === 'works' ? null : w) : [];
+  const pickView = (v: View): void => { setView(v); writeView(v); setSel(null); };
+  const toggle = (row: string): void => { const n = new Set(open); if (n.has(row)) n.delete(row); else n.add(row); setOpen(n); };
 
   if (!data) return h('div', { className: 'pf-muted', 'data-testid': 'cb-loading' }, 'Загрузка…');
   if (error) return h('div', { className: 'pf-error', role: 'alert' }, error);
@@ -109,19 +126,28 @@ export function ChessboardTab(props: { api: FactApi; projects: ProjectsApi; proj
   const selV = sel ? grid.cells.get(cellKey(sel.row, sel.col)) : undefined;
 
   return h('div', { className: 'cb-root', 'data-testid': 'cb-root' },
+    h('div', { className: 'pf-seg cb-views', role: 'tablist', 'data-testid': 'cb-views' },
+      ([['sections', 'Этажи × секции'], ['works', 'Этажи × виды работ']] as [View, string][]).map(([id, label]) => h('button', { key: id, type: 'button', role: 'tab', 'aria-selected': view === id,
+        'data-view': id, className: 'pf-seg-btn' + (view === id ? ' pf-seg-btn--active' : ''), onClick: () => pickView(id) }, label))),
     h('div', { className: 'cb-filters' },
       blds.length > 1 ? h('label', { className: 'pf-field' }, 'Корпус',
         h('select', { className: 'pj-input', value: b || '', 'data-testid': 'cb-building', onChange: (e) => { setBuilding((e.target as HTMLSelectElement).value); setSel(null); } },
           blds.map((x) => h('option', { key: x.id, value: x.id }, x.name)))) : null,
-      h('label', { className: 'pf-field' }, 'Вид работ',
-        h('select', { className: 'pj-input', value: w || ALL, 'data-testid': 'cb-work', onChange: (e) => { setWork((e.target as HTMLSelectElement).value); setSel(null); } },
-          h('option', { value: ALL }, 'Все виды работ'), works.map((x) => h('option', { key: x.id, value: x.id }, x.name))))),
+      view === 'sections'
+        ? h('label', { className: 'pf-field' }, 'Вид работ',
+            h('select', { className: 'pj-input', value: w || ALL, 'data-testid': 'cb-work', onChange: (e) => { setWork((e.target as HTMLSelectElement).value); setSel(null); } },
+              h('option', { value: ALL }, 'Все виды работ'), works.map((x) => h('option', { key: x.id, value: x.id }, x.name))))
+        : secs.length > 1 ? h('label', { className: 'pf-field' }, 'Секция',
+            h('select', { className: 'pj-input', value: sc || ALL, 'data-testid': 'cb-section', onChange: (e) => { setSection((e.target as HTMLSelectElement).value); setSel(null); setOpen(new Set()); } },
+              h('option', { value: ALL }, 'Все секции'), secs.map((x) => h('option', { key: x.id, value: x.id }, x.name)))) : null),
     h('div', { className: 'pf-muted cb-mode', 'data-testid': 'cb-mode' },
-      w ? 'В ячейке — % выполнения по объёму; если у вида работ разные единицы — «закрыто позиций X из Y».' : 'В ячейке — «закрыто позиций X из Y» по всем видам работ.'),
+      view === 'works' ? 'В ячейке — % выполнения вида работ по объёму; если у вида разные единицы — «закрыто позиций X из Y». Нажмите на этаж, чтобы увидеть квартиры.'
+        : w ? 'В ячейке — % выполнения по объёму; если у вида работ разные единицы — «закрыто позиций X из Y».' : 'В ячейке — «закрыто позиций X из Y» по всем видам работ.'),
     h(ChessScale, null),
     loose.length ? h('div', { className: 'pf-muted cb-loose', 'data-testid': 'cb-loose' }, `Не разнесено по этажам: ${loose.length} поз. (на корпусе или секции) — в шахматку не входят, факт по ним — во вкладке «Ввод».`) : null,
     h('div', { className: 'cb-layout' + (selV ? ' cb-layout--side' : '') },
-      h(GridTable, { grid, corner: 'Этаж', sel, onPick: (s) => setSel(sel && sel.row === s.row && sel.col === s.col ? null : s), testId: 'cb-grid' }),
+      h(GridTable, { grid, corner: view === 'works' ? 'Этаж / квартира' : 'Этаж', sel, onPick: (s) => setSel(sel && sel.row === s.row && sel.col === s.col ? null : s), testId: 'cb-grid',
+        open: view === 'works' ? open : undefined, onToggle: view === 'works' ? toggle : undefined }),
       selV && sel ? h(CellInfo, { title: `${rowLabel(sel.row)} · ${colLabel(sel.col)}`, v: selV, onClose: () => setSel(null) }) : null));
 }
 
@@ -129,6 +155,11 @@ export const CHESSBOARD_CSS = `
 .cb-root{display:flex;flex-direction:column;gap:10px;min-width:0}
 .cb-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
 .cb-mode,.cb-loose{font-size:12px}
+.cb-views .pf-seg-btn{flex:1 1 auto;padding:8px 10px;letter-spacing:.04em}
+.cb-toggle{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap}
+.cb-caret{display:inline-block;width:12px;color:var(--text-muted)}
+.cb-kids{font-size:11px;font-weight:400;color:var(--text-muted)}
+.p2-chess__table tr.cb-sub th[scope=row]{padding-left:28px;font-weight:400;font-size:12px}
 .cb-layout{display:flex;flex-direction:column;gap:10px;min-width:0}
 .cb-info{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
 .cb-info-nums{display:flex;flex-direction:column;gap:4px;font-size:13px;font-variant-numeric:tabular-nums}

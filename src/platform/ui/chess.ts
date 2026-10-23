@@ -50,7 +50,7 @@ export const P2_CHESS_CSS = `
 .p2-chess{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;border:1px solid var(--card-border);border-radius:var(--rbi-radius-md,8px);background:var(--card-bg)}
 .p2-chess__table{border-collapse:separate;border-spacing:0;font-size:13px;font-variant-numeric:tabular-nums;min-width:100%}
 .p2-chess__table th,.p2-chess__table td{padding:3px;border-bottom:1px solid var(--card-border);text-align:center;vertical-align:middle}
-.p2-chess__table thead th{font-size:12px;font-weight:600;color:var(--text-muted);padding:8px 6px;white-space:nowrap;background:var(--card-bg);max-width:140px;overflow:hidden;text-overflow:ellipsis}
+.p2-chess__table thead th{font-size:12px;font-weight:600;color:var(--text-muted);padding:8px 6px;background:var(--card-bg);min-width:64px;max-width:140px;vertical-align:bottom;overflow-wrap:anywhere;line-height:1.2}
 .p2-chess__table th[scope=row]{position:sticky;left:0;z-index:1;background:var(--card-bg);text-align:left;font-weight:600;color:var(--text-main);padding:6px 10px;white-space:nowrap;border-right:1px solid var(--card-border)}
 .p2-chess__table thead th:first-child{position:sticky;left:0;z-index:2;text-align:left}
 .p2-chess__hot{background:var(--hover-bg)!important}
