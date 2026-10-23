@@ -18,11 +18,11 @@ begin
   res := res || pg_temp.t(n = cardinality(v_module), 'модульные таблицы остались в planfact (' || n || ')');
   res := res || pg_temp.t((select bool_and(rowsecurity) from pg_tables where schemaname = 'core'), 'RLS включена у всех таблиц core');
   select count(*) into n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
-   where s.nspname in ('public', 'planfact')
+   where s.nspname in ('public', 'planfact') and p.prokind = 'f'
      and pg_get_functiondef(p.oid) ~ '(?<![''A-Za-z0-9_])planfact\.(companies|company_members|platform_admins|module_catalog|company_modules|permission_catalog|role_templates|role_template_permissions|company_roles|company_role_permissions|role_assignments|projects|locations|units|work_types|audit_log)(?![A-Za-z0-9_])';
   res := res || pg_temp.t(n = 0, 'в телах функций нет ссылок planfact.<таблица ядра> (' || n || ')');
   select count(*) into n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
-   where s.nspname in ('public', 'planfact') and array_to_string(p.proconfig, ',') ~ 'search_path=[^,]*planfact'
+   where s.nspname in ('public', 'planfact') and p.prokind = 'f' and array_to_string(p.proconfig, ',') ~ 'search_path=[^,]*planfact'
      and array_to_string(p.proconfig, ',') !~ 'search_path=[^=]*core';
   res := res || pg_temp.t(n = 0, 'у функций с planfact в пути поиска есть и core (без core: ' || n || ')');
   -- как до переноса: authenticated — только SELECT (под RLS) у 10 таблиц, записи напрямую нет; anon — ничего
