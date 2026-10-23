@@ -124,8 +124,12 @@ window.hashPin = async function (pin) {
 window.initSync = async function () {
     window.renderSyncUI();
 
+    // P2-0016: вход почтой — клиент хранилища компании уже создан мостом (quality-bridge.ts); цикл запускается один раз.
+    const companyMode = !!(window.RBI && window.RBI.qualitySync && window.supabaseClient);
+    if (window._rbiSyncLoopStarted) return;
+
     try {
-        if (window.supabase && window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL) {
+        if (!companyMode && window.supabase && window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL) {
             window.supabaseClient = window.supabase.createClient(
                 window.APP_CONFIG.SUPABASE_URL,
                 window.APP_CONFIG.SUPABASE_KEY
@@ -150,6 +154,7 @@ window.initSync = async function () {
     // Автосинхронизация запускается только если облако уже включено.
     // При локальной работе приложение вообще не трогаем.
     if (window.syncConfig.enabled && window.syncConfig.engineerName && window.syncConfig.projectCode) {
+        window._rbiSyncLoopStarted = true;
         setTimeout(() => {
             window.triggerSync('silent');
         }, 5000);

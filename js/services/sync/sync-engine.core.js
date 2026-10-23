@@ -166,7 +166,8 @@ window.triggerSync = async function (mode = 'silent') {
     // --- НОВОЕ: Проверка роли при синхронизации ---
     // --- НОВОЕ: Проверка роли при синхронизации ---
     // --- Проверка серверного профиля перед синхронизацией ---
-    try {
+    // P2-0016: при входе почтой роль и допуск — из прав компании (quality-bridge.ts), профиль PIN не читается.
+    if (!(window.RBI && window.RBI.qualitySync)) try {
         const { data: roleData, error: roleError } = await window.supabaseClient
             .from('rbi_engineer_profiles')
             .select('role, cloud_status, assigned_contractor, contractor_name, assigned_projects, settings')

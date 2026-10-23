@@ -37,7 +37,8 @@
     }
     // P2-0013: вошедшему почтой режимы старого Quality не показываются (модуль не открыт — без названия)
     var sh = window.RBI && window.RBI.services && window.RBI.services.shell;
-    if (sh && typeof sh.platformEntryMode === 'function' && sh.platformEntryMode() === 'email') return '';
+    if (sh && typeof sh.platformEntryMode === 'function' && sh.platformEntryMode() === 'email'
+        && !(typeof sh.legacyModuleAllowed === 'function' && sh.legacyModuleAllowed(modeId))) return '';
     var key = MODE_LABEL_KEYS[modeId];
     if (!key) return modeId || '';
     return _t(key, MODE_LABEL_FALLBACKS[modeId] || modeId || '');

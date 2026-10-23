@@ -136,11 +136,7 @@ const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 test('экран «Вход»: по умолчанию «Почта и пароль»; ошибка пароля видна; пустые поля — подсказка', async () => {
   const el = host();
   const calls: string[] = [];
-  renderLoginScreen(el, { signIn: async (e) => { calls.push(e); return { ok: false, message: 'Неверная почта или пароль' }; }, onDemo: () => {}, pinEnabled: false, pinDisabledMessage: 'Облачный вход отключён в dev-сборке' });
-  const tabs = el.querySelectorAll('[role=tab]');
-  assert.equal(tabs[0].textContent, 'Почта и пароль');
-  assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
-  assert.equal(tabs[1].textContent, 'Имя, код проекта и PIN');
+  renderLoginScreen(el, { signIn: async (e) => { calls.push(e); return { ok: false, message: 'Неверная почта или пароль' }; }, onDemo: () => {} });
   const form = el.querySelector('[data-testid=p2-login-email]') as HTMLFormElement;
   const err = el.querySelector('[role=alert]') as HTMLElement;
   form.dispatchEvent(new win.Event('submit', { cancelable: true }) as unknown as Event);
@@ -156,24 +152,21 @@ test('экран «Вход»: по умолчанию «Почта и паро�
   assert.equal((form.querySelector('button[type=submit]') as HTMLButtonElement).disabled, false);
 });
 
-test('экран «Вход»: вкладка PIN — в сборке разработки «облачный вход отключён»; в выпуске — прежняя форма и кнопка оболочки', () => {
-  const off = host();
-  renderLoginScreen(off, { signIn: async () => ({ ok: true }), onDemo: () => {}, pinEnabled: false, pinDisabledMessage: 'Облачный вход отключён в dev-сборке' });
-  (off.querySelectorAll('[role=tab]')[1] as HTMLElement).click();
-  assert.equal((off.querySelector('[data-testid=p2-login-pin]') as HTMLElement).hidden, false);
-  assert.equal((off.querySelector('[data-testid=p2-login-email]') as HTMLElement).hidden, true);
-  assert.match(off.querySelector('[data-testid=p2-login-pin-off]')!.textContent || '', /отключён/);
-  assert.equal(off.querySelector('#gate-sync-name'), null);
-  const on = host();
-  renderLoginScreen(on, { signIn: async () => ({ ok: true }), onDemo: () => {}, pinEnabled: true, pinDisabledMessage: '' });
-  for (const id of ['gate-sync-name', 'gate-sync-code', 'gate-sync-pin']) assert.ok(on.querySelector('#' + id), id);
-  assert.equal(on.querySelector('[data-testid=p2-login-pin-go]')!.getAttribute('data-shell-action'), 'submitAuthGateConnect');
+test('экран «Вход» (P2-0016): только «Почта и пароль» и демо — вкладок и формы PIN нет', () => {
+  const el = host();
+  renderLoginScreen(el, { signIn: async () => ({ ok: true }), onDemo: () => {} });
+  assert.equal(el.querySelectorAll('[role=tab]').length, 0);
+  assert.equal(el.querySelector('[data-testid=p2-login-pin]'), null);
+  for (const id of ['gate-sync-name', 'gate-sync-code', 'gate-sync-pin']) assert.equal(el.querySelector('#' + id), null, id);
+  assert.equal(el.querySelector('[data-shell-action=submitAuthGateConnect]'), null);
+  assert.ok(el.querySelector('[data-testid=p2-login-email]'));
+  assert.doesNotMatch(el.textContent || '', /PIN/);
 });
 
 test('экран «Вход»: «Посмотреть без входа (демо)»', () => {
   const el = host();
   let demo = 0;
-  renderLoginScreen(el, { signIn: async () => ({ ok: true }), onDemo: () => { demo++; }, pinEnabled: false, pinDisabledMessage: '' });
+  renderLoginScreen(el, { signIn: async () => ({ ok: true }), onDemo: () => { demo++; } });
   (el.querySelector('[data-testid=p2-login-demo]') as HTMLElement).click();
   assert.equal(demo, 1);
 });
