@@ -32,3 +32,16 @@ SQL Editor в Chrome владельца; файл → буфер в UTF-8, md5 �
 | `tests/server/023_quality_scope_fix.sql` | md5 `1736df1a…`; «ОТЧЁТ (откат): FAIL всего: 0» |
 | `npm run test:server` | 1-й прогон: 324 PASS, 3 FAIL — «туда-обратно» ждал, что ПТО видит черновик и очередь админа (по новому правилу — только свои); ожидание исправлено. 2-й прогон: **325 PASS** |
 | Снимок RBI после | 74 \| 43 \| f926b2db… \| a920ba97… \| d09a3113… — **= до** |
+
+## Доработка 2 — 024, 025 на сервере (23.10.2026, разрешения владельца «Да, применить» ×2)
+
+| Шаг | Результат |
+|---|---|
+| Снимок RBI до | 74 \| 43 \| f926b2db… \| a920ba97… \| d09a3113… |
+| `024_quality_contractor_dirs_up.sql` | md5 `2da2503e…`; «Success» |
+| `tests/server/024_quality_contractor_dirs.sql` | md5 `0c7c2d01…`; FAIL 0 |
+| `npm run test:server` после 024 | 315 PASS, 11 FAIL — тестовый админ «Альфы» упёрся в лимит 022 (20 черновиков за сутки от прогонов тестов) → ошибка 022: лимит касался и администратора → `025` |
+| `025_quality_drafts_limit_up.sql` | md5 `2c1617e1…`; «Success» |
+| `tests/server/022_quality_contractors_fix.sql` (с проверкой 025) | md5 `b5da10c1…`; «destructive» — `delete` внутри теста (откат) → FAIL 0 |
+| `npm run test:server` | **325 PASS** |
+| Снимок RBI после | 74 \| 43 \| f926b2db… \| a920ba97… \| d09a3113… — **= до** |
