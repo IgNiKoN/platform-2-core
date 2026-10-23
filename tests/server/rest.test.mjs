@@ -4,6 +4,10 @@ const envFile = new URL('../../.env.local', import.meta.url);
 if (!existsSync(envFile)) { console.log('SKIP: нет .env.local (NOT RUN)'); process.exit(0); }
 const env = Object.fromEntries(readFileSync(envFile, 'utf8').split('\n').filter(l => l.includes('=')).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
 const URL_ = env.P2_SUPABASE_URL, ANON = env.P2_SUPABASE_ANON_KEY;
+// P2-0016: сеть до сервера иногда не устанавливает соединение (тайм-аут подключения) — повтор только в этом случае:
+// запрос до сервера не дошёл, повтор безопасен. Остальные ошибки — как есть.
+{ const f0 = globalThis.fetch; globalThis.fetch = async (...a) => { for (let i = 0; ; i++) { try { return await f0(...a); }
+  catch (e) { if (i < 5 && ['UND_ERR_CONNECT_TIMEOUT', 'ENOTFOUND', 'EAI_AGAIN'].includes(e?.cause?.code)) { await new Promise((r) => setTimeout(r, 1000)); continue; } throw e; } } }; }
 let fails = 0;
 const REST_PROJECT = 'REST-автопроверки';   // P2-0011: единственный объект автопроверок в «Альфе» (не архивируется; уборка — scripts/cleanup-test-projects.sql)
 const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`); if (!ok) fails++; };
@@ -482,6 +486,76 @@ else {
   check('014: anon — pf_my_platform и pf_platform_companies закрыты', !(await rpc('pf_my_platform', {})).ok && !(await rpc('pf_platform_companies', {})).ok);
   const directPA = await fetch(`${URL_}/rest/v1/platform_admins`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaAdmin}`, 'Accept-Profile': 'planfact' } });
   check('014: platform_admins не открыта через REST', !directPA.ok, `статус ${directPA.status}`);
+}
+// --- P2-0016 (018): хранилище quality по компаниям через REST. Модули Качество/Стройконтроль у тестовых Альфы и Беты
+// включаются администратором платформы на время проверки и выключаются в конце (014 ожидает только planfact).
+{
+  const qProbe = await fetch(`${URL_}/rest/v1/rbi_inspections?select=id&limit=1`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaAdmin}`, 'Accept-Profile': 'quality' } });
+  if (qProbe.status === 406 || qProbe.status === 404) { console.log(`NOT RUN: раздел quality не открыт в API (статус ${qProbe.status}) — проверки 018 пропущены`); fails++; }
+  else {
+    const pl = await login(env.P2_PLATFORM_ADMIN_EMAIL, env.P2_PLATFORM_ADMIN_PASSWORD);
+    const tPl = pl.json.access_token;
+    check('018: вход администратора платформы', pl.status === 200 && !!tPl);
+    const me = async (k) => { const r = await rpc('pf_my_platform', {}, tok[k]); return r.ok ? r.json() : null; };
+    const cA = (await me('alfaAdmin'))?.companies?.find((c) => c.name === 'Альфа')?.id;
+    const cB = (await me('betaPto'))?.companies?.find((c) => c.name === 'Бета')?.id;
+    const setMods = async (on) => { for (const c of [cA, cB]) for (const m of ['quality', 'construction']) {
+      const r = await rpc('pf_platform_set_module', { p_company: c, p_module: m, p_enabled: on }, tPl);
+      check(`018: модуль ${m} ${on ? 'включён' : 'выключен'} у ${c === cA ? 'Альфы' : 'Беты'}`, r.ok, `статус ${r.status}`); } };
+    const H = (k, company, extra = {}) => ({ apikey: ANON, Authorization: `Bearer ${tok[k] || ANON}`, 'Accept-Profile': 'quality', 'Content-Profile': 'quality',
+      'Content-Type': 'application/json', ...(company ? { 'x-company-id': company } : {}), ...extra });
+    const q = (path, k, company, init = {}) => fetch(`${URL_}/rest/v1/${path}`, { ...init, headers: H(k, company, init.headers) });
+    const stampQ = 'REST-018-' + Date.now();
+    await setMods(true);
+    try {
+      const pRest = (await j(await rpc('pf_company_projects', { p_company: cA }, tok.alfaAdmin))).find((p) => p.name === REST_PROJECT)?.id;
+      check('018: объект автопроверок Альфы найден', !!pRest);
+      // Запись админом Альфы в 5 таблиц: проектная, настройки компании, Стройконтроль v2, библиотека, СК
+      const rows = {
+        rbi_inspections: { id: stampQ + '-insp', project_code: pRest },
+        sk_records: { id: stampQ + '-sk', project_code: pRest },
+        construction_defects_v2: { id: stampQ + '-def' },
+        shared_docs: { id: stampQ + '-doc', project_code: pRest },
+        rbi_company_settings: { company_id: 'rbi' },
+      };
+      for (const [t, row] of Object.entries(rows)) {
+        const r = await q(t, 'alfaAdmin', cA, { method: 'POST', body: JSON.stringify(row), headers: { Prefer: 'return=representation,resolution=merge-duplicates' } });
+        const got = r.ok ? (await r.json())[0] : await r.text();
+        check(`018: ${t} — админ Альфы пишет, запись привязана к Альфе`, r.ok && got.core_company_id === cA, r.ok ? '' : `статус ${r.status} ${String(got).slice(0, 160)}`);
+      }
+      const cnt = async (t, k, company, filter) => { const r = await q(`${t}?select=id${filter || ''}`, k, company); return r.ok ? (await r.json()).length : -r.status; };
+      check('018: ПТО Альфы (просмотр) видит проверку', await cnt('rbi_inspections', 'alfaPto', cA, `&id=eq.${stampQ}-insp`) === 1);
+      const ptoW = await q('rbi_inspections', 'alfaPto', cA, { method: 'POST', body: JSON.stringify({ id: stampQ + '-pto', project_code: pRest }) });
+      check('018: ПТО Альфы (без права записи) — запись отклонена', !ptoW.ok, `статус ${ptoW.status}`);
+      for (const t of Object.keys(rows)) {
+        check(`018: ${t} — ПТО Беты со своей компанией видит 0`, await cnt(t, 'betaPto', cB, `&core_company_id=eq.${cA}`) === 0);
+        check(`018: ${t} — ПТО Беты с заголовком Альфы видит 0`, await cnt(t, 'betaPto', cA) === 0);
+      }
+      const bW = await q('rbi_inspections', 'betaPto', cA, { method: 'POST', body: JSON.stringify({ id: stampQ + '-beta', project_code: pRest }) });
+      check('018: Бета пишет в объект Альфы — отказ', !bW.ok, `статус ${bW.status}`);
+      const bD = await q(`rbi_inspections?id=eq.${stampQ}-insp`, 'betaPto', cA, { method: 'DELETE', headers: { Prefer: 'return=representation' } });
+      check('018: Бета удаляет проверку Альфы — 0 строк', !bD.ok || (await bD.json()).length === 0);
+      check('018: без заголовка компании — 0 строк', await cnt('rbi_inspections', 'alfaAdmin', null) === 0);
+      const anQ = await fetch(`${URL_}/rest/v1/rbi_inspections?select=id`, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'quality', 'x-company-id': cA } });
+      check('018: anon — отказ или 0 строк', !anQ.ok || (await anQ.json()).length === 0, `статус ${anQ.status}`);
+      const noObj = await q('rbi_inspections', 'alfaAdmin', cA, { method: 'POST', body: JSON.stringify({ id: stampQ + '-x', project_code: 'НЕ-ОБЪЕКТ' }) });
+      check('018: проверка без объекта ядра — отказ', !noObj.ok, `статус ${noObj.status}`);
+      const pub = await fetch(`${URL_}/rest/v1/rbi_inspections?select=id&limit=1`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaAdmin}` } });
+      check('018: почтовая учётка в public.rbi_inspections — как до (ADR-067: отказ или 0)', !pub.ok || (await pub.json()).length === 0, `статус ${pub.status}`);
+      for (const prof of ['planfact', 'core']) {
+        const r = await fetch(`${URL_}/rest/v1/companies?select=id`, { headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaAdmin}`, 'Accept-Profile': prof } });
+        check(`018: раздел ${prof} по-прежнему закрыт в API`, !r.ok, `статус ${r.status}`);
+      }
+      // Удаление своей компанией (уборка)
+      for (const [t, row] of Object.entries(rows)) {
+        const key = t === 'rbi_company_settings' ? `company_id=eq.${cA}` : `id=eq.${row.id}`;
+        const d = await q(`${t}?${key}`, 'alfaAdmin', cA, { method: 'DELETE', headers: { Prefer: 'return=representation' } });
+        check(`018: ${t} — админ Альфы удаляет`, d.ok && (await d.json()).length === 1, `статус ${d.status}`);
+      }
+    } finally {
+      await setMods(false);
+    }
+  }
 }
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');
 process.exit(fails ? 1 : 0);
