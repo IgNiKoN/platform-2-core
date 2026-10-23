@@ -21,8 +21,9 @@ import { firstProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';
 const PAGE = 100;
 const NODE_LABEL: Record<string, string> = { building: 'Корпус', section: 'Секция', floor: 'Этаж', apartment: 'Квартира', other: 'Место' };
 const lastKey = (company: string): string => `pf-last-brigade:${company}`;
-function readLast(company: string): string { try { return window.localStorage.getItem(lastKey(company)) || ''; } catch { return ''; } }
-function writeLast(company: string, id: string): void { try { window.localStorage.setItem(lastKey(company), id); } catch { /* без хранилища — просто не запомним */ } }
+/** Последняя бригада на устройстве (общая для «Факта» и закрытия из реестра позиций). */
+export function readLast(company: string): string { try { return window.localStorage.getItem(lastKey(company)) || ''; } catch { return ''; } }
+export function writeLast(company: string, id: string): void { try { window.localStorage.setItem(lastKey(company), id); } catch { /* без хранилища — просто не запомним */ } }
 
 /** mode — подвкладка «Факта»: «Ввод» (по умолчанию) или «Шахматка» (P2-0017); объект выбирается общим списком. */
 export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsApi; me: string; mode?: 'entry' | 'chessboard' }): ReactElement {
@@ -178,7 +179,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
       ? h('div', { className: 'pf-seg ft-seg', role: 'tablist' },
           h('button', { type: 'button', role: 'tab', 'aria-selected': view === 'entry', className: 'pf-seg-btn' + (view === 'entry' ? ' pf-seg-btn--active' : ''), 'data-testid': 'ft-view-entry', onClick: () => setView('entry') }, 'Ввод'),
           h('button', { type: 'button', role: 'tab', 'aria-selected': view === 'pending', className: 'pf-seg-btn' + (view === 'pending' ? ' pf-seg-btn--active' : ''), 'data-testid': 'ft-view-pending', onClick: () => setView('pending') },
-            'На подтверждение', pendingCount ? h('span', { className: 'ft-count', 'data-testid': 'ft-count' }, String(pendingCount)) : null))
+            'Ждёт подтверждения', pendingCount ? h('span', { className: 'ft-count', 'data-testid': 'ft-count' }, String(pendingCount)) : null))
       : null,
     body);
 }

@@ -28,7 +28,8 @@ export interface FactPendingRow {
   created_by_email: string | null; created_at: string;
 }
 export interface FactEntryInput { brigadeId: string; date: string; qty: number; workers: number | null; manHours: number | null; note: string }
-export interface FactBatchInput { projectId: string; brigadeId: string; date: string; workers: number | null; note: string; items: { position_id: string; qty: number }[] }
+/** requireApproval (P2-0019, миграция 027) — «Закрыть через РП»: все строки ждут подтверждения РП даже без перебора. */
+export interface FactBatchInput { projectId: string; brigadeId: string; date: string; workers: number | null; note: string; items: { position_id: string; qty: number }[]; requireApproval?: boolean }
 export interface FactAddResult { id: string; status: 'accepted' | 'pending_approval' }
 export interface BatchResult { batch_id: string; accepted: number; pending: number }
 
@@ -78,7 +79,9 @@ export function createFactService(): FactApi | null {
     history: (position) => list<FactHistoryRow>('pf_fact_history', { p_position: position }, normHistory),
     pending: (project) => list<FactPendingRow>('pf_fact_pending', { p_project: project }, normPending),
     add: (position, e) => call<FactAddResult>('pf_fact_add', { p_position: position, p_brigade: e.brigadeId, p_date: e.date, p_qty: e.qty, p_workers: e.workers, p_man_hours: e.manHours, p_note: e.note || null }),
-    addBatch: (b) => call<BatchResult>('pf_fact_add_batch', { p_project: b.projectId, p_brigade: b.brigadeId, p_date: b.date, p_items: b.items, p_workers: b.workers, p_note: b.note || null }),
+    // Флаг передаётся, только когда нужен: прежний вызов (6 параметров) — как до 027.
+    addBatch: (b) => call<BatchResult>('pf_fact_add_batch', { p_project: b.projectId, p_brigade: b.brigadeId, p_date: b.date, p_items: b.items, p_workers: b.workers, p_note: b.note || null,
+      ...(b.requireApproval ? { p_require_approval: true } : {}) }),
     correct: (entry, qty, reason) => call<{ id: string; status: string }>('pf_fact_correct', { p_entry: entry, p_qty: qty, p_reason: reason }),
     decide: (entry, approve, note) => call('pf_fact_decide', { p_entry: entry, p_approve: approve, p_note: note || null })
   };

@@ -4,6 +4,8 @@
 import type { Light, LightReason, PaceVerdict, SummaryProject } from './summary.service.ts';
 import { money } from '../estimate/prices.ts';
 import { ruDate } from '../ks2/form.ts';
+import { daysBetween } from '../../../platform/ui/format.ts';
+import type { Status } from '../../../platform/ui/primitives.ts';
 
 export const LIGHT_LABEL: Record<Light, string> = { green: 'В срок', yellow: 'Риск', red: 'Отставание', grey: 'Нет данных' };
 
@@ -39,3 +41,51 @@ export const rub = (v: number | null): string => (v === null ? '—' : `${money(
 export const rubDay = (v: number | null): string => (v === null ? '—' : `${money(v)} ₽/дн.`);
 export const dateOr = (d: string | null, empty = '—'): string => (d ? ruDate(d) : empty);
 export const pctText = (v: number | null): string => (v === null ? '—' : `${v.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} %`);
+
+/* ── P2-0019: статус позиции ВОР для реестра, карточки и выгрузки (единый источник) ── */
+export type PositionState = 'not_started' | 'in_work' | 'pending' | 'rejected' | 'done';
+/** Темп к сроку объекта: done — выполнено; no_finish — нет срока объекта; past — срок прошёл; late — не успевает; ok — успевает; no_pace — за 14 дней нет факта, до срока ≥ 14 дней. */
+export type PositionPace = 'done' | 'no_finish' | 'past' | 'late' | 'ok' | 'no_pace';
+export interface PositionStatus {
+  state: PositionState; label: string; tone: Status;
+  /** Шаг процесса «Не начато → В работе → Выполнено» (по факту); «Ждёт РП» — отдельно (pending). */
+  step: 'not_started' | 'in_work' | 'done'; pending: boolean;
+  overdue: boolean; pace: PositionPace; paceText: string;
+}
+export const POSITION_STATE_LABEL: Record<PositionState, string> = { not_started: 'Не начато', in_work: 'В работе', pending: 'Ждёт РП', rejected: 'Отклонено', done: 'Выполнено' };
+/** Палитра реестра (DESIGN_SYSTEM): красный — просрочено / отклонено, оранжевый (токен yellow) — в работе, синий — ждёт РП, зелёный — выполнено, серый — не начато. */
+const STATE_TONE: Record<PositionState, Status> = { not_started: 'grey', in_work: 'yellow', pending: 'blue', rejected: 'red', done: 'green' };
+export const PACE_WINDOW_DAYS = 14;
+
+export interface PositionNumbers { plan_qty: number; fact_qty: number; fact14: number; pending_qty: number; pending_count?: number; last_rejected_note?: string | null }
+
+/**
+ * Статус позиции и «просрочено по темпу» (решение владельца 23.10.2026): позиция не выполнена и при темпе последних 14 дней
+ * (fact14 / 14 в день) не успевает к плановому окончанию объекта; срок прошёл, позиция не выполнена — тоже просрочена.
+ * Темп 0: до срока меньше 14 дней — просрочена, иначе «нет темпа» (серый). Без срока объекта «просрочено» не считается.
+ * Числа — как пришли с сервера (pf_summary_positions, pf_fact_positions); здесь только правило.
+ */
+export function positionStatus(p: PositionNumbers, ctx: { today: string; plannedFinish: string | null }): PositionStatus {
+  const rest = Math.max(0, p.plan_qty - p.fact_qty);
+  const done = p.plan_qty > 0 ? rest <= 1e-9 : p.fact_qty > 0;
+  const pending = p.pending_qty > 0 || (p.pending_count || 0) > 0;
+  const step = done ? 'done' : p.fact_qty > 0 ? 'in_work' : 'not_started';
+  const state: PositionState = pending ? 'pending' : done ? 'done' : p.last_rejected_note ? 'rejected' : step;
+  let pace: PositionPace; let overdue = false; let paceText: string;
+  if (done) { pace = 'done'; paceText = 'Выполнено'; }
+  else if (!ctx.plannedFinish) { pace = 'no_finish'; paceText = 'Нет срока объекта — «просрочено» не считается'; }
+  else {
+    const left = daysBetween(ctx.today, ctx.plannedFinish);
+    const rate = p.fact14 / PACE_WINDOW_DAYS;
+    if (left < 0) { pace = 'past'; overdue = true; paceText = `Срок объекта прошёл (${ruDate(ctx.plannedFinish)}), позиция не выполнена`; }
+    else if (rate > 0) {
+      const need = Math.ceil(rest / rate - 1e-9);
+      overdue = need > left;
+      pace = overdue ? 'late' : 'ok';
+      paceText = overdue ? `При темпе 14 дней нужно ещё ${need} дн., до срока ${left} дн.` : `Успевает: нужно ${need} дн., до срока ${left} дн.`;
+    } else if (left < PACE_WINDOW_DAYS) { pace = 'late'; overdue = true; paceText = `За 14 дней нет факта, до срока ${left} дн.`; }
+    else { pace = 'no_pace'; paceText = `Нет темпа: за 14 дней нет факта, до срока ${left} дн.`; }
+  }
+  const tone: Status = state === 'pending' || state === 'done' || state === 'rejected' ? STATE_TONE[state] : overdue ? 'red' : STATE_TONE[state];
+  return { state, label: POSITION_STATE_LABEL[state], tone, step, pending, overdue, pace, paceText };
+}

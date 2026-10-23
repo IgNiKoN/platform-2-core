@@ -5,7 +5,8 @@
 import { createElement as h } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
-export type Status = 'green' | 'yellow' | 'red' | 'grey';
+/** P2-0019: blue — «ждёт подтверждения» (палитра реестра). */
+export type Status = 'green' | 'yellow' | 'red' | 'grey' | 'blue';
 
 /** Плитка показателя: подпись, значение, подсказка; tone — рамка статуса (red / yellow), дополнительное содержимое (прогресс, бейдж). */
 export function KpiTile(props: { label: string; value: string; hint?: ReactNode; tone?: Status; metric?: string; children?: ReactNode }): ReactElement {
@@ -33,6 +34,7 @@ const ICON: Record<Status, ReactElement> = {
   yellow: h('path', { d: 'M12 4l9 16H3zM12 10v4M12 17.5h.01' }),
   red: h('g', null, h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M12 7.5v5.5M12 16.5h.01' })),
   grey: h('path', { d: 'M6 12h12' }),
+  blue: h('g', null, h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M12 7v5l3 2' })),
 };
 
 /** Бейдж статуса: всегда слово + иконка + цвет (не только цвет). */

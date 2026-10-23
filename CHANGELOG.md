@@ -1,5 +1,12 @@
 # Changelog — platform-2-core
 
+## P2-0019 — реестры оболочки (пакет А) на позициях ВОР
+
+- Миграция `027_fact_force_approval` (сервер, 24.10.2026): `pf_fact_add_batch` + `p_require_approval boolean default false` — при `true` строка, принятая по правилу перебора, переводится в `pending_approval` (журнал `FORCE_PENDING`, пометка «Закрытие через РП»); права, проверки, перебор — `planfact.fact_insert` без изменений; прежний вызов из 6 параметров — как в 009. Откат — `027_fact_force_approval_down.sql`.
+- Оболочка `src/platform/ui/registry/`: `RegistryTable` (колонки и выбор колонок, сортировка, чипы с «×», панель «Фильтрация» Сбросить/Применить — на телефоне на весь экран, «Только просроченные», выбор и «Выбрано: N», группы «Всего: N» с мини-счётчиками, пустое состояние), `model.ts` (фильтры, сортировка, группы, вид ↔ адрес), `views.ts` (личные виды на устройстве по компании и пользователю), `export.ts` (Excel — видимые колонки), `SideCard.ts` (карточка «пред./след.», `Steps`, `HistoryFeed`), `styles.ts`; синий статус и токены `--p2-overlay` / `--p2-shadow` в `tokens.ts`, `StatusBadge` + `blue`.
+- «План/Факт → ВОР»: подвкладки «Загрузка» / «Позиции (N)» (`#/planfact/vor/positions[?вид]`); реестр позиций — `vor/PositionsRegistry.ts` на `pf_summary_positions` + `pf_fact_positions` + `pf_fact_history`, срок — `pf_summary_portfolio`; статус и «просрочено по темпу 14 дней» — одна функция `positionStatus` (`summary/model.ts`); действия — `vor/PositionActions.ts` (выгрузка, «Закрыть выбранные», «Закрыть через РП» — форма `FloorClose`, частями по 500). «Факт» — «Ждёт подтверждения (N)».
+- Тесты: unit 385 (+ `registry*.test.ts`), `check:ts` 0; PGlite `027` FAIL 0, откат побайтно, регрессия 002–026 как до; сервер: SQL-тест 027 FAIL 0, снимок RBI до = после, `test:server` 330 PASS + 2 FAIL 013 (дата UTC/МСК после полуночи — ТД №130, не 027).
+
 ## P2-0018 — Качество 2.0: видимость по ролям проверяет сервер; техдолг №99, 117–121
 
 - Миграция `020_quality_scope` (сервер, 23.10.2026): `quality.row_visible` — область записи по назначению роли (вся компания: `quality.scope.company` или `*.manage`; свои объекты; свои записи — проверки и задачи инженера, автор `core_created_by` ставит сервер; своя фирма-подрядчик — `quality.scope.contractor` + `role_assignments.counterparty_id`), правила select/insert/update/delete 13 таблиц с записями; шаблоны: РП, Прораб, ПТО, Заказчик — только просмотр; `pf_assign_role` + фирма, `pf_list_company_members` + фирма; `quality.my_access` + объекты и фирма.
