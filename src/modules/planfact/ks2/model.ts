@@ -4,16 +4,24 @@
  */
 import { emptyKs2Header, type Ks2Header, type Ks2Row, type Ks2Snapshot } from './form.ts';
 import type { Ks2ActData, Ks2ProposalRow, Ks2RowEdit, Ks2Status } from './ks2.service.ts';
+import { requisitesLine } from '../../../platform/core/counterparties.ts';
 
 export const STATUS_LABEL: Record<Ks2Status, string> = { draft: 'черновик', issued: 'выдан', annulled: 'аннулирован' };
 
 const HEADER_KEYS = Object.keys(emptyKs2Header()) as (keyof Ks2Header)[];
 
-/** Шапка: последняя редакция → иначе запомненные реквизиты проекта; номер, дата и период — всегда из акта. */
+/**
+ * Шапка: последняя редакция → иначе запомненные реквизиты проекта; номер, дата и период — всегда из акта.
+ * P2-0015: без редакции пустые «Заказчик» и подпись заказчика берутся из карточки заказчика объекта (ядро); заполненное вручную сильнее.
+ */
 export function actHeader(d: Ks2ActData): Ks2Header {
   const src: Partial<Ks2Header> = d.last_revision ? d.last_revision.snapshot.header : d.requisites;
   const h = emptyKs2Header();
   for (const k of HEADER_KEYS) h[k] = String(src?.[k] ?? '');
+  if (!d.last_revision && d.customer) {
+    if (!h.customer.trim()) h.customer = requisitesLine(d.customer);
+    if (!h.customer_signer.trim() && d.customer.requisites?.signer) h.customer_signer = d.customer.requisites.signer;
+  }
   h.act_no = d.act.act_no; h.act_date = d.act.act_date; h.period_from = d.act.period_from; h.period_to = d.act.period_to;
   return h;
 }

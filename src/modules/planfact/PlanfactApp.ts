@@ -10,6 +10,7 @@ import type { AccessEntry, AuthApi } from '../../platform/auth/auth.service.ts';
 import { PLATFORM_AUTH_CSS } from '../../platform/auth/LoginForm.ts';
 import { CompanyScope } from '../../platform/company/CompanyScope.ts';
 import { ProjectsTab } from '../../platform/company/ProjectsTab.ts';
+import type { CoreApi } from '../../platform/core/core.service.ts';
 import { UnitsTab } from '../../platform/company/UnitsTab.ts';
 import { VorTab } from './vor/VorTab.ts';
 import { BrigadesTab } from './fact/BrigadesTab.ts';
@@ -73,7 +74,7 @@ function accessLabel(entries: AccessEntry[]): string {
   return Array.from(new Set(parts)).join('; ');
 }
 
-export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; estimate?: EstimateApi | null; fact?: FactApi | null; ks2?: Ks2Api | null; summary?: SummaryApi | null; onAccess?: (hasDirectories: boolean, hasEstimate: boolean, hasKs2: boolean) => void }): ReactElement {
+export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; estimate?: EstimateApi | null; fact?: FactApi | null; ks2?: Ks2Api | null; summary?: SummaryApi | null; core?: CoreApi | null; onAccess?: (hasDirectories: boolean, hasEstimate: boolean, hasKs2: boolean) => void }): ReactElement {
   const { auth, projects, vor: vorApi, estimate, fact: factApi, ks2: ks2Api, summary: summaryApi, onAccess } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [who, setWho] = useState('');
@@ -204,7 +205,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
         : route.sub === 'brigades' && factApi ? h(BrigadesTab, { api: factApi, company: c })
         : route.sub === 'prices' && canEstimate && estimate ? h(PricesTab, { api: estimate, vor: vorApi || null, company: c })
         : route.sub === 'overheads' && canEstimate && estimate ? h(OverheadTemplateTab, { api: estimate, company: c })
-        : h(ProjectsTab, { api: projects, company: c }) })
+        : h(ProjectsTab, { api: projects, company: c, core: props.core }) })
     : h('div', { className: 'pf-root' }, h('div', { className: 'pf-card pf-hint', 'data-testid': 'pf-hint' },
         h('div', null, hint),
         mode === 'demo' ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pf-hint-vor', onClick: () => nav(`${BASE}/vor`) }, 'Разбор файла ВОР') : null));

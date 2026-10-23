@@ -13,6 +13,8 @@ import { PROJECTS_CSS } from '../../platform/company/ProjectsTab.ts';
 import { LOCATIONS_CSS } from '../../platform/company/LocationsTree.ts';
 import { UNITS_CSS } from '../../platform/company/UnitsTab.ts';
 import { createProjectsService } from '../../platform/company/projects.service.ts';
+import { createCoreService } from '../../platform/core/core.service.ts';
+import type { CoreApi } from '../../platform/core/core.service.ts';
 import type { ProjectsApi } from '../../platform/company/projects.service.ts';
 import { PLANFACT_WORKS_CSS } from './PlanfactWorks.ts';
 import { VOR_CSS } from './vor/VorTab.ts';
@@ -66,6 +68,7 @@ let estimateApi: EstimateApi | null = null;
 let factApi: FactApi | null = null;
 let ks2Api: Ks2Api | null = null;
 let summaryApi: SummaryApi | null = null;
+let coreApi: CoreApi | null = null;
 
 function getAuth(): AuthApi | null {
   if (auth === undefined) {
@@ -78,6 +81,7 @@ function getAuth(): AuthApi | null {
     factApi = auth ? createFactService() : null;
     ks2Api = auth ? createKs2Service() : null;
     summaryApi = auth ? createSummaryService() : null;
+    coreApi = auth ? createCoreService() : null;
   }
   return auth;
 }
@@ -132,7 +136,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, ks2: ks2Api, summary: summaryApi, onAccess })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, ks2: ks2Api, summary: summaryApi, core: coreApi, onAccess })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */

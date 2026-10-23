@@ -1,14 +1,18 @@
 /**
  * Вкладка «Объекты» (подписи — «объект», P2-0009; в данных — проект): список проектов компании, создать, переименовать, архивировать / вернуть.
  * Без права planfact.projects.manage (can_manage) — только чтение. Адаптивно: строки переносятся на узком экране.
+ * P2-0015: у объекта — «Заказчик» и «Генподрядчик» из контрагентов компании (сервис ядра; список — «Настройки → Компания → Контрагенты»).
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import { LocationsTree } from './LocationsTree.ts';
 import type { CompanyAccess, ProjectItem, ProjectsApi } from './projects.service.ts';
+import type { CoreApi } from '../core/core.service.ts';
+import type { Counterparty, CounterpartyKind } from '../core/counterparties.ts';
 
-export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess }): ReactElement {
-  const { api, company } = props;
+export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess; core?: CoreApi | null }): ReactElement {
+  const { api, company, core } = props;
+  const [parties, setParties] = useState<Counterparty[] | null>(null);
   const [opened, setOpened] = useState<ProjectItem | null>(null);
   const [rows, setRows] = useState<ProjectItem[] | null>(null);
   const [editing, setEditing] = useState('');
@@ -45,7 +49,30 @@ export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess })
     const name = (form.elements.namedItem('name') as HTMLInputElement).value.trim();
     const code = (form.elements.namedItem('code') as HTMLInputElement).value.trim();
     if (!name) { setError('Введите название объекта'); return; }
-    if (await run(api.updateProject(p.id, name, code, null), 'Объект сохранён')) setEditing('');
+    const pick = (n: string): string | null => { const el = form.elements.namedItem(n) as HTMLSelectElement | null; return el ? el.value || null : null; };
+    const cust = core ? pick('customer') : null, gc = core ? pick('general_contractor') : null;
+    const changed = !!core && (cust !== (p.customer_id || null) || gc !== (p.general_contractor_id || null));
+    setBusy(true); setError(''); setNotice('');
+    const r1 = await api.updateProject(p.id, name, code, null);
+    const r2 = r1.ok && changed && core ? await core.setProjectCounterparties(p.id, cust, gc) : r1;
+    setBusy(false);
+    const bad = !r1.ok ? r1 : !r2.ok ? r2 : null;
+    if (bad && !bad.ok) { setError(bad.message || 'Не удалось выполнить'); await load(); return; }
+    setNotice('Объект сохранён'); setEditing(''); await load();
+  }
+
+  function startEdit(p: ProjectItem): void {
+    setEditing(p.id); setError(''); setNotice('');
+    if (core && parties === null) void core.listCounterparties(company.company_id, true).then(setParties);
+  }
+
+  /** Выбор контрагента: действующие нужного вида + текущий (даже если уже в архиве). */
+  function partySelect(name: string, label: string, kind: CounterpartyKind, current: string | null | undefined): ReactElement {
+    const opts = (parties || []).filter((c) => (c.kinds.includes(kind) && !c.archived_at) || c.id === current);
+    return h('label', { className: 'pf-field pj-party' }, label,
+      h('select', { name, className: 'pj-input', defaultValue: current || '', disabled: parties === null, 'aria-label': label, 'data-testid': 'pj-' + name },
+        h('option', { value: '' }, parties === null ? 'Загрузка…' : '— не указан —'),
+        opts.map((c) => h('option', { key: c.id, value: c.id }, c.name + (c.archived_at ? ' (архив)' : '')))));
   }
 
   if (opened) return h(LocationsTree, { api, project: opened, canManage: company.can_manage_projects, onBack: () => { setOpened(null); void load(); } });
@@ -68,14 +95,22 @@ export function ProjectsTab(props: { api: ProjectsApi; company: CompanyAccess })
         ? h('form', { key: p.id, className: 'pj-row pj-row--edit', onSubmit: (e: FormEvent) => { void rename(e, p); }, 'data-project-id': p.id },
             h('input', { name: 'name', type: 'text', className: 'pj-input pj-grow', defaultValue: p.name, maxLength: 200, 'aria-label': 'Название' }),
             h('input', { name: 'code', type: 'text', className: 'pj-input pj-code', defaultValue: p.code || '', maxLength: 40, placeholder: 'Код', 'aria-label': 'Код' }),
+            core ? h('div', { className: 'pj-parties', key: parties === null ? 'wait' : 'ready' },
+              partySelect('customer', 'Заказчик', 'customer', p.customer_id),
+              partySelect('general_contractor', 'Генподрядчик', 'general_contractor', p.general_contractor_id),
+              parties !== null && !parties.length ? h('div', { className: 'pf-muted pj-parties-hint' }, 'Контрагентов нет — добавьте их в «Настройки → Компания → Контрагенты».') : null) : null,
             h('button', { type: 'submit', className: 'pf-btn', disabled: busy }, 'Сохранить'),
             h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: () => { setEditing(''); setError(''); } }, 'Отмена'))
         : h('div', { key: p.id, className: 'pj-row' + (p.archived_at ? ' pj-row--archived' : ''), 'data-project-id': p.id },
             h('div', { className: 'pj-name' }, h('b', null, p.name), p.code ? h('span', { className: 'pj-code-badge' }, p.code) : null,
-              p.archived_at ? h('span', { className: 'pj-badge' }, 'в архиве') : null),
+              p.archived_at ? h('span', { className: 'pj-badge' }, 'в архиве') : null,
+              p.customer_name || p.general_contractor_name
+                ? h('span', { className: 'pj-party-line', 'data-testid': 'pj-party-line' },
+                    [p.customer_name ? 'Заказчик: ' + p.customer_name : '', p.general_contractor_name ? 'Генподрядчик: ' + p.general_contractor_name : ''].filter(Boolean).join(' · '))
+                : null),
             h('div', { className: 'pj-actions' },
               h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'pj-open', onClick: () => setOpened(p) }, 'Структура'),
-              p.can_manage && !p.archived_at ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pj-rename', disabled: busy, onClick: () => { setEditing(p.id); setError(''); setNotice(''); } }, 'Изменить') : null,
+              p.can_manage && !p.archived_at ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pj-rename', disabled: busy, onClick: () => startEdit(p) }, 'Изменить') : null,
               p.can_manage ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'pj-archive', disabled: busy,
                 onClick: () => { void run(api.updateProject(p.id, p.name, p.code || '', !p.archived_at), p.archived_at ? 'Объект возвращён из архива' : 'Объект перенесён в архив'); } },
                 p.archived_at ? 'Вернуть из архива' : 'В архив') : null)))
@@ -100,5 +135,11 @@ export const PROJECTS_CSS = `
 .pj-empty{padding:18px 14px}
 .pj-notice{font-size:12px;color:var(--color-green)}
 .pj-toggle{align-self:flex-start}
+.pj-parties{display:flex;flex-wrap:wrap;gap:10px;flex:1 1 100%}
+.pj-party{flex:1 1 220px;min-width:0}
+.pj-party select{width:100%}
+.pj-parties-hint{flex:1 1 100%;font-size:12px}
+.pj-row>.pj-name{flex:1 1 240px}
+.pj-party-line{flex:1 1 100%;font-size:12px;color:var(--text-muted)}
 @media (max-width:600px){.pj-actions{width:100%}.pj-actions .pf-btn{flex:1 1 auto}.pj-form .pf-btn{width:100%}}
 `;

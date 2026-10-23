@@ -32,6 +32,12 @@ export interface Counterparty {
   requisites: Requisites; archived_at: string | null; updated_at: string;
 }
 
+/** Карточка контрагента объекта для документов (pf_project_counterparties). */
+export interface CounterpartyCard {
+  id: string; name: string; inn: string; kpp: string | null; kinds: CounterpartyKind[]; requisites: Requisites; archived: boolean;
+}
+export interface ProjectCounterparties { customer: CounterpartyCard | null; general_contractor: CounterpartyCard | null }
+
 export interface CounterpartyDraft { name: string; inn: string; kpp: string; kinds: CounterpartyKind[]; requisites: Requisites }
 
 export const kindLabels = (kinds: CounterpartyKind[]): string =>

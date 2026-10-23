@@ -1,5 +1,5 @@
 /**
- * Проект КС-2 с сервера (P2-0008b): только функции public.pf_ks2_* миграции 010.
+ * Проект КС-2 с сервера (P2-0008b): только функции public.pf_ks2_* миграции 010; заказчик объекта — через сервис ядра (P2-0015).
  * Предложение системы (факт → строки заказчика, материалы по норме, цены договорной КП, «выставлено ранее») считает сервер;
  * права (ks2.view / ks2.edit), изоляцию компаний, неизменяемость редакций и выданных актов — тоже. Кнопки на экране — подсказка.
  */
@@ -7,6 +7,8 @@ import { getClient } from '../../../platform/auth/auth.service.ts';
 import { mapCompanyError } from '../../../platform/company/company.service.ts';
 import type { Result } from '../../../platform/company/company.service.ts';
 import type { Ks2Header, Ks2Snapshot } from './form.ts';
+import { createCoreService } from '../../../platform/core/core.service.ts';
+import type { CounterpartyCard } from '../../../platform/core/counterparties.ts';
 
 export const KS2_VIEW = 'planfact.ks2.view';
 export const KS2_EDIT = 'planfact.ks2.edit';
@@ -31,6 +33,8 @@ export interface Ks2ActData {
   requisites: Partial<Ks2Header>;
   proposal: Ks2ProposalRow[] | null; // только у черновика
   last_revision: Ks2SavedRevision | null;
+  /** P2-0015: заказчик объекта из ядра (карточка контрагента) — источник реквизитов, если в настройках КС-2 пусто. */
+  customer?: CounterpartyCard | null;
 }
 export interface Ks2RevisionItem { id: string; revision_no: number; total: number; note: string | null; created_by_email: string | null; created_at: string; issued: boolean }
 export interface Ks2RowEdit { source_row_id: string; qty: number; price: number | null; excluded: boolean }
@@ -71,13 +75,19 @@ export function createKs2Service(): Ks2Api | null {
       return { ok: false, message: mapCompanyError({ message: e instanceof Error ? e.message : '' }) };
     }
   }
+  const core = createCoreService();
   const map = async <T, U>(r: Promise<Result<T>>, f: (v: T) => U): Promise<Result<U>> => { const x = await r; return x.ok ? { ok: true, value: f(x.value) } : x; };
   return {
     settings: (p) => map(call<Ks2Settings>('pf_ks2_settings', { p_project: p }), (s) => ({ ...s, template_size: nn(s.template_size), kp_revisions: (s.kp_revisions || []).map((k) => ({ ...k, total: n(k.total) })) })),
     setContract: (p, kp) => call('pf_ks2_set_contract', { p_project: p, p_kp_revision: kp }),
     acts: (p) => map(call<Ks2ActItem[]>('pf_ks2_acts', { p_project: p }), (v) => (v || []).map(normActItem)),
     createAct: (p, no, date, from, to) => call<string>('pf_ks2_act_create', { p_project: p, p_act_no: no, p_act_date: date, p_from: from, p_to: to }),
-    act: (id) => map(call<Ks2ActData>('pf_ks2_act', { p_act: id }), normActData),
+    act: async (id) => {
+      const r = await map(call<Ks2ActData>('pf_ks2_act', { p_act: id }), normActData);
+      if (!r.ok || !core) return r;
+      const pc = await core.projectCounterparties(r.value.act.project_id);
+      return { ok: true, value: { ...r.value, customer: pc.customer } };
+    },
     save: (id, header, rows, note) => call<number>('pf_ks2_save', { p_act: id, p_header: header, p_rows: rows, p_note: note || null }),
     issue: (id) => call('pf_ks2_issue', { p_act: id }),
     annul: (id, reason) => call('pf_ks2_annul', { p_act: id, p_reason: reason }),

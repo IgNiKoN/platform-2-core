@@ -92,7 +92,9 @@ function fakeCore(canManage: boolean) {
     archiveCounterparty: async (id, a): Promise<Result> => {
       log.push(`archive ${id} ${a}`);
       list = list.map((x) => (x.id === id ? { ...x, archived_at: a ? '2026-10-23' : null } : x)); return { ok: true, value: null };
-    }
+    },
+    projectCounterparties: async () => ({ customer: null, general_contractor: null }),
+    setProjectCounterparties: async (): Promise<Result> => ({ ok: true, value: null })
   };
   return { api, log };
 }

@@ -7,7 +7,7 @@ import { getClient } from '../auth/auth.service.ts';
 import { mapCompanyError } from '../company/company.service.ts';
 import type { Result } from '../company/company.service.ts';
 import { cleanRequisites } from './counterparties.ts';
-import type { Counterparty, CounterpartyDraft } from './counterparties.ts';
+import type { Counterparty, CounterpartyDraft, ProjectCounterparties } from './counterparties.ts';
 
 /** Компании пользователя и что он может в справочниках (pf_my_company_access; кнопки — подсказка, проверяет сервер). */
 export interface CompanyAccess {
@@ -20,6 +20,9 @@ export interface CoreApi {
   listCounterparties(companyId: string, includeArchived?: boolean): Promise<Counterparty[]>;
   saveCounterparty(companyId: string, id: string | null, d: CounterpartyDraft): Promise<Result<string>>;
   archiveCounterparty(id: string, archived: boolean): Promise<Result>;
+  /** Заказчик и генподрядчик объекта (карточки для документов); нет доступа или ошибка — оба null. */
+  projectCounterparties(projectId: string): Promise<ProjectCounterparties>;
+  setProjectCounterparties(projectId: string, customerId: string | null, generalContractorId: string | null): Promise<Result>;
 }
 
 export function createCoreService(): CoreApi | null {
@@ -47,6 +50,13 @@ export function createCoreService(): CoreApi | null {
       p_company: company, p_id: id, p_name: d.name.trim(), p_inn: d.inn, p_kpp: d.kpp || null,
       p_kinds: d.kinds, p_requisites: cleanRequisites(d.requisites)
     }),
-    archiveCounterparty: (id, archived) => call('pf_counterparties_archive', { p_id: id, p_archived: archived })
+    archiveCounterparty: (id, archived) => call('pf_counterparties_archive', { p_id: id, p_archived: archived }),
+    projectCounterparties: async (project) => {
+      const r = await call<ProjectCounterparties>('pf_project_counterparties', { p_project: project });
+      return r.ok && r.value ? { customer: r.value.customer || null, general_contractor: r.value.general_contractor || null }
+        : { customer: null, general_contractor: null };
+    },
+    setProjectCounterparties: (project, customer, gc) =>
+      call('pf_project_set_counterparties', { p_project: project, p_customer: customer, p_general_contractor: gc })
   };
 }

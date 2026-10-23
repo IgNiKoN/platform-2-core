@@ -11,6 +11,8 @@ import type { CompanyAccess } from '../core/core.service.ts';
 export type { CompanyAccess } from '../core/core.service.ts';
 export interface ProjectItem {
   id: string; name: string; code: string | null; archived_at: string | null; created_at: string; can_manage: boolean;
+  /** P2-0015: заказчик и генподрядчик объекта (контрагенты ядра); у старых ответов сервера полей может не быть. */
+  customer_id?: string | null; customer_name?: string | null; general_contractor_id?: string | null; general_contractor_name?: string | null;
 }
 export interface LocationNode {
   id: string; parent_id: string | null; node_type: PlanNodeType; name: string; sort_order: number;
