@@ -8,6 +8,9 @@ begin
   if to_regprocedure('quality.member_by_email(uuid,text)') is null then
     raise exception '023 не применена — откатывать нечего' using errcode = 'P0001';
   end if;
+  if to_regprocedure('quality.contractor_only(uuid)') is not null then
+    raise exception 'Сначала откатите 024: 024_quality_contractor_dirs_down.sql' using errcode = 'P0001';
+  end if;
 end $$;
 
 do $$
