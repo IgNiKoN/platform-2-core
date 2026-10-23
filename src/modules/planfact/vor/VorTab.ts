@@ -11,7 +11,7 @@ import { VorColumns } from './VorColumns.ts';
 import { VorDraft } from './VorDraft.ts';
 import { VorPositions } from './VorPositions.ts';
 import { PositionsRegistry, POSITIONS_REGISTRY_CSS } from './PositionsRegistry.ts';
-import type { PositionsRegistryProps } from './PositionsRegistry.ts';
+import { positionRegistryActions, POSITION_ACTIONS_CSS } from './PositionActions.ts';
 import type { FactApi } from '../fact/fact.service.ts';
 import type { SummaryApi } from '../summary/summary.service.ts';
 import type { ProjectsApi } from '../../../platform/core/projects.service.ts';
@@ -82,11 +82,10 @@ function RowView(props: { r: ParsedRow; warn?: string }): ReactElement {
 }
 
 /** P2-0019: sub — подвкладка «Загрузка» / «Позиции» (реестр; нужны fact и summary — те же функции, что «Факт» и «Сводка»);
- *  onCount — число позиций проекта для счётчика подвкладки; positionActions / positionTools — действия реестра (выгрузка, закрытие). */
+ *  onCount — число позиций проекта для счётчика подвкладки; save — скачивание Excel (подменяется в тестах). */
 export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | null; load?: (f: File) => Promise<LoadedFile>;
   sub?: 'load' | 'positions'; fact?: FactApi | null; summary?: SummaryApi | null; user?: string; onCount?: (n: number | null) => void;
-  positionActions?: (perms: string[], projectId: string, companyId: string) => PositionsRegistryProps['actions'];
-  positionTools?: PositionsRegistryProps['tools'] }): ReactElement {
+  save?: (bytes: Uint8Array, name: string) => void }): ReactElement {
   const load = props.load || loadFile;
   const api = props.api || null;
   const registry = !!(api && props.fact && props.summary);
@@ -242,7 +241,7 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
       !projectId ? null
         : registry
           ? h(PositionsRegistry, { key: projectId, fact: props.fact!, summary: props.summary!, projectId, companyId: company, user: props.user || '',
-              actions: props.positionActions ? props.positionActions(perms, projectId, company) : undefined, tools: props.positionTools })
+              ...positionRegistryActions(props.fact!, perms, projectId, company, isArchived((projects || []).find((p) => p.id === projectId)), props.save) })
           : h(VorPositions, { key: projectId, api, projectId }));
   }
 
@@ -312,7 +311,7 @@ export function VorTab(props: { api?: VorApi | null; projects?: ProjectsApi | nu
       : null);
 }
 
-export const VOR_CSS = POSITIONS_REGISTRY_CSS + `
+export const VOR_CSS = POSITIONS_REGISTRY_CSS + POSITION_ACTIONS_CSS + `
 .vor-file{position:relative;overflow:hidden;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-height:40px}
 .vor-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .vor-file--busy{opacity:.7;cursor:progress}

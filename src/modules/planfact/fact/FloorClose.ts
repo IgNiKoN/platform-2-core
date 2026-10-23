@@ -2,17 +2,23 @@
  * «Закрыть этаж / секцию целиком» (P2-0007, PR-01): все позиции места и вложенных (квартиры) с остатками. Объём каждой строки —
  * остаток (100 %) или X % от плана; любую строку можно поправить или снять галочкой до отправки. Одна бригада и дата на пачку;
  * пачка уходит одной операцией (всё или ничего), правило перебора сервер применяет к каждой строке отдельно.
+ * P2-0019: та же форма для «Закрыть выбранные» / «Закрыть через РП» из реестра позиций (title, requireApproval);
+ * больше 500 строк — частями по 500 (каждая часть — всё или ничего; при ошибке сказано, сколько уже записано).
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { Brigade, FactApi, FactPosition } from './fact.service.ts';
 import { fmtQty, parseQty, remainder, splitFloor, sumByUnit, todayMoscow } from './fact.ts';
 
+/** Предел строк одной пачки на сервере (pf_fact_add_batch). */
+export const BATCH_MAX = 500;
+
 export function FloorClose(props: {
   api: FactApi; projectId: string; place: { id: string; name: string }; positions: FactPosition[]; brigades: Brigade[]; lastBrigade: string;
-  onBrigade: (id: string) => void; onClose: () => void; onDone: (msg: string) => void;
+  onBrigade: (id: string) => void; onClose: () => void; onDone: (msg: string, partial?: boolean) => void;
+  title?: string; requireApproval?: boolean;
 }): ReactElement {
-  const { api, projectId, place, positions, brigades, lastBrigade, onBrigade, onClose, onDone } = props;
+  const { api, projectId, place, positions, brigades, lastBrigade, onBrigade, onClose, onDone, requireApproval } = props;
   const [mode, setMode] = useState<'remainder' | 'percent'>('remainder');
   const [pct, setPct] = useState('50');
   const [values, setValues] = useState<Record<string, string>>({});
@@ -54,15 +60,26 @@ export function FloorClose(props: {
     if (w !== null && (!Number.isInteger(w) || w < 0)) { setError('Людей — целое число'); return; }
     setBusy(true); setError('');
     onBrigade(brigade);
-    const r = await api.addBatch({ projectId, brigadeId: brigade, date, workers: w, note: note.trim(), items: send.map((x) => ({ position_id: x.p.position_id, qty: x.qty as number })) });
+    const items = send.map((x) => ({ position_id: x.p.position_id, qty: x.qty as number }));
+    let acc = 0, pen = 0;
+    for (let i = 0; i < items.length; i += BATCH_MAX) {
+      const r = await api.addBatch({ projectId, brigadeId: brigade, date, workers: w, note: note.trim(), items: items.slice(i, i + BATCH_MAX), ...(requireApproval ? { requireApproval: true } : {}) });
+      if (!r.ok) {
+        setBusy(false);
+        setError(i ? `Записано строк: ${acc + pen} из ${items.length}; остальные не записаны: ${r.message}` : r.message);
+        if (i) onDone(`Записано строк: ${acc + pen} из ${items.length} (часть не записана — см. ошибку)`, true);
+        return;
+      }
+      acc += r.value.accepted; pen += r.value.pending;
+    }
     setBusy(false);
-    if (!r.ok) { setError(r.message); return; }
-    onDone(`Записано строк: ${r.value.accepted + r.value.pending}` + (r.value.pending ? `, из них ждут подтверждения РП: ${r.value.pending}` : ''));
+    onDone(`Записано строк: ${acc + pen}` + (pen ? `, из них ждут подтверждения РП: ${pen}` : ''));
   }
 
   return h('div', { className: 'pf-card ft-sheet', 'data-testid': 'ft-close' },
-    h('div', { className: 'ft-sheet-head' }, h('b', null, `Закрыть целиком: ${place.name}`),
+    h('div', { className: 'ft-sheet-head' }, h('b', null, props.title || `Закрыть целиком: ${place.name}`),
       h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', onClick: onClose, 'data-testid': 'ft-close-cancel' }, 'Отмена')),
+    requireApproval ? h('div', { className: 'pf-muted', 'data-testid': 'ft-close-via-pm' }, 'Все строки уйдут на подтверждение РП и войдут в факт после его решения.') : null,
     h('div', { className: 'ft-modes' },
       h('label', { className: 'pr-check' }, h('input', { type: 'radio', name: 'mode', checked: mode === 'remainder', 'data-testid': 'ft-mode-rest', onChange: () => { setMode('remainder'); recompute('remainder', null); } }), '100 %: внести остатки'),
       h('span', { className: 'ft-mode-pct' },

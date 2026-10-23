@@ -123,7 +123,7 @@ function PositionCard(props: { fact: FactApi; row: PositionRow; index: number; t
 export interface PositionsRegistryProps {
   fact: FactApi; summary: SummaryApi; projectId: string; companyId: string; user: string;
   /** Действия «Выбрано: N» (этап 5: выгрузка, закрытие); reload — перечитать позиции. */
-  actions?: (rows: PositionRow[], ctx: { reload: () => Promise<void>; clear: () => void; columns: RegistryColumn<PositionRow>[] }) => ReactNode;
+  actions?: (rows: PositionRow[], ctx: { reload: () => Promise<void>; clear: () => void; notify: (msg: string) => void; columns: RegistryColumn<PositionRow>[] }) => ReactNode;
   tools?: (ctx: { rows: PositionRow[]; columns: RegistryColumn<PositionRow>[] }) => ReactNode;
   onCount?: (n: number | null) => void;
   today?: string;
@@ -148,6 +148,7 @@ export function PositionsRegistry(props: PositionsRegistryProps): ReactElement {
   const [state, setState] = useState<RegistryState>(() => queryToState(queryOf(window.location.hash)));
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState('');
+  const [notice, setNotice] = useState('');
 
   async function reload(): Promise<void> {
     const r = await loadPositionRows(summary, fact, projectId, today);
@@ -166,13 +167,14 @@ export function PositionsRegistry(props: PositionsRegistryProps): ReactElement {
 
   return h('div', { className: 'pj-tab vr-tab', 'data-testid': 'vor-registry' },
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
+    notice ? h('div', { className: 'pj-notice', role: 'status', 'data-testid': 'vr-notice' }, notice) : null,
     props.tools ? h('div', { className: 'pj-actions' }, props.tools({ rows: ordered, columns: visibleCols })) : null,
     h(RegistryTable<PositionRow>, {
       testId: 'vr-table', rows, rowKey: (r) => r.id, columns: POSITION_COLUMNS, filters: POSITION_FILTERS, state, onState,
       isOverdue: (r) => r.st.overdue, overdueHint: finish ? undefined : 'Нет срока объекта: укажите плановое окончание в «Сводке» — тогда «Только просроченные» заработает.',
       groupBy: { label: 'Корпус', key: (r) => r.corp }, toneOf: (r) => r.st.tone, toneLabel: TONE_LABEL,
       selected, onSelect: setSelected, onOpen: (r) => setOpenId(r.id), openKey: openId,
-      actions: props.actions ? (sel) => props.actions!(sel, { reload, clear: () => setSelected(new Set()), columns: visibleCols }) : undefined,
+      actions: props.actions ? (sel) => props.actions!(sel, { reload, clear: () => setSelected(new Set()), notify: setNotice, columns: visibleCols }) : undefined,
       empty: 'Позиций пока нет — загрузите и подтвердите ВОР во вкладке «Загрузка».',
       views: { registry: 'vor-positions', company: companyId, user }, linkBase: POSITIONS_LINK,
     }),
