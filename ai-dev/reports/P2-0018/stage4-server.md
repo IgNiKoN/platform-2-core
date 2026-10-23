@@ -45,3 +45,13 @@ SQL Editor в Chrome владельца; файл → буфер в UTF-8, md5 �
 | `tests/server/022_quality_contractors_fix.sql` (с проверкой 025) | md5 `b5da10c1…`; «destructive» — `delete` внутри теста (откат) → FAIL 0 |
 | `npm run test:server` | **325 PASS** |
 | Снимок RBI после | 74 \| 43 \| f926b2db… \| a920ba97… \| d09a3113… — **= до** |
+
+## Доработка 3 — 026 на сервере (23.10.2026, разрешение владельца «Да, применить»)
+
+| Шаг | Результат |
+|---|---|
+| Снимок RBI до | 74 \| 43 \| f926b2db… \| a920ba97… \| d09a3113… |
+| `026_quality_contractor_scope_fix_up.sql` | md5 `62aaa5a6…`; «destructive» (замена своих правил / функции) → «Success» |
+| `tests/server/026_quality_contractor_scope_fix.sql` | md5 `cf915522…`; FAIL 0 |
+| `npm run test:server` | **325 PASS** |
+| Снимок RBI после | = до |
