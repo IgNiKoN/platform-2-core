@@ -1330,6 +1330,8 @@ export const HistoryRender = {
         const emptyMsg = document.getElementById('hist-empty-msg');
         const countEl = document.getElementById('hist-count-total');
         if (!listDiv) return;
+        // P2-0024: история уже в памяти — список из неё (все записи периода, без второй копии из базы)
+        if (typeof HistoryState.useMemoryHistoryIfReady === 'function') HistoryState.useMemoryHistoryIfReady();
 
         // Preserve open Object/Contractor accordions across full re-render
         // (sync dirty path, filters) — same idea as Tasks UI restore.
@@ -1378,7 +1380,9 @@ export const HistoryRender = {
 
         listDiv.innerHTML = html;
         _restoreExpandedHistory(listDiv, expanded);
-        HistoryRender._autoLoadPaused = false;
+        // P2-0024: все объекты свёрнуты — список не растёт от догрузки, автодогрузка ждёт раскрытия объекта
+        // (как и раньше, при открытии загружена только первая порция; кнопка «Загрузить…» работает всегда).
+        HistoryRender._autoLoadPaused = expanded.projects.size === 0;
         HistoryRender._observeLoadSentinel();
     },
 

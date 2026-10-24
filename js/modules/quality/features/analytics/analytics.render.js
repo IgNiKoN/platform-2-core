@@ -95,14 +95,18 @@ function _contractorMetricsCached(groupKey, cData) {
  * Блок пересоздаётся при каждой перерисовке вкладки, поэтому «один раз» — на экземпляр блока.
  */
 function _drawWhenOpen(detailsEl, draw) {
-    if (!detailsEl) return;
-    if (detailsEl.open) { draw(); return; }
+    let drawn = false;
+    const drawOnce = () => { if (drawn) return; drawn = true; draw(); };
+    if (!detailsEl) return drawOnce;
+    if (detailsEl.open) { drawOnce(); return drawOnce; }
     const onToggle = () => {
         if (!detailsEl.open) return;
         detailsEl.removeEventListener('toggle', onToggle);
-        draw();
+        drawOnce();
     };
     detailsEl.addEventListener('toggle', onToggle);
+    // Возвращаем «нарисовать сейчас» — ПК-раскладка раскрывает блоки сама и рисует сразу.
+    return drawOnce;
 }
 
 function _getSkRecords() {
@@ -521,13 +525,31 @@ function _ikoIdsSignature(arr) {
     return s;
 }
 
+/**
+ * P2-0024: копия выборки, отсортированная по дате (новые сверху) устойчивой сортировкой.
+ * getContractorMetrics сортирует каждую группу так же (new Date в каждом сравнении); на уже
+ * отсортированном входе устойчивая сортировка почти не сравнивает, а итоговый порядок (и метрики)
+ * тот же — и при одинаковых датах. Есть неразборчивая дата — исходный порядок (ничего не меняем).
+ */
+function _byDateDescStable(arr) {
+    if (!Array.isArray(arr) || arr.length < 2) return arr;
+    const keyed = new Array(arr.length);
+    for (let i = 0; i < arr.length; i++) {
+        const t = new Date(arr[i] && arr[i].date).getTime();
+        if (!Number.isFinite(t)) return arr;
+        keyed[i] = [t, arr[i]];
+    }
+    keyed.sort((a, b) => b[0] - a[0]);
+    return keyed.map(k => k[1]);
+}
+
 // P2-0024: средний рейтинг подрядчиков по выборке — «Подрядчики» и «Сводка» считают его по одной и той же
 // выборке; в пределах одного фильтра/данных второй раз берётся из кэша (сброс — вместе с _ikoMemo).
 const _avgRatingsMemo = new Map();
 function _avgContractorRatingsCached(arr) {
     const sig = _ikoIdsSignature(arr);
     if (_avgRatingsMemo.has(sig)) return _avgRatingsMemo.get(sig);
-    const r = window.avgContractorRatingsFromChecks(arr);
+    const r = window.avgContractorRatingsFromChecks(_byDateDescStable(arr));
     _avgRatingsMemo.set(sig, r);
     while (_avgRatingsMemo.size > IKO_MEMO_MAX) _avgRatingsMemo.delete(_avgRatingsMemo.keys().next().value);
     return r;
@@ -540,7 +562,7 @@ function _getObjectIntegralMetricsCached(data) {
     try { templates = _templates().getUserTemplates() || {}; } catch (_) { templates = {}; }
     const sig = _ikoIdsSignature(data);
     if (_ikoMemo.has(sig)) return _ikoMemo.get(sig);
-    const metrics = getObjectIntegralMetrics(data, templates);
+    const metrics = getObjectIntegralMetrics(_byDateDescStable(data), templates);
     _ikoMemo.set(sig, metrics);
     while (_ikoMemo.size > IKO_MEMO_MAX) {
         const oldest = _ikoMemo.keys().next().value;
@@ -2130,7 +2152,7 @@ export const AnalyticsRender = {
     // =========================================================================
     // Перенесено из analytics.legacy.js: подвкладка «Сводка» (One-Pager).
     // =========================================================================
-    renderOnePagerSubTab(data) {
+    async renderOnePagerSubTab(data) {
         var _allInspections = _inspections();
         const container = document.getElementById('onepager-content-container');
 
@@ -2192,6 +2214,13 @@ export const AnalyticsRender = {
         const redContrBorderCls = redContrCount > 0
             ? 'bg-danger-soft border-danger-soft/50'
             : 'bg-[var(--card-bg)] border-[var(--card-border)]';
+
+        // P2-0024: на 10 000 проверок вкладка считалась одним куском ≈ 75 мс. Текущий период посчитан —
+        // отдаём кадр браузеру, затем сравнение с прошлым периодом, подборка дефектов и разметка.
+        // Пришла новая перерисовка за это время — эту не дописываем.
+        const _opGen = _analyticsRenderGen;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (_opGen !== _analyticsRenderGen || !container.isConnected) return;
 
         const selPeriod = document.getElementById('global-filter-period')?.value || 'D30';
         let prevData = [];
@@ -2308,11 +2337,14 @@ export const AnalyticsRender = {
             return byId.get(String(id));
         };
         const _needTopDefects = !!_getSetting('anaOpTopDefects') || !_reports().getExpertConclusion('global_onepager_pdca');
+        const _defectFallbackName = _t('quality.analytics.fallback.defect', 'Дефект'); // P2-0024: один раз, а не на каждый ответ
         if (_needTopDefects) data.forEach(i => {
             if (i.state && i.details && i.templateKey) {
                 Object.keys(i.state).forEach(id => {
                     const s = i.state[id];
-                    let defName = _t('quality.analytics.fallback.defect', 'Дефект');
+                    // P2-0024: в подборку попадают только замечания и «ok» с фото — остальное сразу пропускаем
+                    if (s !== 'fail' && s !== 'fail_escalated' && !(s === 'ok' && i.photos && i.photos[id])) return;
+                    let defName = _defectFallbackName;
                     const foundItem = _findChecklistItem(i.templateKey, id);
                     if (foundItem) defName = foundItem.n;
 
@@ -2713,7 +2745,7 @@ export const AnalyticsRender = {
             </div>
         `;
 
-        _drawWhenOpen(document.getElementById('op-heatmap-details'), () => {
+        window.rbiDrawOnePagerHeatmap = _drawWhenOpen(document.getElementById('op-heatmap-details'), () => {
             const host = document.getElementById('op-heatmap-host');
             if (host) host.outerHTML = buildHeatmapHtml();
         });

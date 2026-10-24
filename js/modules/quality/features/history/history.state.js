@@ -6,6 +6,28 @@
  * Все модули читают данные через window.HistoryState.allRecords.
  */
 
+/**
+ * P2-0024: список Журнала из истории в памяти — тот же набор и порядок, что даёт индекс by_date
+ * (direction 'prev'): только живые записи с ключом даты (строка/число), новые сверху; числа ниже строк
+ * (порядок ключей IndexedDB), при равной дате — по id по убыванию. Объекты общие с contractorArray (без копий).
+ */
+function _idbKeyCmp(a, b) {
+    const ta = typeof a === 'number' ? 0 : 1, tb = typeof b === 'number' ? 0 : 1;
+    if (ta !== tb) return ta - tb;
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
+export function historyListFromMemory(arr) {
+    const list = [];
+    for (const i of arr || []) {
+        if (!i || i._deleted === true || i.is_deleted === true) continue;
+        const d = i.date;
+        if (typeof d !== 'string' && !(typeof d === 'number' && Number.isFinite(d))) continue;
+        list.push(i);
+    }
+    list.sort((x, y) => _idbKeyCmp(y.date, x.date) || _idbKeyCmp(y.id, x.id));
+    return list;
+}
+
 export const HistoryState = {
 
     records: [],
@@ -57,6 +79,20 @@ export const HistoryState = {
         if (patch && typeof patch === 'object') {
             Object.assign(this, patch);
         }
+    },
+
+    /**
+     * P2-0024: список Журнала из истории в памяти (вместо порций-копий из базы), если она уже загружена,
+     * а список ещё порционный. Возвращает true, если список заменён.
+     */
+    useMemoryHistoryIfReady() {
+        const mem = (typeof window !== 'undefined' && Array.isArray(window.contractorArray)) ? window.contractorArray : null;
+        if (!mem || !mem.length || !this.pageHasMore) return false;
+        this.setRecords(historyListFromMemory(mem));
+        this.pageCursorKey = null;
+        this.pageCursorPrimaryKey = null;
+        this.pageHasMore = false;
+        return true;
     },
 
     resetPagination() {

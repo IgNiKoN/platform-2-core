@@ -7,7 +7,7 @@
  * не гарантированно доступен на момент вызова из inline-обработчиков).
  */
 
-import { HistoryState } from './history.state.js';
+import { HistoryState, historyListFromMemory } from './history.state.js';
 import { HistoryRender } from './history.render.js';
 
 // Фаза 91 (перенесено из history.legacy.js): единая точка доступа к IndexedDB
@@ -70,6 +70,19 @@ export const HistoryActions = {
                 return;
             }
             HistoryState.resetPagination();
+
+            // P2-0024: история уже целиком в памяти (window.contractorArray, облегчённая — содержимое то же).
+            // Список берём оттуда — без второй копии из базы; порядок как у индекса by_date (новые сверху,
+            // при равной дате — больший id выше). Раньше при свёрнутых объектах фоновая догрузка всё равно
+            // подтягивала всю историю второй копией (заголовки объектов считают все записи периода).
+            const mem = Array.isArray(window.contractorArray) ? window.contractorArray : null;
+            if (mem && mem.length) {
+                HistoryState.setRecords(historyListFromMemory(mem));
+                HistoryState.setPageState({ pageCursorKey: null, pageCursorPrimaryKey: null, pageHasMore: false });
+                const ev = this._ctx && this._ctx.events;
+                if (ev && typeof ev.emit === 'function') ev.emit('history:loaded', { count: HistoryState.allRecords.length });
+                return;
+            }
 
             // Первая прогрузка: добираем страницы, пока не наберём
             // initialObjectTarget уникальных объектов (площадок) или не кончатся
