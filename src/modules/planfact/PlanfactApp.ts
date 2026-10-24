@@ -30,6 +30,8 @@ import type { CompanyAccess, ProjectsApi } from '../../platform/core/projects.se
 import type { DataApi } from './data.service.ts';
 import type { VorApi } from './vor/vor.service.ts';
 import type { PlanfactDemo } from './model.ts';
+import { useInboxBadges } from './inbox/inbox.ts';
+import type { InboxRow } from './summary/summary.service.ts';
 
 type Mode = 'loading' | 'authed' | 'demo';
 const BASE = '#/planfact';
@@ -116,6 +118,9 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const [canKs2, setCanKs2] = useState(false);
   const [factApprove, setFactApprove] = useState<number | null>(null);   // ждут РП в выбранном объекте; null — нет права fact.approve
   const [p2, setP2] = useState(readPlatformView());
+  const [inboxRows, setInboxRows] = useState<InboxRow[] | null>(null);   // P2-0021: «Требует моего участия» по всем объектам
+  // Красные точки меню — пока вошёл и есть доступ к компании (числа и права — с сервера, pf_my_inbox).
+  useInboxBadges(summaryApi, mode === 'authed' && companies.length > 0, ROUTE_EVENT, setInboxRows);
 
   useEffect(() => {
     const onP2 = (): void => setP2(readPlatformView());

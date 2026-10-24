@@ -79,6 +79,73 @@
     return access[base] === true && !!(window.RBI && window.RBI.qualitySync);
   }
 
+  /**
+   * P2-0021: число на пункте меню («красная точка»). Модуль сообщает числа: setNavBadges(scope, { '<путь>': n, 'module:<id>': n }) —
+   * путь — пункт подвкладок (нижний таббар, nav2), 'module:<id>' — пункт модуля в боковом меню и в мобильном меню модулей.
+   * 0 / нет числа — без точки; > 99 — «99+». setNavBadges(scope, null) — убрать числа модуля. Без чисел меню прежнее.
+   */
+  var navBadgesByScope = {};
+  var NAV_BADGE_STYLE_ID = 'shell-nav-badge-style';
+  var NAV_BADGE_CSS =
+    '.shell-nav-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;' +
+    'border-radius:8px;background:var(--color-red);color:var(--white);font-size:10px;font-weight:700;line-height:1;box-sizing:border-box;' +
+    'pointer-events:none;font-variant-numeric:tabular-nums}' +
+    '.has-shell-nav-badge{position:relative}' +
+    '#main-bottom-nav .shell-nav-badge,#app-sidebar .shell-nav-badge{position:absolute;top:2px;left:calc(50% + 4px)}' +
+    '#app-nav2 .shell-nav-badge,#mobile-module-menu .shell-nav-badge{margin-left:auto}';
+
+  function navBadgeCount(key) {
+    var sum = 0;
+    Object.keys(navBadgesByScope).forEach(function (s) {
+      var n = Number(navBadgesByScope[s][key]);
+      if (isFinite(n) && n > 0) sum += Math.floor(n);
+    });
+    return sum;
+  }
+
+  function navBadgeText(n) {
+    return n > 99 ? '99+' : String(n);
+  }
+
+  function ensureNavBadgeStyle() {
+    if (document.getElementById(NAV_BADGE_STYLE_ID)) return;
+    var st = document.createElement('style');
+    st.id = NAV_BADGE_STYLE_ID;
+    st.textContent = NAV_BADGE_CSS;
+    (document.head || document.body).appendChild(st);
+  }
+
+  /** Рисует точки на уже отрисованных пунктах: боковое меню, мобильное меню модулей, нижний таббар, nav2. */
+  function paintNavBadges() {
+    var hasAny = Object.keys(navBadgesByScope).length > 0;
+    var els = document.querySelectorAll('#app-sidebar [data-path], #mobile-module-menu [data-path], #main-bottom-nav [data-path], #app-nav2 [data-path]');
+    if (hasAny) ensureNavBadgeStyle();
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var old = el.querySelector('.shell-nav-badge');
+      if (old) old.remove();
+      el.classList.remove('has-shell-nav-badge');
+      if (!hasAny) continue;
+      var mod = el.getAttribute('data-sidebar-module-id') || el.getAttribute('data-menu-module-id');
+      var key = mod ? 'module:' + mod : el.getAttribute('data-path');
+      var n = navBadgeCount(key);
+      if (n <= 0) continue;
+      var b = document.createElement('span');
+      b.className = 'shell-nav-badge';
+      b.textContent = navBadgeText(n);
+      b.setAttribute('aria-label', 'Требует участия: ' + n);
+      el.classList.add('has-shell-nav-badge');
+      el.appendChild(b);
+    }
+  }
+
+  function setNavBadges(scope, map) {
+    if (!scope) return;
+    if (map && typeof map === 'object') navBadgesByScope[scope] = Object.assign({}, map);
+    else delete navBadgesByScope[scope];
+    paintNavBadges();
+  }
+
   function _i18n() {
     return window.RBI && window.RBI.services && window.RBI.services.i18n;
   }
@@ -126,6 +193,8 @@
     platformEntryMode: platformEntryMode,
     isPlatformModuleAllowed: isPlatformModuleAllowed,
     legacyModuleAllowed: legacyModuleAllowed,
+    setNavBadges: setNavBadges,
+    paintNavBadges: paintNavBadges,
     getContentRoot: function () {
       return document.getElementById('app-content');
     },
@@ -366,6 +435,7 @@
         '</button>';
 
       container.innerHTML = html;
+      paintNavBadges();
       // P2-0011: подсветка — по текущему маршруту (единое правило роутера), а не только по режиму
       if (window.AppRouter && typeof window.AppRouter.updateNavHighlight === 'function') window.AppRouter.updateNavHighlight(location.hash);
     },
@@ -484,7 +554,7 @@
       });
 
       getPlatformMenuItems().forEach(function (item) {
-        html += '<button type="button" data-path="' + item.path + '"' +
+        html += '<button type="button" data-path="' + item.path + '" data-menu-module-id="' + item.id + '"' +
           ' class="w-full text-left px-3.5 py-2.5 text-[11px] font-bold uppercase flex items-center justify-between gap-2 transition-colors text-slate-700 dark:text-slate-300">' +
           '<span>' + item.label + '</span></button>';
       });
@@ -498,6 +568,7 @@
       });
 
       container.innerHTML = html;
+      paintNavBadges();
     },
     toggleMobileModuleMenu: function () {
       var menu = document.getElementById('mobile-module-menu');

@@ -3,6 +3,7 @@
  * миграций 011 и 013. Отставание (п.п. и дни, ТЗ §9), светофор по ТЗ 8.2 и вердикт темпа — только с сервера (summary_project).
  * Готовность по деньгам договорной КП, темп, прогноз, светофор, «сделано ↔ КС-2» считает сервер (единый расчёт summary_project);
  * поля в ₽, общий % и прогноз приходят только при праве planfact.money.view (иначе null). Экран ничего не пересчитывает.
+ * P2-0021: «Требует моего участия» — pf_my_inbox (миграция 029): по всем объектам, только виды по правам (иначе null).
  */
 import { getClient } from '../../../platform/auth/auth.service.ts';
 import { mapCompanyError } from '../../../platform/company/company.service.ts';
@@ -54,6 +55,12 @@ export interface Ks2GapRow {
   work_name: string | null; done_qty: number; issued_qty: number; gap_qty: number;
   price: number | null; done_money: number | null; issued_money: number | null; gap_money: number | null;
 }
+/** Строка «Требует моего участия» по объекту (pf_my_inbox, 029). null — у вошедшего нет права на этот вид в объекте. */
+export interface InboxRow {
+  project_id: string; name: string; code: string | null;
+  pending: number | null; my_rejected: number | null; ks2_drafts: number | null;
+  ks2_gap: number | null; ks2_gap_money: number | null; stale: number | null; stale_days: number | null;
+}
 
 export interface SummaryApi {
   portfolio(): Promise<Result<SummaryProject[]>>;
@@ -65,6 +72,8 @@ export interface SummaryApi {
   places(projectId: string, locationId: string | null): Promise<Result<SummaryPlace[]>>;
   attention(projectId: string): Promise<Result<SummaryAttention>>;
   setThresholds(projectId: string, yellowPp: number, redPp: number, days: number): Promise<Result>;
+  /** Что ждёт вошедшего по всем его объектам (один вызов сервера). */
+  inbox(): Promise<Result<InboxRow[]>>;
 }
 
 const n = (v: unknown): number => Number(v ?? 0);
@@ -91,6 +100,10 @@ export const normGap = (r: Ks2GapRow): Ks2GapRow => ({
   ...r, row_no: n(r.row_no), done_qty: n(r.done_qty), issued_qty: n(r.issued_qty), gap_qty: n(r.gap_qty),
   price: nn(r.price), done_money: nn(r.done_money), issued_money: nn(r.issued_money), gap_money: nn(r.gap_money) });
 
+export const normInbox = (r: InboxRow): InboxRow => ({
+  ...r, code: r.code ?? null, pending: nn(r.pending), my_rejected: nn(r.my_rejected), ks2_drafts: nn(r.ks2_drafts), ks2_gap: nn(r.ks2_gap),
+  ks2_gap_money: nn(r.ks2_gap_money), stale: nn(r.stale), stale_days: nn(r.stale_days) });
+
 export function createSummaryService(): SummaryApi | null {
   const c = getClient();
   if (!c) return null;
@@ -113,5 +126,6 @@ export function createSummaryService(): SummaryApi | null {
     places: (p, l) => list(call<SummaryPlace[]>('pf_summary_places', { p_project: p, p_location: l }), normPlace),
     attention: (p) => call<SummaryAttention>('pf_summary_attention', { p_project: p }),
     setThresholds: (p, y, r, d) => call('pf_project_set_thresholds', { p_project: p, p_yellow_pp: y, p_red_pp: r, p_overdue_days: d }),
+    inbox: () => list(call<InboxRow[]>('pf_my_inbox', {}), normInbox),
   };
 }

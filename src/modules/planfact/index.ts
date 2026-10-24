@@ -54,6 +54,7 @@ import type { DataApi } from './data.service.ts';
 import { createAuthService, readAuthConfig } from '../../platform/auth/auth.service.ts';
 import type { AuthApi } from '../../platform/auth/auth.service.ts';
 import type { PlanfactDemo } from './model.ts';
+import { withInboxRefresh } from './inbox/inbox.ts';
 import demo from './demo-data.json' with { type: 'json' };
 
 const ROUTE = '#/planfact';
@@ -80,8 +81,9 @@ function getAuth(): AuthApi | null {
     projectsApi = auth ? createProjectsService() : null;
     vorApi = auth ? createVorService() : null;
     estimateApi = auth ? createEstimateService() : null;
-    factApi = auth ? createFactService() : null;
-    ks2Api = auth ? createKs2Service() : null;
+    // P2-0021: после своих действий (решение РП, исправление, ввод факта, акт КС-2) точки «Требует моего участия» перечитываются
+    factApi = auth ? withInboxRefresh(createFactService(), ['add', 'addBatch', 'correct', 'decide', 'decideBatch']) : null;
+    ks2Api = auth ? withInboxRefresh(createKs2Service(), ['setContract', 'createAct', 'issue', 'annul']) : null;
     summaryApi = auth ? createSummaryService() : null;
     coreApi = auth ? createCoreService() : null;
   }
