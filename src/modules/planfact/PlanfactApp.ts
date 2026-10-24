@@ -48,11 +48,12 @@ export function routeFromHash(hash: string): { page: Page; sub: Sub } {
 }
 
 /** Подвкладка «Факта» (P2-0017): #/planfact/fact — «Ввод», #/planfact/fact/chessboard — «Шахматка»;
- *  P2-0020: #/planfact/fact/pending[?вид] — «Ждёт подтверждения» (реестр РП; вкладка — только при праве fact.approve в объекте). */
-export type FactSub = 'entry' | 'chessboard' | 'pending';
+ *  P2-0020: #/planfact/fact/pending[?вид] — «Ждёт подтверждения» (реестр РП; вкладка — только при праве fact.approve в объекте),
+ *  #/planfact/fact/journal[?вид] — «Журнал» (все записи факта объекта за период; всем с fact.view). */
+export type FactSub = 'entry' | 'chessboard' | 'pending' | 'journal';
 export const FACT_SUBS: { id: FactSub; label: string; short?: string; path: string; approve?: boolean }[] = [{ id: 'entry', label: 'Ввод', path: '/fact' }, { id: 'chessboard', label: 'Шахматка', path: '/fact/chessboard' },
-  { id: 'pending', label: 'Ждёт подтверждения', short: 'Ждёт РП', path: '/fact/pending', approve: true }];
-const FACT_SUB_IDS: string[] = ['chessboard', 'pending'];
+  { id: 'pending', label: 'Ждёт подтверждения', short: 'Ждёт РП', path: '/fact/pending', approve: true }, { id: 'journal', label: 'Журнал', path: '/fact/journal' }];
+const FACT_SUB_IDS: string[] = ['chessboard', 'pending', 'journal'];
 /** Подвкладка «ВОР» (P2-0019): #/planfact/vor — «Загрузка», #/planfact/vor/positions[?вид] — «Позиции» (реестр). */
 export type VorSub = 'load' | 'positions';
 export const VOR_SUBS: { id: VorSub; label: string; path: string }[] = [{ id: 'load', label: 'Загрузка', path: '/vor' }, { id: 'positions', label: 'Позиции', path: '/vor/positions' }];
@@ -166,6 +167,12 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     const r = (window as unknown as { AppRouter?: { navigate?: (p: string, replace?: boolean) => void } }).AppRouter;
     if (r && typeof r.navigate === 'function') r.navigate(fix, true); else { window.history.replaceState(null, '', fix); setRoute(routeFromHash(fix)); }
   }, [fix]);
+
+  // На телефоне подвкладки «Факта» прокручиваются вбок: открытая — всегда в поле зрения (P2-0020: их четыре).
+  useEffect(() => {
+    const el = document.querySelector('[data-testid="pf-facttabs"] .pf-seg-btn--active') as (HTMLElement & { scrollIntoView?: (o?: object) => void }) | null;
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [route, factSubFromHash(window.location.hash), mode, companies.length, factApprove]);
 
   function reset(): void {
     restoreShellUser();

@@ -14,6 +14,7 @@ import { fmtPct, fmtQty, percent, remainder, vorHints } from './fact.ts';
 import type { HintRow } from './fact.ts';
 import { FactHistory } from './FactHistory.ts';
 import { PendingRegistry, PENDING_REGISTRY_CSS } from './PendingRegistry.ts';
+import { FactJournal, FACT_JOURNAL_CSS } from './FactJournal.ts';
 import { FloorClose } from './FloorClose.ts';
 import { ChessboardTab } from './ChessboardTab.ts';
 import { FactEntryForm } from './FactEntryForm.ts';
@@ -27,7 +28,7 @@ export function readLast(company: string): string { try { return window.localSto
 export function writeLast(company: string, id: string): void { try { window.localStorage.setItem(lastKey(company), id); } catch { /* без хранилища — просто не запомним */ } }
 
 export type FactMode = 'entry' | 'chessboard' | 'pending' | 'journal';
-/** mode — подвкладка «Факта»: «Ввод» (по умолчанию), «Шахматка» (P2-0017), «Ждёт подтверждения» (P2-0020); объект выбирается общим
+/** mode — подвкладка «Факта»: «Ввод» (по умолчанию), «Шахматка» (P2-0017), «Ждёт подтверждения», «Журнал» (P2-0020); объект — общим
  *  списком. onApprove — число записей, ждущих РП в выбранном объекте, или null без права fact.approve (подвкладки тогда нет). */
 export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsApi; me: string; mode?: FactMode; onApprove?: (count: number | null) => void }): ReactElement {
   const { api, vor, projects, me } = props;
@@ -115,6 +116,12 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
         : h('div', { className: 'pf-card pj-empty pf-muted', 'data-testid': 'ft-noapprove' }, 'Подтверждать факт в этом объекте может руководитель проекта (право «Факт: подтверждение»).'));
   }
 
+  if (mode === 'journal') {
+    return h('div', { className: 'pj-tab ft-tab ft-tab--wide', 'data-testid': 'ft-tab' },
+      h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
+      projectId && project ? h(FactJournal, { key: projectId, api, projectId, companyId: project.company_id, user: me }) : null);
+  }
+
   if (mode === 'chessboard') {
     return h('div', { className: 'pj-tab ft-tab ft-tab--wide', 'data-testid': 'ft-tab' },
       h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
@@ -185,7 +192,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
     body);
 }
 
-export const FACT_CSS = PENDING_REGISTRY_CSS + `
+export const FACT_CSS = PENDING_REGISTRY_CSS + FACT_JOURNAL_CSS + `
 .ft-tab{max-width:900px}
 .ft-tab--wide{max-width:none}
 .ft-crumbs{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
