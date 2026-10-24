@@ -603,6 +603,20 @@ function processTwiImport(event) {
     event.target.value = '';
 }
 
+// P2-0023: есть ли уже карта ТИВИ на пункт (память + база устройства, и скрытые фильтром).
+// Возвращает карту или null. Используется «магией» перед открытием конструктора.
+window.rbiFindExistingTwiCard = async function (checklistKey, itemId) {
+    var all = (window.customTwiCards || []).slice();
+    try {
+        var stT = _storage();
+        var stored = await stT.getAll((stT.stores ? stT.stores() : STORES).TWI_CARDS);
+        if (Array.isArray(stored)) all = all.concat(stored);
+    } catch (e) { /* только память */ }
+    if (!window.RbiSyncMergePolicy) return null;
+    var r = window.RbiSyncMergePolicy.findTwiConflict(all, { checklistKey: checklistKey, itemId: itemId, me: '' });
+    return r.action === 'none' ? null : r.card;
+};
+
 // === ПОИСК КАНДИДАТОВ ДЛЯ МАГИИ TWI ===
 window.getMagicTwiCandidates = function () {
     let twiMagicMap = {};
@@ -620,15 +634,21 @@ window.getMagicTwiCandidates = function () {
                     const magicKey = check.templateKey + '_' + id;
                     if (!twiMagicMap[magicKey]) twiMagicMap[magicKey] = { ok: null, fail: null, title: defName, tmplKey: check.templateKey, itemId: id };
 
-                    if (s === 'ok') twiMagicMap[magicKey].ok = check.photos[id];
-                    else if (s === 'fail' || s === 'fail_escalated') twiMagicMap[magicKey].fail = check.photos[id];
+                    // P2-0023: photos[id] может быть массивом — в кнопку «магии» идёт одно фото (раньше «a,b» ломало фото).
+                    const firstPhoto = window.normalizeItemPhotos ? window.normalizeItemPhotos(check.photos[id])[0] : check.photos[id];
+                    if (s === 'ok') twiMagicMap[magicKey].ok = firstPhoto;
+                    else if (s === 'fail' || s === 'fail_escalated') twiMagicMap[magicKey].fail = firstPhoto;
                 }
             });
         }
     });
 
     const magicCandidates = Object.values(twiMagicMap).filter(m => m.ok && m.fail);
+    // Правило владельца: на пункт — одна карта ТИВИ. Есть (своя или чужая, не удалённая) — «магию» не предлагаем.
     return magicCandidates.filter(m => {
+        if (window.RbiSyncMergePolicy) {
+            return window.RbiSyncMergePolicy.findTwiConflict(customTwiCards, { checklistKey: m.tmplKey, itemId: m.itemId, me: '' }).action === 'none';
+        }
         const existing = customTwiCards.find(c => c.checklistKey === m.tmplKey && String(c.itemId) === String(m.itemId) && c.type === 'INSPECTOR');
         return !existing;
     });
@@ -1550,7 +1570,9 @@ function _twiViewerPhotosHtml(items) {
 }
 
 window.openTwiViewer = async function (twiId) {
-    const card = customTwiCards.find(c => c.id === twiId);
+    // P2-0023: синхронизация заменяет window.customTwiCards новым массивом — ищем и там (иначе «не найдена»).
+    const card = customTwiCards.find(c => c.id === twiId)
+        || (window.customTwiCards || []).find(c => String(c.id) === String(twiId));
     if (!card) return showToast('Ошибка: Инструкция не найдена');
     const gen = ++_twiViewerGen;
     if (typeof gameLogAction === 'function') {
@@ -3224,14 +3246,32 @@ window.saveTwiCard = async function () {
 
     if (window.currentTwiType === 'INSPECTOR' && !window.currentEditingTwiId) {
         var itemId = document.getElementById('twi-item-select').value;
-        var existingCard = window.customTwiCards.find(function (c) {
-            return c.checklistKey === checklistKey &&
-                String(c.itemId) === String(itemId) &&
-                c.type === 'INSPECTOR' &&
-                !c._deleted;
-        });
-        if (existingCard) {
-            return showToast('⚠️ TWI-карта для этого пункта уже создана другим инженером! Обновите базу.');
+        // P2-0023: одно правило уникальности — по ВСЕМ картам (память + база устройства, и скрытые фильтром).
+        // Своя карта → открываем её; раньше показывался отказ «создана другим инженером» и на свою.
+        var allCards = (window.customTwiCards || []).slice();
+        try {
+            var stTwi = _storage();
+            var storedTwi = await stTwi.getAll((stTwi.stores ? stTwi.stores() : STORES).TWI_CARDS);
+            if (Array.isArray(storedTwi)) allCards = allCards.concat(storedTwi);
+        } catch (e) { /* только память */ }
+        var me = _getSetting('engineerName') || '';
+        var conflict = window.RbiSyncMergePolicy
+            ? window.RbiSyncMergePolicy.findTwiConflict(allCards, {
+                checklistKey: checklistKey, itemId: itemId, me: me,
+                canEdit: function (owner) { return rbi_canDeleteKnowledgeItem(owner); }
+            })
+            : { action: 'none' };
+        if (conflict.action !== 'none') window._rbiMagicTwiPending = false;
+        if (conflict.action === 'open') {
+            if (!(window.customTwiCards || []).some(function (c) { return String(c.id) === String(conflict.card.id); })) {
+                window.customTwiCards.push(conflict.card);
+            }
+            showToast('ℹ️ Карта для этого пункта уже есть — открыта для правки');
+            window.openTwiConstructor(conflict.card.id);
+            return;
+        }
+        if (conflict.action === 'refuse') {
+            return showToast('⚠️ Карта для этого пункта уже есть (автор: ' + (conflict.card.owner || '—') + '). Попросите автора или руководителя дополнить её.');
         }
     }
 

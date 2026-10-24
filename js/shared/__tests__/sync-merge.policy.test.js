@@ -9,7 +9,8 @@ import {
   recordProjectNames,
   keepOnPurge,
   meetingPushAllowed,
-  cloudMayOverwrite
+  cloudMayOverwrite,
+  findTwiConflict
 } from '../../services/sync/sync-merge.policy.js';
 
 const assigned = ['obj-a'];
@@ -80,3 +81,25 @@ describe('вспомогательные', () => {
     assert.deepEqual(recordProjectNames({ projectNames: ['A'] }), ['A']);
   });
 });
+
+describe('findTwiConflict (ТИВИ: одно правило уникальности на создании)', () => {
+  const card = (o) => Object.assign({ id: 't1', type: 'INSPECTOR', checklistKey: 'k', itemId: '5', owner: 'Я' }, o);
+  const q = { checklistKey: 'k', itemId: '5', me: 'Я', canEdit: () => false };
+  it('своя карта (в т.ч. скрытая фильтром — ищем по всем) → открыть, а не «создана другим»', () => {
+    const r = findTwiConflict([card({})], q);
+    assert.equal(r.action, 'open');
+    assert.equal(r.card.id, 't1');
+  });
+  it('чужая → отказ с автором; чужая, но есть право правки → открыть', () => {
+    assert.equal(findTwiConflict([card({ owner: 'Петров' })], q).action, 'refuse');
+    assert.equal(findTwiConflict([card({ owner: 'Петров' })], { ...q, canEdit: () => true }).action, 'open');
+  });
+  it('удалённая карта и другой пункт не мешают создать', () => {
+    assert.equal(findTwiConflict([card({ _deleted: true }), card({ id: 't2', itemId: '6' })], q).action, 'none');
+    assert.equal(findTwiConflict([card({ is_deleted: true })], q).action, 'none');
+  });
+  it('id пункта сравнивается как строка (5 и "5")', () => {
+    assert.equal(findTwiConflict([card({ itemId: 5 })], q).action, 'open');
+  });
+});
+

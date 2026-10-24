@@ -3122,6 +3122,7 @@ window.triggerSync = async function (mode = 'silent') {
                     await syncTableData('report_templates', 'userReportTemplates', 'report_template');
                     await syncTableData('app_assistant_kb', 'appAssistantData', 'assistant_kb'); // <-- ОТПРАВКА БАЗЫ ИИ В ОБЛАКО
                     // --- АВТОМАТИЧЕСКАЯ ДЕДУПЛИКАЦИЯ TWI (РЕШЕНИЕ ОФЛАЙН-КОНФЛИКТОВ) ---
+                    // Правило владельца (24.10.2026): на один пункт — одна карта, выживает более ранняя. Не убирать.
                     if (typeof customTwiCards !== 'undefined' && customTwiCards.length > 0) {
                         const twiMap = new Map();
                         for (let i = 0; i < customTwiCards.length; i++) {

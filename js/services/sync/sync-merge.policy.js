@@ -85,8 +85,28 @@ export function cloudMayOverwrite(p) {
     return Number(p.cloudTime) >= Number(p.localTime);
 }
 
+/**
+ * P2-0023 этап 6. Единое правило уникальности карты ТИВИ «Технадзор» на пункт чек-листа (на создании).
+ * Ищет по ВСЕМ картам (и скрытым фильтром), а не только по видимым.
+ * @param {object[]} cards все карты (память + база устройства; дубли по id допустимы)
+ * @param {{ checklistKey: string, itemId: string, me: string, canEdit: (owner: string) => boolean }} q
+ * @returns {{ action: 'none' } | { action: 'open', card: object } | { action: 'refuse', card: object }}
+ *          open — карта своя (или её можно править) → открыть её; refuse — чужая.
+ */
+export function findTwiConflict(cards, q) {
+    const list = Array.isArray(cards) ? cards : [];
+    const card = list.find((c) => c && !c._deleted && !c.is_deleted && c.type === 'INSPECTOR'
+        && c.checklistKey === q.checklistKey && String(c.itemId) === String(q.itemId));
+    if (!card) return { action: 'none' };
+    const owner = String(card.owner || '').trim();
+    const mine = !owner || (q.me && owner === String(q.me).trim());
+    if (mine || (typeof q.canEdit === 'function' && q.canEdit(owner))) return { action: 'open', card };
+    return { action: 'refuse', card };
+}
+
 if (typeof window !== 'undefined') {
     window.RbiSyncMergePolicy = {
-        isUnsentLocal, isGlobalProjectName, recordProjectNames, keepOnPurge, meetingPushAllowed, cloudMayOverwrite
+        isUnsentLocal, isGlobalProjectName, recordProjectNames, keepOnPurge, meetingPushAllowed, cloudMayOverwrite,
+        findTwiConflict
     };
 }
