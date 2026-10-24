@@ -190,15 +190,22 @@ export function humanSyncReason(e) {
 
 /**
  * P2-0025: отпечаток черновика осмотра по содержимому (без времени сохранения).
- * Длинные строки (фото data:/base64) — длиной и краями: дёшево, а замена фото меняет отпечаток.
+ * Длинные фото (data:/base64) — длиной и краями: дёшево, а замена фото меняет отпечаток.
+ * Обычный текст — целиком (доработка 1: правка середины длинного замечания меняет отпечаток).
  * Ключи объектов — по порядку, чтобы перестановка полей не считалась изменением.
  */
+function _looksLikeBinaryText(v) {
+    if (v.startsWith('data:')) return true;
+    // «голый» base64: начало строки — только символы base64, без пробелов
+    return /^[A-Za-z0-9+/=_-]{256}$/.test(v.slice(0, 256));
+}
+
 export function draftFingerprint(draft) {
     const seen = typeof WeakSet === 'function' ? new WeakSet() : null;
     const norm = (v) => {
         if (v === undefined) return null;
         if (typeof v === 'string') {
-            return v.length > 256 ? `~${v.length}:${v.slice(0, 64)}:${v.slice(-64)}` : v;
+            return (v.length > 256 && _looksLikeBinaryText(v)) ? `~${v.length}:${v.slice(0, 64)}:${v.slice(-64)}` : v;
         }
         if (!v || typeof v !== 'object') return v;
         if (seen) { if (seen.has(v)) return '~cycle'; seen.add(v); }

@@ -25,6 +25,23 @@ describe('draftFingerprint', () => {
     assert.notEqual(fp, draftFingerprint({ ...base, photos: { a: ['data:' + 'A'.repeat(4999) + 'B'] } }));
     assert.notEqual(fp, draftFingerprint({ ...base, photos: { a: ['data:' + 'A'.repeat(5000), 'p2'] } }));
   });
+  it('доработка 1: замена буквы в середине длинного текста той же длины — отпечаток другой', () => {
+    const text = 'Трещина в стяжке, '.repeat(20) + 'середина' + ' требуется ремонт.'.repeat(20);
+    const edited = text.replace('середина', 'серёдина');
+    assert.ok(text.length > 300 && edited.length === text.length);
+    assert.notEqual(
+      draftFingerprint({ details: { a: { comment: text } } }),
+      draftFingerprint({ details: { a: { comment: edited } } })
+    );
+  });
+  it('доработка 1: фото 1 МБ (data: и голый base64) — по-прежнему длиной и краями, дёшево', () => {
+    const mb = 'A'.repeat(1024 * 1024);
+    const t0 = Date.now();
+    const fpData = draftFingerprint({ photos: { a: ['data:image/jpeg;base64,' + mb] } });
+    const fpRaw = draftFingerprint({ photos: { a: [mb] } });
+    assert.ok(Date.now() - t0 < 200, 'отпечаток фото не перебирает весь мегабайт');
+    assert.ok(Number(fpData.split(':')[0]) < 400 && Number(fpRaw.split(':')[0]) < 400, 'в строку отпечатка попали только края');
+  });
 });
 
 describe('draftNeedsPushAfterSync', () => {
