@@ -1,6 +1,6 @@
 /**
  * «План/Факт → Факт» (P2-0007): прораб с телефона. Объект → корпус → секция → этаж → работы места (позиции ВОР) с планом,
- * накопленным фактом и %; внести объём за дату с обязательной бригадой; история и исправление; «закрыть этаж целиком»;
+ * накопленным фактом и %; внести объём за дату или период (P2-0022: окно как в «Шахматке») с обязательной бригадой; история и исправление; «закрыть этаж целиком»;
  * у РП — подвкладка «Ждёт подтверждения» (P2-0020: реестр, решение пачкой). Накопленный факт и % считает сервер (Σ принятых
  * записей); права и допуск перебора — тоже.
  */
@@ -17,7 +17,7 @@ import { PendingRegistry, PENDING_REGISTRY_CSS } from './PendingRegistry.ts';
 import { FactJournal, FACT_JOURNAL_CSS } from './FactJournal.ts';
 import { FloorClose } from './FloorClose.ts';
 import { ChessboardTab } from './ChessboardTab.ts';
-import { FactEntryForm } from './FactEntryForm.ts';
+import { FactWindow, FACT_WINDOW_CSS } from './FactWindow.ts';
 import { initialProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';
 
 const PAGE = 100;
@@ -134,9 +134,10 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
     return base && own.startsWith(base) ? own.slice(base.length).replace(/^\s*·\s*/, '') : (place ? '' : own);
   };
 
-  function entryForm(pos: FactPosition): ReactElement {
-    return h(FactEntryForm, { key: pos.position_id, api, pos, brigades, lastBrigade, onBrigade: rememberBrigade, onCancel: () => setOpenId(''),
-      onSaved: (msg) => { setOpenId(''); setNotice(msg); void refresh(); } });
+  /** P2-0022: «Внести факт» открывает то же окно, что в «Шахматке» (на телефоне — шторка). */
+  function entryWindow(pos: FactPosition): ReactElement {
+    return h(FactWindow, { key: pos.position_id, api, pos, place: pos.location_path, brigades, lastBrigade, onBrigade: rememberBrigade, me, canCreate, canApprove,
+      onClose: () => setOpenId(''), onSaved: (msg) => { setOpenId(''); setNotice(msg); void refresh(); }, onChanged: () => { void refresh(); } });
   }
 
   const nav = h('div', { className: 'ft-crumbs', 'data-testid': 'ft-crumbs' },
@@ -181,10 +182,10 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
             p.pending_count ? h('div', { className: 'ft-pending', 'data-testid': 'ft-pending-badge' }, `Ждёт подтверждения РП: ${fmtQty(p.pending_qty)} ${p.unit_code}`) : null,
             p.last_rejected_note ? h('div', { className: 'ft-bad', 'data-testid': 'ft-rejected' }, `Отклонено РП: ${p.last_rejected_note}`) : null,
             h('div', { className: 'pj-actions' },
-              canCreate ? h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'ft-enter', onClick: () => { setOpenId(openId === p.position_id ? '' : p.position_id); setClosing(false); } }, 'Внести факт') : null,
-              h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'ft-history-btn', onClick: () => { setHistoryId(historyId === p.position_id ? '' : p.position_id); setClosing(false); } }, 'История')),
-            openId === p.position_id ? entryForm(p) : null);
+              canCreate ? h('button', { type: 'button', className: 'pf-btn', 'data-testid': 'ft-enter', onClick: () => { setOpenId(p.position_id); setHistoryId(''); setClosing(false); } }, 'Внести факт') : null,
+              h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'ft-history-btn', onClick: () => { setHistoryId(historyId === p.position_id ? '' : p.position_id); setClosing(false); } }, 'История')));
         }),
+        openId && canCreate && rows.find((p) => p.position_id === openId) ? entryWindow(rows.find((p) => p.position_id === openId)!) : null,
         rows.length > shown ? h('button', { type: 'button', className: 'pf-btn pf-btn--ghost', 'data-testid': 'ft-more', onClick: () => setShown(shown + PAGE) }, `Показать ещё (${rows.length - shown})`) : null);
 
   return h('div', { className: 'pj-tab ft-tab', 'data-testid': 'ft-tab' },
@@ -192,7 +193,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
     body);
 }
 
-export const FACT_CSS = PENDING_REGISTRY_CSS + FACT_JOURNAL_CSS + `
+export const FACT_CSS = PENDING_REGISTRY_CSS + FACT_JOURNAL_CSS + FACT_WINDOW_CSS + `
 .ft-tab{max-width:900px}
 .ft-tab--wide{max-width:none}
 .ft-crumbs{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}

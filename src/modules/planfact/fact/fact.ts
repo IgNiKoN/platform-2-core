@@ -74,6 +74,28 @@ export function todayMoscow(now: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
 
+/** Запись «за период» (P2-0022): не больше 31 дня включительно — то же правило, что на сервере (030). */
+export const PERIOD_MAX_DAYS = 31;
+
+/** Дней между датами ГГГГ-ММ-ДД (b − a). */
+export const daysBetween = (a: string, b: string): number => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+
+/** Проверка периода «с … по …» до отправки (сервер проверяет то же): '' — всё верно, иначе текст ошибки. */
+export function periodError(from: string, to: string, today: string = todayMoscow()): string {
+  if (!from || !to) return 'Укажите начало и конец периода';
+  if (to > today) return 'Дата не может быть в будущем';
+  if (from > to) return 'Начало периода позже конца';
+  if (daysBetween(from, to) > PERIOD_MAX_DAYS - 1) return `Период — не больше ${PERIOD_MAX_DAYS} дня`;
+  return '';
+}
+
+/** «за период 11.10–24.10» для записи с началом периода; запись за день — ''. */
+export function fmtPeriod(from: string | null | undefined, to: string): string {
+  if (!from) return '';
+  const dm = (d: string): string => `${d.slice(8, 10)}.${d.slice(5, 7)}`;
+  return `за период ${dm(from)}–${dm(to)}`;
+}
+
 /** Строка ВОР, нужная для подсказки (номер, тип, наименование). */
 export interface HintRow { row_no: number; kind: string; number: string | null; name: string | null; context?: { note?: string } | null }
 /** Позиция ВОР: из какой строки какой загрузки. */

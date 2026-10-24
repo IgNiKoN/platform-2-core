@@ -61,7 +61,9 @@ export function makeFakeFact(positions: FakePos[], opts: { canManage?: boolean; 
       if (!p) return fail('Позиция не найдена');
       if (!e.brigadeId) return fail('Укажите бригаду');
       if (!(e.qty > 0)) return fail('Объём должен быть больше нуля');
+      if (e.periodFrom && (e.periodFrom > e.date)) return fail('Начало периода позже конца');
       const r = insert(p, e.brigadeId, e.date, e.qty, e.workers, e.manHours, e.note, null, null, null);
+      r.period_from = e.periodFrom ?? null;   // P2-0022 (030): запись «за период»
       return { ok: true, value: { id: r.id, status: r.status as 'accepted' | 'pending_approval' } };
     },
     async addBatch(b: FactBatchInput) {
@@ -79,6 +81,7 @@ export function makeFakeFact(positions: FakePos[], opts: { canManage?: boolean; 
       if (qty === 0) { e.status = 'superseded'; e.decision_note = reason; return { ok: true, value: { id: eid, status: 'superseded' } }; }
       const p = positions.find((x) => x.id === e.position_id)!;
       const r = insert(p, 'b1', e.work_date, qty, e.workers, e.man_hours, e.note || '', e.batch_id, e, reason);
+      r.period_from = e.period_from ?? null;   // исправление наследует период (030)
       return { ok: true, value: { id: r.id, status: r.status } };
     },
     async decide(eid, approve, note) {

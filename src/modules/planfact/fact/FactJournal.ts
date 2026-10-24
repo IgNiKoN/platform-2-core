@@ -10,7 +10,7 @@ import type { ReactElement } from 'react';
 import { HistoryFeed, RegistryTable, SideCard, StatusBadge, buildRegistryXlsx, queryOf, queryToState, registryFileName, registryRows, saveXlsx, syncRegistryAddress } from '../../../platform/ui/index.ts';
 import type { RegistryColumn, RegistryFilter, RegistryState, Status } from '../../../platform/ui/index.ts';
 import type { FactApi, FactHistoryRow, FactJournalRow, FactStatus } from './fact.service.ts';
-import { fmtQty, todayMoscow } from './fact.ts';
+import { fmtPeriod, fmtQty, todayMoscow } from './fact.ts';
 import { fmtWhen } from './FactHistory.ts';
 import { FACT_LABEL, FACT_STATUS_ORDER, historyItem } from './factStatus.ts';
 import { corpOf } from '../vor/PositionsRegistry.ts';
@@ -23,7 +23,7 @@ export const JOURNAL_LIMIT = 2000;
 export const JOURNAL_DAYS = 30;
 
 export interface JournalRow {
-  id: string; positionId: string; corp: string; place: string; work: string; unit: string; qty: number; date: string;
+  id: string; positionId: string; corp: string; place: string; work: string; unit: string; qty: number; date: string; periodFrom: string | null;
   status: FactStatus; brigade: string; workers: number | null; manHours: number | null; author: string; createdAt: string;
   decidedBy: string; decidedAt: string | null; decision: string; note: string; correction: string;
 }
@@ -31,7 +31,7 @@ export interface JournalRow {
 export function toJournalRow(e: FactJournalRow): JournalRow {
   return {
     id: e.id, positionId: e.position_id, corp: corpOf(e.location_path), place: e.location_path, work: e.work_name, unit: e.unit_code,
-    qty: e.qty, date: e.work_date, status: e.status, brigade: e.brigade_name, workers: e.workers, manHours: e.man_hours,
+    qty: e.qty, date: e.work_date, periodFrom: e.period_from ?? null, status: e.status, brigade: e.brigade_name, workers: e.workers, manHours: e.man_hours,
     author: e.created_by_email || '—', createdAt: e.created_at, decidedBy: e.decided_by_email || '', decidedAt: e.decided_at,
     decision: e.decision_note || '', note: e.note || '', correction: e.corrects_id ? (e.correction_reason || 'исправление') : '',
   };
@@ -48,7 +48,8 @@ const QTY = '#,##0.###';
 export const JOURNAL_COLUMNS: RegistryColumn<JournalRow>[] = [
   { id: 'work', label: 'Работа', value: (r) => r.work, fixed: true },
   { id: 'place', label: 'Место', value: (r) => r.place },
-  { id: 'date', label: 'Дата работ', value: (r) => r.date, render: (r) => ruDate(r.date) },
+  { id: 'date', label: 'Дата работ', value: (r) => r.date, render: (r) => (r.periodFrom ? fmtPeriod(r.periodFrom, r.date) : ruDate(r.date)) },
+  { id: 'periodFrom', label: 'Период с', value: (r) => r.periodFrom, render: (r) => (r.periodFrom ? ruDate(r.periodFrom) : ''), hidden: true },
   { id: 'qty', label: 'Объём', value: (r) => r.qty, align: 'right', numFmt: QTY, render: (r) => `${fmtQty(r.qty)} ${r.unit}` },
   { id: 'unit', label: 'ЕИ', value: (r) => r.unit, hidden: true },
   { id: 'status', label: 'Статус', value: (r) => FACT_LABEL[r.status].label, render: (r) => h(StatusBadge, { status: FACT_LABEL[r.status].tone, label: FACT_LABEL[r.status].label, testId: 'fj-status' }) },
@@ -92,7 +93,7 @@ function JournalCard(props: { api: FactApi; row: JournalRow; index: number; tota
   return h(SideCard, { title: row.work, subtitle: row.place, index: props.index, total: props.total, onPrev: props.onPrev, onNext: props.onNext, onClose: props.onClose,
     head: h(StatusBadge, { status: st.tone, label: st.label, testId: 'fj-card-status' }) },
     h('dl', { className: 'vr-nums', 'data-testid': 'fj-card-nums' },
-      dd('Объём', `${fmtQty(row.qty)} ${row.unit}`, true), dd('Дата работ', ruDate(row.date), true), dd('Бригада', row.brigade),
+      dd('Объём', `${fmtQty(row.qty)} ${row.unit}`, true), dd('Дата работ', row.periodFrom ? `${ruDate(row.periodFrom)} — ${ruDate(row.date)}` : ruDate(row.date), true), dd('Бригада', row.brigade),
       row.workers !== null ? dd('Люди', String(row.workers), true) : [], row.manHours !== null ? dd('Чел.-ч', fmtQty(row.manHours), true) : [],
       dd('Внёс', `${row.author}, ${fmtWhen(row.createdAt)}`),
       row.decidedBy ? dd(row.status === 'superseded' ? 'Заменил' : 'Решение РП', `${row.decidedBy}${row.decidedAt ? ', ' + fmtWhen(row.decidedAt) : ''}`) : [],

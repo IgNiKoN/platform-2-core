@@ -176,3 +176,14 @@ test('адрес #/planfact/fact/journal[?вид] — подвкладка «Ж�
   assert.equal(canonicalHash('#/planfact/fact/journalx', all), '#/planfact/fact');
   assert.equal(FACT_SUBS.find((t) => t.id === 'journal')?.approve, undefined, 'вкладка для всех с fact.view');
 });
+
+test('P2-0022: запись «за период» — в журнале «за период dd.mm–dd.mm», в карточке «с — по»; запись за день — дата', async () => {
+  const f = stand();
+  f.entries.push({ ...f.entries[0], id: 'jp', qty: 28, work_date: '2026-10-24', period_from: '2026-10-11', created_at: '2026-10-24T09:00:00Z' } as N);
+  const box = await mount(journal(f));
+  const cellOf = (row: string) => box.querySelector(`[data-testid="fj-table"] tr[data-row="${row}"] [data-col="date"]`) || box.querySelector(`[data-testid="fj-table"] tr[data-row="${row}"]`);
+  assert.match(cellOf('jp').textContent, /за период 11\.10–24\.10/);
+  assert.doesNotMatch(cellOf('j1').textContent, /за период/);
+  click(box.querySelector('tr[data-row="jp"] [data-testid="p2-reg-open"]')); await tick();
+  assert.ok(box.querySelector('[data-testid="fj-card-nums"]').textContent.includes('11.10.2026 — 24.10.2026'));
+});
