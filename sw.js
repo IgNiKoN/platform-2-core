@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.65.0';
+const SW_VERSION = '18.66.0';
 // P2-0013: «разработка / выпуск» — из единственного переключателя js/services/config.service.js (выпуск: rbi-quality-* вместо старой версии).
 importScripts('./js/services/config.service.js');
 const CACHE_PREFIX = (self.APP_CONFIG && self.APP_CONFIG.SW_CACHE_PREFIX) || 'platform2-';
@@ -149,6 +149,7 @@ const urlsToCache = [
   './libs/panzoom.min.js',
   './libs/Sortable.min.js',
   './libs/supabase-js.min.js',
+  './js/services/sync/sync-pull.policy.js',
   './js/services/sync/sync-core.state.js',
   './js/services/sync/sync-cloud-prepare.utils.js',
   './js/services/sync/sync-auth.js',

@@ -117,7 +117,11 @@ window.triggerSync = async function (mode = 'silent') {
     const pCode = window.syncConfig.projectCode;
     const iName = window.syncConfig.engineerName;
     const stableInspectorId = `${pCode}_${iName}`.replace(/\s+/g, '_');
-    let lastPullAt = localStorage.getItem('rbi_sync_last_pull_at') || '';
+    // P2-0023: догрузка «с прошлого раза» — с запасом 15 мин назад (запись, отправленная во время
+    // прошлой синхронизации или с отстающими часами, иначе не приходила никогда).
+    let lastPullAt = window.RbiSyncPullPolicy
+        ? window.RbiSyncPullPolicy.pullSinceWithOverlap(localStorage.getItem('rbi_sync_last_pull_at') || '')
+        : (localStorage.getItem('rbi_sync_last_pull_at') || '');
     const lastPushAt = localStorage.getItem('rbi_sync_last_push_at') || '';
 
     const forceFullPullRequested = localStorage.getItem('rbi_force_full_pull') === '1';
@@ -946,9 +950,18 @@ window.triggerSync = async function (mode = 'silent') {
                 q = q.eq('is_deleted', false);
             }
 
-            if (dataScope === 'none' || cloudStatus !== 'approved') {
+            // P2-0023: через сервер Platform 2.0 видимость решает сервер (quality.row_visible, P2-0018),
+            // клиентское «ФИО И объект» отбрасывало свои же проверки. Гость/неподтверждённый — режется всегда.
+            const scopeMode = window.RbiSyncPullPolicy
+                ? window.RbiSyncPullPolicy.clientScopeMode({ serverScoped: !!(window.RBI && window.RBI.qualitySync), dataScope, approved: cloudStatus === 'approved' })
+                : 'client';
+
+            if (scopeMode === 'block') {
                 // БЕЗОПАСНОСТЬ: Гостям и неподтвержденным пользователям запрещено качать чужие проверки
                 q = q.eq('id', 'impossible_id');
+            }
+            else if (scopeMode === 'none') {
+                // сервер уже отдал ровно видимое этому пользователю
             }
             else if (dataScope === 'ownContractor') {
                 const myContrName =
