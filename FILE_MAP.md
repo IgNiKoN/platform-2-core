@@ -141,7 +141,7 @@
 | Подрядчики/мастер-данные | `js/services/contractor-directory.service.js`, `js/services/masterData.service.js` | `js/services/object-directory.service.js`, API проекта |
 | IndexedDB/синхронизация | `js/services/storage/`, `js/services/sync/` | `js/services/storage.service.js`, `js/services/sync.service.js`, `sw.js` |
 | Фото, документы, PDF | `js/services/file.service.js`, `js/services/storage/storage-photo-manager.js`, `js/services/storage/storage-photo-loader.js` (ленивая загрузка, P2-0023) | `js/shared/pdf-open.utils.js`, `libs/` |
-| Правила синхронизации (P2-0023) | `js/services/sync/sync-pull.policy.js` (загрузка), `sync-retry.policy.js` (повторы, «нужно внимание»), `sync-merge.policy.js` (автоочистка, совещания, ТИВИ) | тесты `js/shared/__tests__/sync-*.policy.test.js` |
+| Правила синхронизации (P2-0023) | `js/services/sync/sync-pull.policy.js` (загрузка), `sync-retry.policy.js` (повторы, «нужно внимание», «Отправить без этого фото» — `history.actions.js`), `sync-merge.policy.js` (автоочистка, совещания, ТИВИ) | тесты `js/shared/__tests__/sync-*.policy.test.js` |
 | Единые цвета, кнопки, темы | `css/brand/rbi.css`, `css/rbi-ui.css`, `css/style.css` | `ai-dev/standards/DESIGN_SYSTEM.md`, `UI_COMPONENTS.md` |
 | Пример TS/Vite-модуля | `src/modules/construction-v2/index.ts` | `src/modules/construction-v2/manifest.ts`, `vite.construction-v2.config.ts` |
 | Сборка, тесты | `package.json`, `tsconfig.json`, `vite.*.config.ts` | `js/shared/__tests__/`, фактически доступные команды |
