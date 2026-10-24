@@ -296,9 +296,60 @@ function _t(key, fallback, vars) {
       return true;
     },
 
+    // P2-0025: содержимое черновика (те же поля, что пишет saveSession, без времени).
+    _draftFingerprint: function () {
+      var policy = window.RbiSyncRetryPolicy;
+      if (!policy || typeof policy.draftFingerprint !== 'function') return null;
+      function _val(id) {
+        var el = document.getElementById(id);
+        return el ? el.value : '';
+      }
+      var planPin = (window.AuditState && typeof window.AuditState.getPlanPin === 'function')
+        ? window.AuditState.getPlanPin()
+        : null;
+      return policy.draftFingerprint({
+        templateKey: AuditState.currentTemplateKey,
+        project: _val('inp-project'), inspector: _val('inp-inspector'), contractor: _val('inp-contractor'),
+        section: _val('inp-section'), floor: _val('inp-floor'), room: _val('inp-room'), location: _val('inp-location'),
+        planPin: planPin || null,
+        state: AuditState.state, details: AuditState.details, photos: AuditActions.getSessionPhotosForSync(),
+        customExpertConclusions: _reports().getExpertConclusions()
+      });
+    },
+    _lastDraftFp: null,
+    _lastDraftChangeAt: 0,
+
+    // P2-0025: «к отправке» — только при реальном изменении черновика (сравнение по содержимому).
+    // Первый вызов после загрузки страницы (отпечатка ещё нет) помечает, как раньше.
     scheduleSessionSave: function () {
       if (AuditActions._sessionIsEmpty()) return;
-      localStorage.setItem('rbi_cloud_dirty', '1');
+      var fp = AuditActions._draftFingerprint();
+      if (fp === null || fp !== AuditActions._lastDraftFp) {
+        AuditActions._lastDraftFp = fp;
+        AuditActions._lastDraftChangeAt = Date.now();
+        localStorage.setItem('rbi_cloud_dirty', '1');
+      }
+      clearTimeout(window.__saveSessionTimer);
+      window.__saveSessionTimer = setTimeout(function () {
+        AuditActions.saveSession();
+      }, 500);
+    },
+
+    // P2-0025: после синхронизации — сохранить черновик; «к отправке» снова, только если он
+    // менялся после начала синхронизации (иначе раньше: метка каждый раз → синхронизация раз в минуту).
+    onSyncCompleted: function (detail) {
+      if (AuditActions._sessionIsEmpty()) return;
+      var fp = AuditActions._draftFingerprint();
+      if (fp !== null && fp !== AuditActions._lastDraftFp) {
+        AuditActions.scheduleSessionSave();
+        return;
+      }
+      var policy = window.RbiSyncRetryPolicy;
+      var startedAt = detail && detail.startedAt;
+      var again = (policy && typeof policy.draftNeedsPushAfterSync === 'function')
+        ? policy.draftNeedsPushAfterSync(AuditActions._lastDraftChangeAt, startedAt)
+        : true;
+      if (fp === null || again) localStorage.setItem('rbi_cloud_dirty', '1');
       clearTimeout(window.__saveSessionTimer);
       window.__saveSessionTimer = setTimeout(function () {
         AuditActions.saveSession();

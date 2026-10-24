@@ -28,6 +28,32 @@ export function historyListFromMemory(arr) {
     return list;
 }
 
+const DELETE_FLAG_KEYS = ['_deleted', 'is_deleted', '_deletedAt', 'updatedAt', 'updated_at', 'source',
+    'syncStatus', 'sync_status', 'syncBlockReason'];
+
+/** P2-0025: копия записи с пометкой удаления (для сохранения в базу; сама запись не меняется). */
+export function deletedHistoryCopy(item, nowIso) {
+    const now = nowIso || new Date().toISOString();
+    return Object.assign({}, item, {
+        _deleted: true,
+        is_deleted: true,
+        _deletedAt: now,
+        updatedAt: now,
+        updated_at: now,
+        source: 'local',
+        syncStatus: 'not_synced',
+        sync_status: 'not_synced',
+        syncBlockReason: ''
+    });
+}
+
+/** P2-0025: только поля пометки удаления из сохранённой копии — перенести на запись в памяти. */
+export function deletedHistoryFlags(copy) {
+    const out = {};
+    DELETE_FLAG_KEYS.forEach((k) => { out[k] = copy[k]; });
+    return out;
+}
+
 export const HistoryState = {
 
     records: [],
@@ -71,6 +97,32 @@ export const HistoryState = {
         this.allRecords = arr || [];
         this.records = this.allRecords;
         this.listGen++;
+        this.memorySource = null;
+        this.memorySourceLen = 0;
+    },
+
+    // P2-0025: список построен из истории в памяти — запоминаем, из какого массива (и его длину),
+    // чтобы заметить замену window.contractorArray синхронизацией (или добавление в него).
+    memorySource: null,
+    memorySourceLen: 0,
+
+    setRecordsFromMemory(mem) {
+        this.setRecords(historyListFromMemory(mem));
+        this.memorySource = mem;
+        this.memorySourceLen = mem ? mem.length : 0;
+    },
+
+    /**
+     * P2-0025: список из памяти, а история в памяти с тех пор заменена/дополнена — перестроить.
+     * Возвращает true, если список перестроен (порционный список из базы не трогается).
+     */
+    refreshFromMemoryIfStale() {
+        if (!this.memorySource) return false;
+        const mem = (typeof window !== 'undefined' && Array.isArray(window.contractorArray)) ? window.contractorArray : null;
+        // пустая история в памяти (ещё не загружена / выход) — список не трогаем, как раньше
+        if (!mem || !mem.length || (mem === this.memorySource && mem.length === this.memorySourceLen)) return false;
+        this.setRecordsFromMemory(mem);
+        return true;
     },
 
     appendRecords(arr) {
@@ -91,8 +143,9 @@ export const HistoryState = {
      */
     useMemoryHistoryIfReady() {
         const mem = (typeof window !== 'undefined' && Array.isArray(window.contractorArray)) ? window.contractorArray : null;
+        if (this.refreshFromMemoryIfStale()) return true;
         if (!mem || !mem.length || !this.pageHasMore) return false;
-        this.setRecords(historyListFromMemory(mem));
+        this.setRecordsFromMemory(mem);
         this.pageCursorKey = null;
         this.pageCursorPrimaryKey = null;
         this.pageHasMore = false;

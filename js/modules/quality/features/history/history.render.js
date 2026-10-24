@@ -852,6 +852,11 @@ function _renderProjectGroupHtml(pName, contractorsMap, lazy) {
 function _histMaterializeProject(card) {
     const pBody = card && card.querySelector('[data-hist-project-body]');
     if (!pBody || pBody.getAttribute('data-hist-lazy') !== '1') return false;
+    // P2-0025: история в памяти заменена синхронизацией — сначала перестроить весь список (тело = актуальный список)
+    if (HistoryState.refreshFromMemoryIfStale()) {
+        HistoryRender.render();
+        return false;
+    }
     pBody.removeAttribute('data-hist-lazy');
     const pName = card.getAttribute('data-hist-project');
     const contractorsMap = {};

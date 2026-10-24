@@ -188,12 +188,58 @@ export function humanSyncReason(e) {
     return m ? m.substring(0, 80) : 'сбой отправки';
 }
 
+/**
+ * P2-0025: отпечаток черновика осмотра по содержимому (без времени сохранения).
+ * Длинные строки (фото data:/base64) — длиной и краями: дёшево, а замена фото меняет отпечаток.
+ * Ключи объектов — по порядку, чтобы перестановка полей не считалась изменением.
+ */
+export function draftFingerprint(draft) {
+    const seen = typeof WeakSet === 'function' ? new WeakSet() : null;
+    const norm = (v) => {
+        if (v === undefined) return null;
+        if (typeof v === 'string') {
+            return v.length > 256 ? `~${v.length}:${v.slice(0, 64)}:${v.slice(-64)}` : v;
+        }
+        if (!v || typeof v !== 'object') return v;
+        if (seen) { if (seen.has(v)) return '~cycle'; seen.add(v); }
+        if (Array.isArray(v)) return v.map(norm);
+        if (typeof Blob !== 'undefined' && v instanceof Blob) return `~blob:${v.size}:${v.type}`;
+        const out = {};
+        Object.keys(v).sort().forEach((k) => {
+            if (k === 'timestamp') return;
+            out[k] = norm(v[k]);
+        });
+        return out;
+    };
+    const s = JSON.stringify(norm(draft || {}));
+    let h = 0x811c9dc5; // FNV-1a 32
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return `${s.length}:${(h >>> 0).toString(36)}`;
+}
+
+/**
+ * P2-0025: нужно ли снова пометить черновик «к отправке» после синхронизации.
+ * Синхронизация в конце снимает метку; правка, сделанная после её начала (с запасом на
+ * задержку записи черновика), могла не попасть в отправку — тогда пометить снова.
+ * Без правок с начала синхронизации — не помечать (раньше помечалось всегда → круг раз в минуту).
+ */
+export function draftNeedsPushAfterSync(lastChangeAt, syncStartedAt, saveDelayMs = 1000) {
+    const changed = Number(lastChangeAt) || 0;
+    if (!changed) return false;
+    const started = Number(syncStartedAt) || 0;
+    if (!started) return true; // начало неизвестно — как раньше, безопасно
+    return changed >= started - (Number(saveDelayMs) || 0);
+}
+
 if (typeof window !== 'undefined') {
     window.RbiSyncRetryPolicy = {
         MISSING_LOCAL_FILE, ATTENTION_STATUS, ATTENTION_REASON_MISSING_PHOTO,
         makeMissingFileError, isMissingFileError, isTransientSyncError, completionFlags, retryDelayMs,
         autoSyncAllowed, isAttention, markAttention, shouldShowErrorOnce, humanSyncReason,
         ATTENTION_ASK_USER_AFTER, attentionRetryDue, attentionNeedsUser, clearAttention,
-        missingPhotoReason, dropMissingPhotos
+        missingPhotoReason, dropMissingPhotos, draftFingerprint, draftNeedsPushAfterSync
     };
 }

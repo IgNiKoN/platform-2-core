@@ -7,7 +7,7 @@
  * не гарантированно доступен на момент вызова из inline-обработчиков).
  */
 
-import { HistoryState, historyListFromMemory } from './history.state.js';
+import { HistoryState, deletedHistoryCopy, deletedHistoryFlags } from './history.state.js';
 import { HistoryRender } from './history.render.js';
 
 // Фаза 91 (перенесено из history.legacy.js): единая точка доступа к IndexedDB
@@ -77,7 +77,7 @@ export const HistoryActions = {
             // подтягивала всю историю второй копией (заголовки объектов считают все записи периода).
             const mem = Array.isArray(window.contractorArray) ? window.contractorArray : null;
             if (mem && mem.length) {
-                HistoryState.setRecords(historyListFromMemory(mem));
+                HistoryState.setRecordsFromMemory(mem);
                 HistoryState.setPageState({ pageCursorKey: null, pageCursorPrimaryKey: null, pageHasMore: false });
                 const ev = this._ctx && this._ctx.events;
                 if (ev && typeof ev.emit === 'function') ev.emit('history:loaded', { count: HistoryState.allRecords.length });
@@ -307,29 +307,37 @@ export const HistoryActions = {
         var contractorMetricsSvc = (HistoryActions._ctx && HistoryActions._ctx.contractorMetrics)
             || (window.RBI && window.RBI.services && window.RBI.services.contractorMetrics);
 
+        // P2-0025: сначала сохранить копию с пометкой удаления, затем пометить запись в памяти
+        // (она общая с contractorArray). Сбой записи — эта и следующие записи в памяти не помечаются.
+        var deletedCount = 0;
+        var deletedIds = Object.create(null);
+        var failed = false;
         for (var j = 0; j < ids.length; j++) {
             var delId = ids[j];
             var item = HistoryState.allRecords.find(function (i) { return String(i.id) === String(delId); });
             if (item) {
-                var now = new Date().toISOString();
-                item._deleted = true;
-                item.is_deleted = true;
-                item._deletedAt = now;
-                item.updatedAt = now;
-                item.updated_at = now;
-                item.source = 'local';
-                item.syncStatus = 'not_synced';
-                item.sync_status = 'not_synced';
-                item.syncBlockReason = '';
-                await storage.put(storage.stores().HISTORY, item);
+                var marked = deletedHistoryCopy(item, new Date().toISOString());
+                try {
+                    await storage.put(storage.stores().HISTORY, marked);
+                } catch (eDel) {
+                    console.error('[HistoryActions] удаление: запись не сохранена', delId, eDel);
+                    failed = true;
+                    break;
+                }
+                Object.assign(item, deletedHistoryFlags(marked));
+                deletedIds[String(item.id)] = true;
+                deletedCount++;
                 if (contractorMetricsSvc) contractorMetricsSvc.recalcTouched(item);
             }
         }
 
-        HistoryState.setRecords(HistoryState.allRecords.filter(function (i) { return !i._deleted; }));
+        var memWasList = HistoryState.memorySource && HistoryState.memorySource === window.contractorArray;
         if (Array.isArray(window.contractorArray)) {
-            window.contractorArray = window.contractorArray.filter(function (i) { return !i._deleted; });
+            // по id: при порционном списке из базы записи в памяти — другие объекты
+            window.contractorArray = window.contractorArray.filter(function (i) { return !i._deleted && !deletedIds[String(i && i.id)]; });
         }
+        if (memWasList) HistoryState.setRecordsFromMemory(window.contractorArray);
+        else HistoryState.setRecords(HistoryState.allRecords.filter(function (i) { return !i._deleted; }));
 
         var selectAllCb = document.getElementById('hist-select-all');
         if (selectAllCb) selectAllCb.checked = false;
@@ -341,13 +349,19 @@ export const HistoryActions = {
         }
         updateDataSummary();
 
-        localStorage.setItem('rbi_cloud_dirty', '1');
-        _sync('silent');
+        if (deletedCount > 0) {
+            localStorage.setItem('rbi_cloud_dirty', '1');
+            _sync('silent');
+        }
 
         if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
         if (typeof gameForceUpdatePlan === 'function') gameForceUpdatePlan(true);
         updateDataSummary();
-        showToast('✅ Удалено успешно (' + ids.length + ' шт)');
+        if (failed) {
+            showToast('⚠️ Удалено ' + deletedCount + ' из ' + ids.length + ': не удалось сохранить на устройстве, попробуйте ещё раз');
+        } else {
+            showToast('✅ Удалено успешно (' + ids.length + ' шт)');
+        }
     },
 
     /**

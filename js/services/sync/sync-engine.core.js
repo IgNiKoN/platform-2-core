@@ -112,6 +112,7 @@ window.triggerSync = async function (mode = 'silent') {
     const rbiScheduleSyncRetryOnce = () => { if (!retryScheduled) { retryScheduled = true; rbiScheduleSyncRetry(); } };
 
     window.isSyncing = true;
+    const syncStartedAt = Date.now(); // P2-0025: черновик, изменённый после начала, снова «к отправке»
     // Доработка 2: подошедшие повторы «нужно внимание» уходят в этом проходе; неудача поставит новое время.
     try {
         const attAt = parseInt(localStorage.getItem('rbi_sync_attention_retry_at') || '0', 10) || 0;
@@ -4541,6 +4542,7 @@ window.triggerSync = async function (mode = 'silent') {
             hasChanges: hasChanges,
             pulledChecks: pulledChecks,
             totalPushed: totalPushed,
+            startedAt: syncStartedAt,
             activeTabId: activeSection ? activeSection.id : null
         };
         if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') {
