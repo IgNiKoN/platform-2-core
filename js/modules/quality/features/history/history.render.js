@@ -1244,6 +1244,17 @@ function getSyncBadgeHtml(item) {
         var toastMsg = _t('quality.history.sync.reason_prefix', 'Причина: {reason}', { reason: reason });
         return '<button onclick="event.stopPropagation(); showToast(\'' + String(toastMsg).replace(/'/g, "\\'") + '\')" class="px-1.5 py-0.5 rounded bg-danger-soft text-danger border border-danger text-rbi-caption font-bold uppercase ml-1 flex items-center shadow-sm">' + iconBlocked + _t('quality.history.sync.blocked_badge', 'Заблок.') + '</button>';
     }
+    // P2-0023 доработка 2: «нужно внимание» — фото пункта нет на устройстве. Пока идут автоповторы —
+    // жёлтая плашка с причиной; после ATTENTION_ASK_USER_AFTER неудач — выбор «Отправить без этого фото».
+    if (syncStatus === 'needs_attention') {
+        var rpA = window.RbiSyncRetryPolicy;
+        var attReason = item.syncBlockReason || item.sync_block_reason || _t('quality.history.sync.attention_default', 'Не отправлено: фото пункта не найдено на устройстве');
+        var askUser = rpA && rpA.attentionNeedsUser(item);
+        var attClick = askUser
+            ? 'window.rbiHistoryResolveAttention(\'' + String(item.id).replace(/['"<>\\]/g, '') + '\')'
+            : 'showToast(\'' + String(attReason + '. ' + _t('quality.history.sync.attention_retry', 'Повторим автоматически.')).replace(/\\/g, '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;') + '\')';
+        return '<button onclick="event.stopPropagation(); ' + attClick + '" title="' + String(attReason).replace(/"/g, '&quot;').replace(/</g, '&lt;') + '" class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 text-rbi-caption font-bold uppercase ml-1 flex items-center shadow-sm">' + iconBlocked + _t('quality.history.sync.attention_badge', 'Не отпр.') + '</button>';
+    }
     if (source === 'cloud' || syncStatus === 'synced') {
         return '<span class="px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-200 text-rbi-caption font-bold uppercase ml-1 flex items-center shadow-sm">' + iconCloud + '</span>';
     }

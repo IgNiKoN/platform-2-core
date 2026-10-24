@@ -164,7 +164,7 @@ window.initSync = async function () {
 
             if (!isTabActive) return;
 
-            const needPush = localStorage.getItem('rbi_cloud_dirty') === '1';
+            const needPush = localStorage.getItem('rbi_cloud_dirty') === '1' || rbiAttentionRetryDueNow();
             const needFullPull = localStorage.getItem('rbi_force_full_pull') === '1';
             const needRemotePoll =
                 localStorage.getItem('rbi_force_remote_poll') === '1' ||
@@ -197,7 +197,7 @@ window.initSync = async function () {
             }
             clearTimeout(window.__rbiResumeSyncTimer);
             window.__rbiResumeSyncTimer = setTimeout(() => {
-                const needPush = localStorage.getItem('rbi_cloud_dirty') === '1';
+                const needPush = localStorage.getItem('rbi_cloud_dirty') === '1' || rbiAttentionRetryDueNow();
                 const needFullPull = localStorage.getItem('rbi_force_full_pull') === '1';
                 const needRemotePoll =
                     localStorage.getItem('rbi_force_remote_poll') === '1' ||
@@ -221,6 +221,13 @@ window.initSync = async function () {
 };
 
 window.isSyncEnabled = function () { return window.syncConfig.enabled; };
+
+// Доработка 2: подошло время повторить запись «нужно внимание» (фото не было на устройстве).
+// Метку снимает сама синхронизация при старте; неудача поставит новую (sync-engine.core.js, rbiNoteAttentionRetry).
+function rbiAttentionRetryDueNow() {
+    const at = parseInt(localStorage.getItem('rbi_sync_attention_retry_at') || '0', 10) || 0;
+    return !!at && Date.now() >= at;
+}
 
 // P2-0023: автосинхронизация (таймер/возврат) ждёт паузу после ошибки; ручная — нет.
 function rbiAutoSyncAllowedNow() {

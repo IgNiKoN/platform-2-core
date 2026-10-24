@@ -12,6 +12,12 @@ import {
   autoSyncAllowed,
   isAttention,
   markAttention,
+  attentionRetryDue,
+  attentionNeedsUser,
+  clearAttention,
+  missingPhotoReason,
+  dropMissingPhotos,
+  ATTENTION_ASK_USER_AFTER,
   shouldShowErrorOnce,
   humanSyncReason,
   ATTENTION_STATUS
@@ -99,6 +105,66 @@ describe('нужно внимание', () => {
     assert.match(rec.syncBlockReason, /Нужно внимание/);
     rec.syncStatus = 'not_synced'; rec.sync_status = 'not_synced'; // пользователь изменил запись
     assert.equal(isAttention(rec), false);
+  });
+});
+
+describe('доработка 2: «нужно внимание» — автоповтор и «Отправить без этого фото»', () => {
+  const MIN = 60000;
+  it('попытки 2/5/10/30 мин: до срока не шлём, после — шлём', () => {
+    const rec = { id: 1 };
+    markAttention(rec, 'x', 0);
+    assert.equal(attentionRetryDue(rec, 1 * MIN), false);
+    assert.equal(attentionRetryDue(rec, 2 * MIN), true);
+    markAttention(rec, 'x', 2 * MIN);
+    assert.equal(rec.syncAttentionRetryAt, 7 * MIN);
+    markAttention(rec, 'x', 7 * MIN);
+    assert.equal(rec.syncAttentionRetryAt, 17 * MIN);
+    markAttention(rec, 'x', 17 * MIN);
+    assert.equal(rec.syncAttentionRetryAt, 47 * MIN);
+  });
+  it('фото «пропало на секунду» (гонка записи): первая попытка — внимание, автоповтор уходит, следы сняты', () => {
+    const rec = { id: 1, syncStatus: 'not_synced', source: 'local' };
+    markAttention(rec, missingPhotoReason(['Кладка']), 0);
+    assert.equal(attentionNeedsUser(rec), false, 'одна неудача — пользователя не дёргаем');
+    assert.equal(attentionRetryDue(rec, 2 * MIN), true);
+    clearAttention(rec); // отправка удалась
+    assert.equal(rec.syncAttentionAttempts, undefined);
+    assert.equal(rec.syncAttentionRetryAt, undefined);
+  });
+  it('за час без пользователя — не больше 4 попыток, затем плашка', () => {
+    const rec = { id: 1 };
+    let tries = 0;
+    for (let m = 0; m <= 60; m++) {
+      if (attentionRetryDue(rec, m * MIN) && !attentionNeedsUser(rec)) { tries++; markAttention(rec, 'x', m * MIN); }
+    }
+    assert.equal(tries, ATTENTION_ASK_USER_AFTER);
+    assert.equal(attentionNeedsUser(rec), true);
+  });
+  it('старая запись без времени повтора — повторяем сразу', () => {
+    assert.equal(attentionRetryDue({ syncStatus: ATTENTION_STATUS }, 5), true);
+  });
+  it('понятная причина', () => {
+    assert.equal(missingPhotoReason(['Кладка']), 'Не отправлено: нет фото пункта «Кладка»');
+    assert.match(missingPhotoReason(['А', 'Б', 'В']), /пунктов «А», «Б» и ещё 1/);
+    assert.match(missingPhotoReason([]), /не найдено/);
+  });
+  it('«Отправить без этого фото»: убирается только пропавшее фото, остальное уходит', () => {
+    const rec = {
+      id: 1, source: 'local',
+      photos: { i1: ['local://ok', 'local://gone'], i2: 'local://gone2', i3: ['https://s/x.jpg'] },
+      syncMissingPhotos: [{ itemId: 'i1', ref: 'local://gone' }, { itemId: 'i2', ref: 'local://gone2' }]
+    };
+    markAttention(rec, 'x', 0); markAttention(rec, 'x', 1); markAttention(rec, 'x', 2); markAttention(rec, 'x', 3);
+    rec.syncMissingPhotos = [{ itemId: 'i1', ref: 'local://gone' }, { itemId: 'i2', ref: 'local://gone2' }];
+    assert.equal(dropMissingPhotos(rec, '2026-10-24T00:00:00Z'), 2);
+    assert.deepEqual(rec.photos, { i1: ['local://ok'], i3: ['https://s/x.jpg'] });
+    assert.equal(rec.missingPhotos.length, 2);
+    assert.equal(rec.syncStatus, 'not_synced');
+    assert.equal(isAttention(rec), false);
+    assert.equal(rec.syncAttentionAttempts, undefined);
+  });
+  it('ошибка «нет файла» несёт ссылку на фото', () => {
+    assert.equal(makeMissingFileError('local://q').ref, 'local://q');
   });
 });
 

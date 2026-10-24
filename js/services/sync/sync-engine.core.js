@@ -27,6 +27,16 @@ function rbiScheduleSyncRetry() {
     } catch (_e) { /* ignore */ }
 }
 
+// Доработка 2: когда повторить записи «нужно внимание» — таймер автосинхронизации (sync-auth.js) смотрит сюда.
+function rbiNoteAttentionRetry(at) {
+    try {
+        const t = Number(at) || 0;
+        if (!t) return;
+        const cur = parseInt(localStorage.getItem('rbi_sync_attention_retry_at') || '0', 10) || 0;
+        if (!cur || t < cur) localStorage.setItem('rbi_sync_attention_retry_at', String(t));
+    } catch (_e) { /* ignore */ }
+}
+
 window.triggerSync = async function (mode = 'silent') {
     // ЖЕСТКАЯ ЗАЩИТА: Запрещаем синхронизацию в демо-режиме
     if (typeof isDemoMode !== 'undefined' && isDemoMode) {
@@ -102,6 +112,11 @@ window.triggerSync = async function (mode = 'silent') {
     const rbiScheduleSyncRetryOnce = () => { if (!retryScheduled) { retryScheduled = true; rbiScheduleSyncRetry(); } };
 
     window.isSyncing = true;
+    // Доработка 2: подошедшие повторы «нужно внимание» уходят в этом проходе; неудача поставит новое время.
+    try {
+        const attAt = parseInt(localStorage.getItem('rbi_sync_attention_retry_at') || '0', 10) || 0;
+        if (attAt && Date.now() >= attAt) localStorage.removeItem('rbi_sync_attention_retry_at');
+    } catch (_e) { /* ignore */ }
     // §5: единый defer full-render активного экрана (js/shared/sync-ui-defer.utils.js).
     if (typeof window.rbiBeginSyncUiDefer === 'function') window.rbiBeginSyncUiDefer();
     else window._rbiDeferActiveViewFullRender = true;
@@ -2297,8 +2312,13 @@ window.triggerSync = async function (mode = 'silent') {
                 const status = i.syncStatus || i.sync_status || '';
                 const source = i.source || '';
 
-                // P2-0023: «нужно внимание» (фото нет на устройстве) не шлём, пока пользователь не изменит запись.
-                if (window.RbiSyncRetryPolicy && window.RbiSyncRetryPolicy.isAttention(i)) return false;
+                // P2-0023: «нужно внимание» (фото нет на устройстве) — доработка 2: повтор по расписанию 2/5/10/30 мин;
+                // после ATTENTION_ASK_USER_AFTER неудач ждём решения пользователя («Отправить без этого фото» в Истории).
+                if (window.RbiSyncRetryPolicy && window.RbiSyncRetryPolicy.isAttention(i)) {
+                    const rpA = window.RbiSyncRetryPolicy;
+                    if (rpA.attentionNeedsUser(i)) return false;
+                    if (!rpA.attentionRetryDue(i, Date.now())) { rbiNoteAttentionRetry(i.syncAttentionRetryAt); return false; }
+                }
 
                 // Уже синхронизированное облачное эхо не отправляем обратно
                 if (source === 'cloud' || status === 'synced') return false;
@@ -2468,7 +2488,20 @@ window.triggerSync = async function (mode = 'silent') {
                         const photoErr = photoFails.find(e => !(rp && rp.isMissingFileError(e))) || photoFails[0];
                         if (rp && rp.isMissingFileError(photoErr)) {
                             console.warn('[Sync] Проверка помечена «нужно внимание» (фото нет на устройстве):', inspectionId, photoErr.message);
-                            rp.markAttention(c);
+                            // Доработка 2: запоминаем, каких фото нет (для «Отправить без этого фото»), и время повтора.
+                            const missing = [];
+                            photoResults.forEach((r, idx) => {
+                                if (r.status === 'rejected' && rp.isMissingFileError(r.reason)) {
+                                    missing.push({ itemId: String(photoItemIds[idx]), ref: String(r.reason.ref || '') });
+                                }
+                            });
+                            const missingNames = missing.map(m => {
+                                const info = typeof getChecklistItem === 'function' ? getChecklistItem(c.templateKey || '', m.itemId) : null;
+                                return (info && info.n) || ((c.details || {})[m.itemId] || {}).name || ('№ ' + m.itemId);
+                            });
+                            rp.markAttention(c, rp.missingPhotoReason(missingNames));
+                            c.syncMissingPhotos = missing;
+                            rbiNoteAttentionRetry(c.syncAttentionRetryAt);
                             localHistoryToUpdate.push(c);
                             syncAttentionCount++;
                         } else {
@@ -2516,6 +2549,7 @@ window.triggerSync = async function (mode = 'silent') {
                     }
 
                     // Помечаем, что всё ок (и для живых, и для удаленных!)
+                    if (window.RbiSyncRetryPolicy) window.RbiSyncRetryPolicy.clearAttention(c);
                     c.source = 'cloud'; c.syncStatus = 'synced'; c.sync_status = 'synced';
                     c.syncBlockReason = ''; c.sync_block_reason = ''; c.importedFromBackup = false;
                     c.updatedAt = new Date().toISOString(); c.updated_at = c.updatedAt;
@@ -2764,7 +2798,12 @@ window.triggerSync = async function (mode = 'silent') {
                     return tTime === 0 || Number.isNaN(tTime) || tTime >= lastPushTimeTasks;
                 });
                 // P2-0023: задачи «нужно внимание» не шлём, пока пользователь их не изменит.
-                if (window.RbiSyncRetryPolicy) tasks = tasks.filter(t => !window.RbiSyncRetryPolicy.isAttention(t));
+                // Доработка 2: с повтором по расписанию (2/5/10/30 мин), как у проверок.
+                if (window.RbiSyncRetryPolicy) tasks = tasks.filter(t => {
+                    if (!window.RbiSyncRetryPolicy.isAttention(t) || window.RbiSyncRetryPolicy.attentionRetryDue(t, Date.now())) return true;
+                    rbiNoteAttentionRetry(t.syncAttentionRetryAt);
+                    return false;
+                });
                 const taskPushRole = window.RBI.services.permissions ? window.RBI.services.permissions.getCurrentRole() : 'guest';
 
                 if (taskPushRole === 'engineer') {
@@ -2808,6 +2847,7 @@ window.triggerSync = async function (mode = 'silent') {
                                     const rp = window.RbiSyncRetryPolicy;
                                     if (!(rp && rp.isMissingFileError(upErr))) throw upErr;
                                     rp.markAttention(task);
+                                    rbiNoteAttentionRetry(task.syncAttentionRetryAt);
                                     attentionTasks.add(task);
                                     syncAttentionCount++;
                                 }
@@ -2847,6 +2887,7 @@ window.triggerSync = async function (mode = 'silent') {
                         batch.length = 0; batch.push(...sendBatch);
                         // После успешной отправки задач помечаем локальные ручные задачи как синхронизированные
                         for (const task of batch) {
+                            if (window.RbiSyncRetryPolicy) window.RbiSyncRetryPolicy.clearAttention(task);
                             task.source = 'cloud';
                             task.syncStatus = 'synced';
                             task.sync_status = 'synced';

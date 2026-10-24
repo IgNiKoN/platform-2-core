@@ -3,6 +3,7 @@
  * - ошибка отправки больше не включает полную загрузку; успешная загрузка ставит метку даже при ошибке отправки;
  * - повтор после ошибки — с нарастающей паузой, а не каждую минуту;
  * - объект с фото, которого нет на устройстве, помечается «нужно внимание» и не роняет синхронизацию снова;
+ *   доработка 2: автоповтор с той же паузой, после ATTENTION_ASK_USER_AFTER неудач — «Отправить без этого фото»;
  * - одно и то же сообщение об ошибке показывается один раз.
  */
 'use strict';
@@ -15,6 +16,7 @@ export const ATTENTION_REASON_MISSING_PHOTO = 'Нужно внимание: фо
 export function makeMissingFileError(ref) {
     const e = new Error('Фото не найдено на устройстве: ' + String(ref || ''));
     e.code = MISSING_LOCAL_FILE;
+    e.ref = String(ref || '');
     return e;
 }
 
@@ -84,20 +86,88 @@ export function autoSyncAllowed(p) {
     return !retryAfter || (Number(p && p.now) || 0) >= retryAfter;
 }
 
-/** Объекты «нужно внимание» не отправляются повторно, пока пользователь их не изменит. */
+/** Объект «нужно внимание» (фото нет на устройстве). */
 export function isAttention(rec) {
     if (!rec) return false;
     return rec.syncStatus === ATTENTION_STATUS || rec.sync_status === ATTENTION_STATUS;
 }
 
-/** Пометить объект «нужно внимание» (сохранять вызывающему). */
-export function markAttention(rec, reason) {
+/** Доработка 2: после стольких неудачных попыток подряд — плашка с действием для пользователя. */
+export const ATTENTION_ASK_USER_AFTER = 4;
+
+/**
+ * Пометить объект «нужно внимание» (сохранять вызывающему). Доработка 2: считаем попытки и ставим
+ * время следующей (2/5/10/30 мин) — файл мог просто не успеть записаться (гонка), повтор его заберёт.
+ */
+export function markAttention(rec, reason, now) {
     if (!rec) return rec;
     rec.syncStatus = ATTENTION_STATUS;
     rec.sync_status = ATTENTION_STATUS;
     rec.syncBlockReason = reason || ATTENTION_REASON_MISSING_PHOTO;
     rec.sync_block_reason = rec.syncBlockReason;
+    rec.syncAttentionAttempts = (Number(rec.syncAttentionAttempts) || 0) + 1;
+    rec.syncAttentionRetryAt = (now === undefined ? Date.now() : Number(now) || 0) + retryDelayMs(rec.syncAttentionAttempts);
     return rec;
+}
+
+/** Пора ли автоматически повторить отправку объекта «нужно внимание» (без времени — пора). */
+export function attentionRetryDue(rec, now) {
+    if (!isAttention(rec)) return true;
+    const at = Number(rec.syncAttentionRetryAt) || 0;
+    return !at || (Number(now) || 0) >= at;
+}
+
+/** Попытки исчерпаны — показать пользователю причину и «Отправить без этого фото». */
+export function attentionNeedsUser(rec) {
+    return isAttention(rec) && (Number(rec.syncAttentionAttempts) || 0) >= ATTENTION_ASK_USER_AFTER;
+}
+
+/** Снять «нужно внимание» (после успешной отправки). */
+export function clearAttention(rec) {
+    if (!rec) return rec;
+    delete rec.syncAttentionAttempts;
+    delete rec.syncAttentionRetryAt;
+    delete rec.syncMissingPhotos;
+    return rec;
+}
+
+/** Понятная причина для плашки: «Не отправлено: нет фото пункта «…»». */
+export function missingPhotoReason(itemNames) {
+    const names = (itemNames || []).map((n) => String(n || '').trim()).filter(Boolean);
+    if (!names.length) return 'Не отправлено: фото пункта не найдено на устройстве';
+    const shown = names.slice(0, 2).map((n) => '«' + (n.length > 60 ? n.substring(0, 57) + '…' : n) + '»').join(', ');
+    const more = names.length > 2 ? ' и ещё ' + (names.length - 2) : '';
+    return 'Не отправлено: нет фото ' + (names.length > 1 ? 'пунктов ' : 'пункта ') + shown + more;
+}
+
+/**
+ * «Отправить без этого фото»: отсутствующие фото убираются из проверки и запоминаются в missingPhotos,
+ * остальное уходит обычной отправкой. Сохранить запись и запустить синхронизацию — вызывающему.
+ * @param {object} rec проверка с rec.syncMissingPhotos = [{ itemId, ref }]
+ * @returns {number} сколько фото убрано
+ */
+export function dropMissingPhotos(rec, nowIso) {
+    if (!rec) return 0;
+    const missing = Array.isArray(rec.syncMissingPhotos) ? rec.syncMissingPhotos : [];
+    let dropped = 0;
+    const photos = rec.photos || {};
+    missing.forEach((m) => {
+        const key = String(m && m.itemId);
+        if (!(key in photos)) return;
+        const arr = Array.isArray(photos[key]) ? photos[key] : [photos[key]];
+        const left = arr.filter((p) => String(p) !== String(m.ref));
+        dropped += arr.length - left.length;
+        if (left.length) photos[key] = left; else delete photos[key];
+    });
+    rec.missingPhotos = (Array.isArray(rec.missingPhotos) ? rec.missingPhotos : [])
+        .concat(missing.map((m) => ({ itemId: String(m.itemId), ref: String(m.ref), at: nowIso || new Date().toISOString() })));
+    clearAttention(rec);
+    rec.syncStatus = 'not_synced';
+    rec.sync_status = 'not_synced';
+    rec.syncBlockReason = '';
+    rec.sync_block_reason = '';
+    rec.source = 'local';
+    return dropped;
 }
 
 /**
@@ -122,6 +192,8 @@ if (typeof window !== 'undefined') {
     window.RbiSyncRetryPolicy = {
         MISSING_LOCAL_FILE, ATTENTION_STATUS, ATTENTION_REASON_MISSING_PHOTO,
         makeMissingFileError, isMissingFileError, isTransientSyncError, completionFlags, retryDelayMs,
-        autoSyncAllowed, isAttention, markAttention, shouldShowErrorOnce, humanSyncReason
+        autoSyncAllowed, isAttention, markAttention, shouldShowErrorOnce, humanSyncReason,
+        ATTENTION_ASK_USER_AFTER, attentionRetryDue, attentionNeedsUser, clearAttention,
+        missingPhotoReason, dropMissingPhotos
     };
 }

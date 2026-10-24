@@ -327,6 +327,36 @@ export const HistoryActions = {
     },
 
     /**
+     * P2-0023 доработка 2: проверка не отправляется — фото пункта нет на устройстве, автоповторы исчерпаны.
+     * Показываем причину и даём выбор «Отправить без этого фото» (пропавшие фото убираются из проверки
+     * и запоминаются в missingPhotos, остальное уходит обычной синхронизацией). Иначе — переснять фото в проверке.
+     */
+    async resolveSyncAttention(id) {
+        var rp = window.RbiSyncRetryPolicy;
+        if (!rp) return;
+        var storage = _storage(HistoryActions._ctx);
+        var rec = HistoryState.allRecords.find(function (i) { return String(i.id) === String(id); });
+        if (!rec) {
+            try { rec = await storage.get(storage.stores().HISTORY, id); } catch (_e) { rec = null; }
+        }
+        if (!rec || !rp.isAttention(rec)) return;
+        var reason = rec.syncBlockReason || rec.sync_block_reason || 'Не отправлено: фото пункта не найдено на устройстве';
+        if (!confirm(reason + '.\n\nОтправить проверку без этого фото? Остальные фото и результаты уйдут на сервер.\n\n«Отмена» — оставить как есть (можно открыть проверку и переснять фото).')) return;
+        var dropped = rp.dropMissingPhotos(rec, new Date().toISOString());
+        rec.updatedAt = new Date().toISOString();
+        rec.updated_at = rec.updatedAt;
+        await storage.put(storage.stores().HISTORY, rec);
+        if (Array.isArray(window.contractorArray)) {
+            var idx = window.contractorArray.findIndex(function (x) { return String(x.id) === String(rec.id); });
+            if (idx >= 0) window.contractorArray[idx] = rec;
+        }
+        HistoryRender.render();
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        showToast('Отправляем без ' + (dropped > 1 ? dropped + ' фото' : 'этого фото') + '…');
+        _sync('manual');
+    },
+
+    /**
      * Делегирование: loadHistoryData → HistoryActions.loadRecords.
      * Перенесено из history.legacy.js (Блок 12 Integration).
      */
@@ -346,6 +376,7 @@ if (typeof window !== 'undefined') {
     window.printSelectedInspectionActs = HistoryActions.printSelectedInspectionActs;
     window.deleteSelectedHistory = HistoryActions.deleteSelectedHistory;
     window.loadHistoryData = HistoryActions.loadHistoryData;
+    window.rbiHistoryResolveAttention = HistoryActions.resolveSyncAttention;
 }
 
 console.log('[HistoryActions] history.actions.js loaded');
