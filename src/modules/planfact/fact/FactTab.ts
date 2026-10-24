@@ -1,7 +1,8 @@
 /**
  * «План/Факт → Факт» (P2-0007): прораб с телефона. Объект → корпус → секция → этаж → работы места (позиции ВОР) с планом,
  * накопленным фактом и %; внести объём за дату с обязательной бригадой; история и исправление; «закрыть этаж целиком»;
- * у РП — список «На подтверждение». Накопленный факт и % считает сервер (Σ принятых записей); права и допуск перебора — тоже.
+ * у РП — подвкладка «Ждёт подтверждения» (P2-0020: реестр, решение пачкой). Накопленный факт и % считает сервер (Σ принятых
+ * записей); права и допуск перебора — тоже.
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -12,7 +13,8 @@ import { FACT_APPROVE, FACT_CREATE, FACT_VIEW } from './fact.service.ts';
 import { fmtPct, fmtQty, percent, remainder, vorHints } from './fact.ts';
 import type { HintRow } from './fact.ts';
 import { FactHistory } from './FactHistory.ts';
-import { FactPending } from './FactPending.ts';
+import { PendingRegistry, PENDING_REGISTRY_CSS } from './PendingRegistry.ts';
+import { FactJournal, FACT_JOURNAL_CSS } from './FactJournal.ts';
 import { FloorClose } from './FloorClose.ts';
 import { ChessboardTab } from './ChessboardTab.ts';
 import { FactEntryForm } from './FactEntryForm.ts';
@@ -25,14 +27,15 @@ const lastKey = (company: string): string => `pf-last-brigade:${company}`;
 export function readLast(company: string): string { try { return window.localStorage.getItem(lastKey(company)) || ''; } catch { return ''; } }
 export function writeLast(company: string, id: string): void { try { window.localStorage.setItem(lastKey(company), id); } catch { /* без хранилища — просто не запомним */ } }
 
-/** mode — подвкладка «Факта»: «Ввод» (по умолчанию) или «Шахматка» (P2-0017); объект выбирается общим списком. */
-export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsApi; me: string; mode?: 'entry' | 'chessboard' }): ReactElement {
+export type FactMode = 'entry' | 'chessboard' | 'pending' | 'journal';
+/** mode — подвкладка «Факта»: «Ввод» (по умолчанию), «Шахматка» (P2-0017), «Ждёт подтверждения», «Журнал» (P2-0020); объект — общим
+ *  списком. onApprove — число записей, ждущих РП в выбранном объекте, или null без права fact.approve (подвкладки тогда нет). */
+export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsApi; me: string; mode?: FactMode; onApprove?: (count: number | null) => void }): ReactElement {
   const { api, vor, projects, me } = props;
   const mode = props.mode || 'entry';
   const [list, setList] = useState<VorProject[] | null>(null);
   const [perms, setPerms] = useState<Record<string, string[]>>({});
   const [projectId, setProjectId] = useState('');
-  const [view, setView] = useState<'entry' | 'pending'>('entry');
   const [path, setPath] = useState<LocationNode[]>([]);
   const [children, setChildren] = useState<LocationNode[]>([]);
   const [positions, setPositions] = useState<FactPosition[] | null>(null);
@@ -42,7 +45,6 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
   const [openId, setOpenId] = useState('');
   const [historyId, setHistoryId] = useState('');
   const [closing, setClosing] = useState(false);
-  const [pendingCount, setPendingCount] = useState(0);
   const [shown, setShown] = useState(PAGE);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -64,9 +66,9 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
   }, []);
 
   async function loadPending(pid: string, approve: boolean): Promise<void> {
-    if (!approve) { setPendingCount(0); return; }
+    if (!approve) { props.onApprove?.(null); return; }
     const r = await api.pending(pid);
-    setPendingCount(r.ok ? r.value.length : 0);
+    props.onApprove?.(r.ok ? r.value.length : 0);
   }
   async function loadPositions(pid: string, loc: LocationNode | null): Promise<void> {
     setPositions(null);
@@ -81,7 +83,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
   }
   useEffect(() => {
     if (!projectId || !project) return;
-    setView('entry'); setNotice(''); setError('');
+    setNotice(''); setError('');
     void enterPlace(projectId, []);
     setLastBrigade(readLast(project.company_id));
     void api.listBrigades(project.company_id, false).then(setBrigades);
@@ -106,6 +108,20 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
   if (list === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   if (!list.length) return h('div', { className: 'pf-muted', 'data-testid': 'ft-noaccess' }, 'Нет доступа к факту: раздел доступен прорабу, руководителю проекта и другим ролям с правом просмотра факта.');
 
+  if (mode === 'pending') {
+    return h('div', { className: 'pj-tab ft-tab ft-tab--wide', 'data-testid': 'ft-tab' },
+      h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
+      !projectId || !project ? null
+        : canApprove ? h(PendingRegistry, { key: projectId, api, projectId, companyId: project.company_id, user: me, onChanged: () => { void loadPending(projectId, true); } })
+        : h('div', { className: 'pf-card pj-empty pf-muted', 'data-testid': 'ft-noapprove' }, 'Подтверждать факт в этом объекте может руководитель проекта (право «Факт: подтверждение»).'));
+  }
+
+  if (mode === 'journal') {
+    return h('div', { className: 'pj-tab ft-tab ft-tab--wide', 'data-testid': 'ft-tab' },
+      h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
+      projectId && project ? h(FactJournal, { key: projectId, api, projectId, companyId: project.company_id, user: me }) : null);
+  }
+
   if (mode === 'chessboard') {
     return h('div', { className: 'pj-tab ft-tab ft-tab--wide', 'data-testid': 'ft-tab' },
       h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
@@ -129,9 +145,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
       h('button', { type: 'button', className: 'ft-crumb' + (i === path.length - 1 ? ' ft-crumb--cur' : ''), onClick: () => { void enterPlace(projectId, path.slice(0, i + 1)); } }, n.name))));
 
   const rows = positions || [];
-  const body = view === 'pending'
-    ? h(FactPending, { api, projectId, onChanged: () => { void refresh(); } })
-    : h('div', { className: 'pj-tab' }, nav,
+  const body = h('div', { className: 'pj-tab' }, nav,
         children.length
           ? h('div', { className: 'ft-tiles', 'data-testid': 'ft-children' }, children.map((c) => h('button', { key: c.id, type: 'button', className: 'ft-tile', 'data-location-id': c.id,
               onClick: () => { void enterPlace(projectId, [...path, c]); } }, h('span', { className: 'ft-tile-type' }, NODE_LABEL[c.node_type] || ''), h('b', null, c.name))))
@@ -175,16 +189,10 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
 
   return h('div', { className: 'pj-tab ft-tab', 'data-testid': 'ft-tab' },
     h(ProjectPicker, { list, value: projectId, onChange: setProjectId }),
-    canApprove
-      ? h('div', { className: 'pf-seg ft-seg', role: 'tablist' },
-          h('button', { type: 'button', role: 'tab', 'aria-selected': view === 'entry', className: 'pf-seg-btn' + (view === 'entry' ? ' pf-seg-btn--active' : ''), 'data-testid': 'ft-view-entry', onClick: () => setView('entry') }, 'Ввод'),
-          h('button', { type: 'button', role: 'tab', 'aria-selected': view === 'pending', className: 'pf-seg-btn' + (view === 'pending' ? ' pf-seg-btn--active' : ''), 'data-testid': 'ft-view-pending', onClick: () => setView('pending') },
-            'Ждёт подтверждения', pendingCount ? h('span', { className: 'ft-count', 'data-testid': 'ft-count' }, String(pendingCount)) : null))
-      : null,
     body);
 }
 
-export const FACT_CSS = `
+export const FACT_CSS = PENDING_REGISTRY_CSS + FACT_JOURNAL_CSS + `
 .ft-tab{max-width:900px}
 .ft-tab--wide{max-width:none}
 .ft-crumbs{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
@@ -226,8 +234,6 @@ export const FACT_CSS = `
 .ft-badge--superseded{color:var(--text-muted)}
 .ft-edit{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
 .ft-small{align-self:flex-start;min-height:36px}
-.ft-seg .pf-seg-btn{flex:1 1 auto;padding:8px 10px;letter-spacing:.04em}
-.ft-count{margin-left:6px;padding:0 6px;border-radius:10px;background:var(--color-red);color:#fff;font-size:11px}
 .ft-modes{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
 .ft-pct-in,.ft-pct{font-variant-numeric:tabular-nums}
 .ft-modes .ft-pct{width:80px;font-size:16px}

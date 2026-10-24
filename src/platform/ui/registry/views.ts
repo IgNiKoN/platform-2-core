@@ -36,3 +36,17 @@ export function deleteView(s: ViewScope, name: string): boolean {
 }
 
 export const viewState = (v: SavedView): RegistryState => queryToState(v.query);
+
+/**
+ * Вид → адрес (P2-0020, общий для реестров модулей): base?параметры через history.replaceState, без перехода роутера, — ссылка из
+ * адресной строки открывает тот же вид. Адрес не этого реестра (ушли в другой раздел) не трогается; без истории — вид только на экране.
+ */
+export function syncRegistryAddress(base: string, s: RegistryState): void {
+  try {
+    const cur = String(window.location.hash || '');
+    if (cur !== base && !cur.startsWith(base + '?')) return;
+    const q = stateToQuery(s);
+    const next = q ? `${base}?${q}` : base;
+    if (cur !== next) window.history.replaceState(window.history.state, '', next);
+  } catch { /* без истории — вид остаётся только на экране */ }
+}

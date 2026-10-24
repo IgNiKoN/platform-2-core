@@ -13,7 +13,7 @@ export { SideCard, Steps, HistoryFeed } from './registry/SideCard.ts';
 export type { Step, HistoryItem } from './registry/SideCard.ts';
 export { EMPTY_STATE, filterRows, sortRows, groupRows, countTones, filterOptions, chipsOf, visibleColumns, toggleValue, stateToQuery, queryToState, linkFor, queryOf } from './registry/model.ts';
 export type { RegistryColumn, RegistryFilter, RegistryState, RegistrySort, RegistryGroup, RegistryChip } from './registry/model.ts';
-export { listViews, saveView, deleteView, viewState } from './registry/views.ts';
+export { listViews, saveView, deleteView, viewState, syncRegistryAddress } from './registry/views.ts';
 export type { SavedView, ViewScope } from './registry/views.ts';
 export { buildRegistryXlsx, registryFileName, saveXlsx } from './registry/export.ts';
 export { P2_REGISTRY_CSS } from './registry/styles.ts';

@@ -1,10 +1,11 @@
-/** Подставной сервер факта для тестов экранов P2-0007: те же правила, что в миграции 009 (допуск 2 %, ждущие, исправление, пачка). */
-import type { Brigade, BatchResult, FactApi, FactBatchInput, FactEntryInput, FactHistoryRow, FactPendingRow, FactPosition } from '../fact/fact.service.ts';
+/** Подставной сервер факта для тестов экранов P2-0007: те же правила, что в миграции 009 (допуск 2 %, ждущие, исправление, пачка);
+ *  P2-0020 — решение пачкой (028: всё или ничего, ≤ 500, одна причина) и журнал объекта. opts.failBatch — отказ сервера на пачку. */
+import type { Brigade, BatchResult, FactApi, FactBatchInput, FactEntryInput, FactHistoryRow, FactJournalRow, FactPendingRow, FactPosition } from '../fact/fact.service.ts';
 
 export interface FakePos { id: string; ancestors: string[]; location_id: string; location_path: string; location_type: string; work: string; unit: string; plan: number }
 interface Entry extends FactHistoryRow { position_id: string }
 
-export function makeFakeFact(positions: FakePos[], opts: { canManage?: boolean; me?: string; tolerance?: number } = {}) {
+export function makeFakeFact(positions: FakePos[], opts: { canManage?: boolean; me?: string; tolerance?: number; failBatch?: string } = {}) {
   const tol = opts.tolerance ?? 2;
   const brigades: Brigade[] = [];
   const entries: Entry[] = [];
@@ -84,10 +85,32 @@ export function makeFakeFact(positions: FakePos[], opts: { canManage?: boolean; 
       calls.push({ fn: 'decide', args: { eid, approve, note } });
       const e = entries.find((x) => x.id === eid)!;
       if (!approve && !note.trim()) return fail('Напишите причину отказа');
-      e.status = approve ? 'accepted' : 'rejected'; e.decision_note = note || null; e.decided_by_email = 'pm@test.invalid';
-      if (approve && e.corrects_id) { const old = entries.find((x) => x.id === e.corrects_id); if (old && old.status === 'accepted') old.status = 'superseded'; }
+      decideOne(e, approve, note);
       return { ok: true, value: null };
+    },
+    async decideBatch(_p, ids, approve, note) {
+      calls.push({ fn: 'decideBatch', args: { ids: [...ids], approve, note } });
+      if (opts.failBatch) return fail(opts.failBatch);
+      if (!ids.length) return fail('Не выбрано ни одной записи');
+      if (ids.length > 500) return fail('В пачке не больше 500 записей');
+      if (!approve && !note.trim()) return fail('Напишите причину отказа');
+      const list = ids.map((x) => entries.find((e) => e.id === x));
+      if (list.some((e) => !e || e.status !== 'pending_approval')) return fail('Не все записи ждут подтверждения в этом объекте — обновите список');
+      for (const e of list) decideOne(e!, approve, note);
+      return { ok: true, value: { approved: approve ? ids.length : 0, rejected: approve ? 0 : ids.length } };
+    },
+    async journal(_p, from, to, limit) {
+      calls.push({ fn: 'journal', args: { from, to, limit } });
+      const rows = entries.filter((e) => (!from || e.work_date >= from) && (!to || e.work_date <= to)).map((e): FactJournalRow => {
+        const p = positions.find((x) => x.id === e.position_id)!;
+        return { ...e, location_path: p.location_path, work_name: p.work, unit_code: p.unit };
+      }).sort((a, b) => (a.work_date < b.work_date ? 1 : a.work_date > b.work_date ? -1 : a.created_at < b.created_at ? 1 : -1));
+      return { ok: true, value: rows.slice(0, limit ?? 2000) };
     }
   };
+  function decideOne(e: Entry, approve: boolean, note: string): void {
+    e.status = approve ? 'accepted' : 'rejected'; e.decision_note = note.trim() || null; e.decided_by_email = 'pm@test.invalid'; e.decided_at = '2026-10-24T09:00:00Z';
+    if (approve && e.corrects_id) { const old = entries.find((x) => x.id === e.corrects_id); if (old && old.status === 'accepted') old.status = 'superseded'; }
+  }
   return { api, brigades, entries, calls, total };
 }

@@ -362,6 +362,36 @@ else {
         check('0019: anon — отказ', !(await rpc('pf_fact_add_batch', fpBody)).ok);
         if (fpq) check('0019: РП отклонил тестовую запись (итог не меняется)', (await rpc('pf_fact_decide', { p_entry: fpq.id, p_approve: false, p_note: 'REST-тест: уборка' }, tok.alfaAdmin)).ok && Number((await tt('alfaForeman'))?.fact_qty) === 8);
       }
+      // --- P2-0020: решение РП пачкой и журнал объекта (миграция 028). Пачка только отклоняется — итог тестового объекта не меняется. ---
+      const jProbe = await rpc('pf_fact_journal', { p_project: pv, p_from: today, p_to: today }, tok.alfaForeman);
+      if (jProbe.status === 404) { console.log('NOT RUN: миграция 028 не применена — проверки пачки РП и журнала пропущены'); fails++; }
+      else {
+        const pend = [];
+        for (const note of ['REST-0020 a', 'REST-0020 b']) {
+          const b = await j(await rpc('pf_fact_add_batch', { ...fpBody, p_note: note }, tok.alfaForeman));
+          const e = (await j(await rpc('pf_fact_pending', { p_project: pv }, tok.alfaAdmin))).find((r) => r.note === 'Закрытие через РП. ' + note);
+          if (b && e) pend.push(e.id);
+        }
+        check('0020: две записи ждут РП', pend.length === 2);
+        const accepted = (await j(await rpc('pf_fact_history', { p_position: posId }, tok.alfaForeman))).find((h) => h.status === 'accepted')?.id;
+        const dBody = (ids, approve, note) => ({ p_project: pv, p_entries: ids, p_approve: approve, p_note: note });
+        check('0020: прораб — отказ', !(await rpc('pf_fact_decide_batch', dBody(pend, false, 'REST-0020'), tok.alfaForeman)).ok);
+        check('0020: Бета-ПТО — отказ', !(await rpc('pf_fact_decide_batch', dBody(pend, false, 'REST-0020'), tok.betaPto)).ok);
+        check('0020: anon — отказ', !(await rpc('pf_fact_decide_batch', dBody(pend, false, 'REST-0020'))).ok);
+        check('0020: отказ без причины — отказ', !(await rpc('pf_fact_decide_batch', dBody(pend, false, ' '), tok.alfaAdmin)).ok);
+        check('0020: в пачке принятая запись — отказ всей пачки', !!accepted && !(await rpc('pf_fact_decide_batch', dBody([...pend, accepted], false, 'REST-0020'), tok.alfaAdmin)).ok);
+        const still = (await j(await rpc('pf_fact_pending', { p_project: pv }, tok.alfaAdmin))).filter((r) => pend.includes(r.id)).length;
+        check('0020: после отказов обе записи по-прежнему ждут РП', still === 2);
+        const db = await rpc('pf_fact_decide_batch', dBody(pend, false, 'REST-0020: уборка'), tok.alfaAdmin);
+        const dbJ = await j(db);
+        check('0020: РП отклонил пачку одной операцией', db.ok && dbJ.rejected === 2 && dbJ.approved === 0, `статус ${db.status}`);
+        check('0020: итог объекта не изменился', Number((await tt('alfaForeman'))?.fact_qty) === 8);
+        const jr = await j(await rpc('pf_fact_journal', { p_project: pv, p_from: today, p_to: today }, tok.alfaForeman));
+        check('0020: журнал прораба — отклонённые пачкой с одной причиной', pend.every((id) => jr.some((r) => r.id === id && r.status === 'rejected' && r.decision_note === 'REST-0020: уборка')));
+        check('0020: журнал — Бета-ПТО отказ', !(await rpc('pf_fact_journal', { p_project: pv }, tok.betaPto)).ok);
+        check('0020: журнал — anon отказ', !(await rpc('pf_fact_journal', { p_project: pv })).ok);
+        check('0020: журнал — начало позже конца отказ', !(await rpc('pf_fact_journal', { p_project: pv, p_from: today, p_to: '2000-01-01' }, tok.alfaForeman)).ok);
+      }
       const audF = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
       check('журнал компании: бригады и факт', ['brigades', 'fact_entries'].every((t) => audF.some((r) => r.table_name === t)));
       check('anon: pf_fact_add закрыт', !(await rpc('pf_fact_add', { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 1 })).ok);

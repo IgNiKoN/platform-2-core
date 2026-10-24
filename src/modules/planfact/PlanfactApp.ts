@@ -5,7 +5,7 @@
  * (PlanfactTable/PlanfactWorks не удалены — отдельным решением, ТД).
  */
 import { createElement as h, useEffect, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { AccessEntry, AuthApi } from '../../platform/auth/auth.service.ts';
 import { PLATFORM_AUTH_CSS } from '../../platform/auth/LoginForm.ts';
 import { CompanyScope } from '../../platform/company/CompanyScope.ts';
@@ -43,13 +43,17 @@ const SUBS: { id: Sub; label: string; estimate?: boolean }[] = [{ id: 'objects',
 /** Адрес #/planfact[/vor|/estimate|/fact|/ks2|/summary|/directories[/objects|/units|/prices|/overheads]] → страница и вкладка справочников.
  *  #/planfact и неизвестный адрес — «Сводка». Пункты верхнего уровня — в боковом меню (манифест модуля). */
 export function routeFromHash(hash: string): { page: Page; sub: Sub } {
-  const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
+  const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('?')[0].split('/');
   return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'fact' ? 'fact' : parts[0] === 'ks2' ? 'ks2' : parts[0] === 'summary' ? 'summary' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'summary', sub: parts[1] === 'units' ? 'units' : parts[1] === 'brigades' ? 'brigades' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
 }
 
-/** Подвкладка «Факта» (P2-0017): #/planfact/fact — «Ввод», #/planfact/fact/chessboard — «Шахматка». */
-export type FactSub = 'entry' | 'chessboard';
-export const FACT_SUBS: { id: FactSub; label: string; path: string }[] = [{ id: 'entry', label: 'Ввод', path: '/fact' }, { id: 'chessboard', label: 'Шахматка', path: '/fact/chessboard' }];
+/** Подвкладка «Факта» (P2-0017): #/planfact/fact — «Ввод», #/planfact/fact/chessboard — «Шахматка»;
+ *  P2-0020: #/planfact/fact/pending[?вид] — «Ждёт подтверждения» (реестр РП; вкладка — только при праве fact.approve в объекте),
+ *  #/planfact/fact/journal[?вид] — «Журнал» (все записи факта объекта за период; всем с fact.view). */
+export type FactSub = 'entry' | 'chessboard' | 'pending' | 'journal';
+export const FACT_SUBS: { id: FactSub; label: string; short?: string; path: string; approve?: boolean }[] = [{ id: 'entry', label: 'Ввод', path: '/fact' }, { id: 'chessboard', label: 'Шахматка', path: '/fact/chessboard' },
+  { id: 'pending', label: 'Ждёт подтверждения', short: 'Ждёт РП', path: '/fact/pending', approve: true }, { id: 'journal', label: 'Журнал', path: '/fact/journal' }];
+const FACT_SUB_IDS: string[] = ['chessboard', 'pending', 'journal'];
 /** Подвкладка «ВОР» (P2-0019): #/planfact/vor — «Загрузка», #/planfact/vor/positions[?вид] — «Позиции» (реестр). */
 export type VorSub = 'load' | 'positions';
 export const VOR_SUBS: { id: VorSub; label: string; path: string }[] = [{ id: 'load', label: 'Загрузка', path: '/vor' }, { id: 'positions', label: 'Позиции', path: '/vor/positions' }];
@@ -58,7 +62,8 @@ export function vorSubFromHash(hash: string): VorSub {
 }
 
 export function factSubFromHash(hash: string): FactSub {
-  return String(hash || '').replace(/^#\/planfact\/?/, '').split('/')[1] === 'chessboard' ? 'chessboard' : 'entry';
+  const sub = String(hash || '').replace(/^#\/planfact\/?/, '').split('?')[0].split('/')[1] || '';
+  return FACT_SUB_IDS.includes(sub) ? sub as FactSub : 'entry';
 }
 
 /** Что доступно вошедшему (то же правило, что выбор экрана ниже). */
@@ -73,15 +78,24 @@ export function canonicalHash(hash: string, a: RouteAccess): string | null {
   const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
   const r = routeFromHash(hash);
   const known = ['', 'summary', 'vor', 'fact', 'estimate', 'ks2', 'directories'];
-  const pageOk = known.indexOf(parts[0]) >= 0 && (r.page !== 'estimate' || a.estimate) && (r.page !== 'ks2' || a.ks2) && (r.page !== 'fact' || a.fact);
+  const page0 = parts[0].split('?')[0];   // вид реестра в адресе (#/planfact/ks2?f.status=…, P2-0020)
+  const pageOk = known.indexOf(page0) >= 0 && (r.page !== 'estimate' || a.estimate) && (r.page !== 'ks2' || a.ks2) && (r.page !== 'fact' || a.fact);
   if (!pageOk) return BASE;
   if (r.page === 'directories' && parts.length > 1 && parts[1] !== '') {
     const subOk = parts[1] === r.sub && !((r.sub === 'prices' || r.sub === 'overheads') && !a.estimate) && !(r.sub === 'brigades' && !a.brigades);
     if (!subOk) return `${BASE}/directories/objects`;
   }
-  if (r.page === 'fact' && parts.length > 1 && parts[1] !== '' && parts[1] !== 'chessboard') return `${BASE}/fact`;
+  if (r.page === 'fact' && parts.length > 1 && parts[1].split('?')[0] !== '' && !FACT_SUB_IDS.includes(parts[1].split('?')[0])) return `${BASE}/fact`;
   if (r.page === 'vor' && parts.length > 1 && parts[1].split('?')[0] !== '' && parts[1].split('?')[0] !== 'positions') return `${BASE}/vor`;
   return null;
+}
+
+/** Подпись подвкладки со счётчиком; short — на телефоне (≤ 760 px), полная — для экранного диктора и на ПК. */
+function segLabel(label: string, short: string | undefined, count: number | null): ReactNode[] {
+  const n = count === null ? '' : ` (${count})`;
+  return short
+    ? [h('span', { key: 'f', className: 'pf-seg-full' }, label + n), h('span', { key: 's', className: 'pf-seg-short', 'aria-hidden': 'true' }, short + n)]
+    : [label + n];
 }
 
 function accessLabel(entries: AccessEntry[]): string {
@@ -100,6 +114,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const [companies, setCompanies] = useState<CompanyAccess[]>([]);
   const [canEstimate, setCanEstimate] = useState(false);
   const [canKs2, setCanKs2] = useState(false);
+  const [factApprove, setFactApprove] = useState<number | null>(null);   // ждут РП в выбранном объекте; null — нет права fact.approve
   const [p2, setP2] = useState(readPlatformView());
 
   useEffect(() => {
@@ -153,6 +168,12 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     const r = (window as unknown as { AppRouter?: { navigate?: (p: string, replace?: boolean) => void } }).AppRouter;
     if (r && typeof r.navigate === 'function') r.navigate(fix, true); else { window.history.replaceState(null, '', fix); setRoute(routeFromHash(fix)); }
   }, [fix]);
+
+  // На телефоне подвкладки «Факта» прокручиваются вбок: открытая — всегда в поле зрения (P2-0020: их четыре).
+  useEffect(() => {
+    const el = document.querySelector('[data-testid="pf-facttabs"] .pf-seg-btn--active') as (HTMLElement & { scrollIntoView?: (o?: object) => void }) | null;
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [route, factSubFromHash(window.location.hash), mode, companies.length, factApprove]);
 
   function reset(): void {
     restoreShellUser();
@@ -212,9 +233,9 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const body = sm
     ? h('div', { className: 'pf-root' }, h(SummaryTab, { api: summaryApi!, links: { go: (pg) => nav(`${BASE}/${pg}`), can: { ks2: !!canKs2, estimate: !!canEstimate, fact: true } } }))
     : k2
-    ? h('div', { className: 'pf-root' }, h(Ks2Tab, { api: ks2Api!, vor: vorApi! }))
+    ? h('div', { className: 'pf-root' }, h(Ks2Tab, { api: ks2Api!, vor: vorApi!, me: who }))
     : fct
-    ? h('div', { className: 'pf-root' }, h(FactTab, { api: factApi!, vor: vorApi!, projects: projects!, me: who, mode: fsub }))
+    ? h('div', { className: 'pf-root' }, h(FactTab, { api: factApi!, vor: vorApi!, projects: projects!, me: who, mode: fsub, onApprove: setFactApprove }))
     : est
     ? h('div', { className: 'pf-root' }, h(EstimateTab, { api: estimate!, vor: vorApi! }))
     : vor
@@ -237,8 +258,9 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
     ? h('div', { className: 'pf-root pf-dirhead' },
         h('h2', { className: 'pf-title' }, 'Факт — выполненные объёмы'),
         h('div', { className: 'pf-seg', role: 'tablist', 'data-testid': 'pf-facttabs' },
-          FACT_SUBS.map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': fsub === t.id, 'data-sub': t.id,
-            className: 'pf-seg-btn' + (fsub === t.id ? ' pf-seg-btn--active' : ''), onClick: () => nav(`${BASE}${t.path}`) }, t.label))))
+          FACT_SUBS.filter((t) => !t.approve || factApprove !== null).map((t) => h('button', { key: t.id, type: 'button', role: 'tab', 'aria-selected': fsub === t.id, 'data-sub': t.id,
+            className: 'pf-seg-btn' + (fsub === t.id ? ' pf-seg-btn--active' : ''), onClick: () => nav(`${BASE}${t.path}`) },
+            ...segLabel(t.label, t.short, t.approve && factApprove !== null ? factApprove : null)))))
     : est
     ? h('div', { className: 'pf-root pf-dirhead' }, h('h2', { className: 'pf-title' }, 'Смета — тендерная стоимость по ВОР заказчика'))
     : vor
@@ -267,6 +289,8 @@ export const PLANFACT_TABS_CSS = `
 .pf-hint{padding:16px;display:flex;flex-direction:column;align-items:flex-start;gap:12px;font-size:14px}
 .pf-seg{display:flex;flex-wrap:nowrap;gap:var(--rbi-subtab-gap,6px);padding:4px;border:1px solid var(--card-border);border-radius:12px;background:var(--card-bg);overflow-x:auto;-webkit-overflow-scrolling:touch}
 .pf-seg-btn{flex:1 1 0;min-width:5rem;min-height:40px;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;padding:8px 12px;border-radius:8px;border:0;background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;text-align:center}
+.pf-seg-short{display:none}
+@media (max-width:760px){.pf-seg-full{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.pf-seg-short{display:inline}}
 .pf-seg-btn--active{background:var(--accent,var(--primary));color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 `;
 

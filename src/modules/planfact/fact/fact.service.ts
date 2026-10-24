@@ -1,5 +1,6 @@
 /**
- * Бригады и факт прораба с сервера (P2-0007): только функции public.pf_brigade_* / pf_fact_* миграции 009.
+ * Бригады и факт прораба с сервера (P2-0007): только функции public.pf_brigade_* / pf_fact_* миграций 009, 027 и 028
+ * (P2-0020: решение РП пачкой pf_fact_decide_batch, журнал объекта pf_fact_journal).
  * Права (fact.create / fact.approve / brigades.manage), изоляцию компаний, допуск перебора и неизменяемость записей
  * проверяет сервер; кнопки на экране — подсказка.
  */
@@ -27,6 +28,12 @@ export interface FactPendingRow {
   qty: number; work_date: string; brigade_name: string; note: string | null; corrects_id: string | null; correction_reason: string | null;
   created_by_email: string | null; created_at: string;
 }
+/** Запись журнала факта объекта (pf_fact_journal, миграция 028): любой статус, решение РП и исправление. */
+export interface FactJournalRow extends FactHistoryRow { position_id: string; location_path: string; work_name: string; unit_code: string }
+/** Итог решения пачкой (всё или ничего). */
+export interface DecideBatchResult { approved: number; rejected: number }
+/** Предел пачки на сервере (pf_fact_decide_batch); больше — частями. */
+export const DECIDE_BATCH_MAX = 500;
 export interface FactEntryInput { brigadeId: string; date: string; qty: number; workers: number | null; manHours: number | null; note: string }
 /** requireApproval (P2-0019, миграция 027) — «Закрыть через РП»: все строки ждут подтверждения РП даже без перебора. */
 export interface FactBatchInput { projectId: string; brigadeId: string; date: string; workers: number | null; note: string; items: { position_id: string; qty: number }[]; requireApproval?: boolean }
@@ -44,6 +51,10 @@ export interface FactApi {
   addBatch(b: FactBatchInput): Promise<Result<BatchResult>>;
   correct(entryId: string, qty: number, reason: string): Promise<Result<{ id: string; status: string }>>;
   decide(entryId: string, approve: boolean, note: string): Promise<Result>;
+  /** Решение РП по записям проекта одной операцией (≤ 500; всё или ничего). Отказ — одна причина на все. */
+  decideBatch(projectId: string, entryIds: string[], approve: boolean, note: string): Promise<Result<DecideBatchResult>>;
+  /** Журнал факта объекта за период по дате работ (null — без границы), новые сверху; limit — по умолчанию 2 000. */
+  journal(projectId: string, from: string | null, to: string | null, limit?: number): Promise<Result<FactJournalRow[]>>;
 }
 
 const n = (v: unknown): number => Number(v ?? 0);
@@ -51,6 +62,7 @@ export function normPosition(p: FactPosition): FactPosition {
   return { ...p, plan_qty: n(p.plan_qty), fact_qty: n(p.fact_qty), pending_qty: n(p.pending_qty), pending_count: n(p.pending_count) };
 }
 const normHistory = (r: FactHistoryRow): FactHistoryRow => ({ ...r, qty: n(r.qty), workers: r.workers === null ? null : n(r.workers), man_hours: r.man_hours === null ? null : n(r.man_hours) });
+const normJournal = (r: FactJournalRow): FactJournalRow => ({ ...r, ...normHistory(r) });
 const normPending = (r: FactPendingRow): FactPendingRow => ({ ...r, plan_qty: n(r.plan_qty), fact_qty: n(r.fact_qty), qty: n(r.qty) });
 
 export function createFactService(): FactApi | null {
@@ -83,6 +95,11 @@ export function createFactService(): FactApi | null {
     addBatch: (b) => call<BatchResult>('pf_fact_add_batch', { p_project: b.projectId, p_brigade: b.brigadeId, p_date: b.date, p_items: b.items, p_workers: b.workers, p_note: b.note || null,
       ...(b.requireApproval ? { p_require_approval: true } : {}) }),
     correct: (entry, qty, reason) => call<{ id: string; status: string }>('pf_fact_correct', { p_entry: entry, p_qty: qty, p_reason: reason }),
-    decide: (entry, approve, note) => call('pf_fact_decide', { p_entry: entry, p_approve: approve, p_note: note || null })
+    decide: (entry, approve, note) => call('pf_fact_decide', { p_entry: entry, p_approve: approve, p_note: note || null }),
+    async decideBatch(project, ids, approve, note) {
+      const r = await call<DecideBatchResult>('pf_fact_decide_batch', { p_project: project, p_entries: ids, p_approve: approve, p_note: note || null });
+      return r.ok ? { ok: true, value: { approved: n(r.value?.approved), rejected: n(r.value?.rejected) } } : r;
+    },
+    journal: (project, from, to, limit) => list<FactJournalRow>('pf_fact_journal', { p_project: project, p_from: from, p_to: to, p_limit: limit ?? 2000 }, normJournal)
   };
 }

@@ -7,10 +7,11 @@
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { HistoryFeed, RegistryTable, SideCard, StatusBadge, Steps, queryOf, queryToState, registryRows, stateToQuery } from '../../../platform/ui/index.ts';
-import type { HistoryItem, RegistryColumn, RegistryFilter, RegistryState, Status } from '../../../platform/ui/index.ts';
+import { HistoryFeed, RegistryTable, SideCard, StatusBadge, Steps, queryOf, queryToState, registryRows, syncRegistryAddress } from '../../../platform/ui/index.ts';
+import type { RegistryColumn, RegistryFilter, RegistryState, Status } from '../../../platform/ui/index.ts';
 import type { SummaryApi } from '../summary/summary.service.ts';
-import type { FactApi, FactHistoryRow, FactStatus } from '../fact/fact.service.ts';
+import type { FactApi, FactHistoryRow } from '../fact/fact.service.ts';
+import { historyItem } from '../fact/factStatus.ts';
 import { POSITION_STATE_LABEL, positionStatus } from '../summary/model.ts';
 import type { PositionState, PositionStatus } from '../summary/model.ts';
 import { fmtPct, fmtQty, todayMoscow } from '../fact/fact.ts';
@@ -79,22 +80,7 @@ export const POSITION_FILTERS: RegistryFilter<PositionRow>[] = [
 ];
 const TONE_LABEL: Partial<Record<Status, string>> = { red: 'просрочено / отклонено', yellow: 'в работе', blue: 'ждёт подтверждения РП', green: 'выполнено', grey: 'не начато' };
 
-const FACT_LABEL: Record<FactStatus, { label: string; tone: Status }> = {
-  accepted: { label: 'Принято', tone: 'green' }, pending_approval: { label: 'Ждёт РП', tone: 'blue' },
-  rejected: { label: 'Отклонено', tone: 'red' }, superseded: { label: 'Заменено', tone: 'grey' },
-};
-/** Запись факта → строка ленты: решение РП — «Ждёт РП → Принято / Отклонено», замена — «Принято → Заменено». */
-export function historyItem(e: FactHistoryRow, unit: string): HistoryItem {
-  const decided = !!e.decided_at;
-  const from = e.status === 'superseded' ? FACT_LABEL.accepted : decided && (e.status === 'accepted' || e.status === 'rejected') ? FACT_LABEL.pending_approval : null;
-  const parts = [`${fmtQty(e.qty)} ${unit}`, e.brigade_name, `за ${ruDate(e.work_date)}`];
-  if (e.correction_reason) parts.push(`исправление: ${e.correction_reason}`);
-  if (e.note) parts.push(e.note);
-  return {
-    id: e.id, when: ruDate((decided ? e.decided_at! : e.created_at).slice(0, 10)), who: decided ? e.decided_by_email : e.created_by_email,
-    text: parts.join(' · '), from, to: FACT_LABEL[e.status], note: e.decision_note ? `Решение: ${e.decision_note}` : null,
-  };
-}
+export { historyItem };
 
 function PositionCard(props: { fact: FactApi; row: PositionRow; index: number; total: number; onPrev: () => void; onNext: () => void; onClose: () => void }): ReactElement {
   const { fact, row } = props;
@@ -129,16 +115,6 @@ export interface PositionsRegistryProps {
   today?: string;
 }
 
-/** Синхронизирует вид с адресом (#/planfact/vor/positions?…) без перехода роутера — ссылка из адресной строки открывает тот же вид. */
-function syncAddress(s: RegistryState): void {
-  try {
-    if (!String(window.location.hash || '').startsWith(POSITIONS_LINK)) return;
-    const q = stateToQuery(s);
-    const next = q ? `${POSITIONS_LINK}?${q}` : POSITIONS_LINK;
-    if (window.location.hash !== next) window.history.replaceState(window.history.state, '', next);
-  } catch { /* без истории — вид остаётся только на экране */ }
-}
-
 export function PositionsRegistry(props: PositionsRegistryProps): ReactElement {
   const { fact, summary, projectId, companyId, user } = props;
   const today = props.today || todayMoscow();
@@ -157,7 +133,7 @@ export function PositionsRegistry(props: PositionsRegistryProps): ReactElement {
     setSelected((s) => new Set(r.rows.filter((x) => s.has(x.id)).map((x) => x.id)));
   }
   useEffect(() => { setRows(null); setSelected(new Set()); setOpenId(''); void reload(); }, [projectId]);
-  const onState = (s: RegistryState): void => { setState(s); syncAddress(s); };
+  const onState = (s: RegistryState): void => { setState(s); syncRegistryAddress(POSITIONS_LINK, s); };
 
   const ordered = useMemo(() => registryRows(rows || [], { filters: POSITION_FILTERS, columns: POSITION_COLUMNS, state, isOverdue: (r) => r.st.overdue, groupBy: { label: 'Корпус', key: (r) => r.corp } }), [rows, state]);
   if (rows === null) return h('div', { className: 'pf-muted' }, 'Загрузка позиций…');
