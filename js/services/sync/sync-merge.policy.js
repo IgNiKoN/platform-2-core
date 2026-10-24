@@ -46,6 +46,10 @@ export function recordProjectNames(rec) {
 export function keepOnPurge(rec, inAssigned) {
     if (!rec) return false;
     if (isUnsentLocal(rec)) return true;
+    // P2-0023 доработка 1: местная запись, не дошедшая до сервера (в т.ч. 'blocked' — нет прав сейчас),
+    // не удаляется автоочисткой — иначе пропадёт навсегда вместе со своими local:// фото.
+    const st = String(rec.syncStatus || rec.sync_status || '');
+    if (rec.source === 'local' && st !== 'synced') return true;
     const names = recordProjectNames(rec);
     if (!names.length || names.every(isGlobalProjectName) || names.some(isGlobalProjectName)) return true;
     if (names.length === 1) return !!inAssigned(rec, names);

@@ -32,6 +32,12 @@ describe('keepOnPurge (смена назначенных объектов)', () 
       assert.equal(keepOnPurge({ projectName: 'obj-z', syncStatus: st, source: 'cloud' }, inAssigned), true, st);
     }
   });
+  it('доработка 1: местная blocked-запись (нет прав) по чужому объекту — остаётся', () => {
+    assert.equal(keepOnPurge({ projectName: 'obj-z', syncStatus: 'blocked', source: 'local' }, inAssigned), true);
+    assert.equal(keepOnPurge({ project_canonical_key: 'obj-z', sync_status: 'blocked', source: 'local' }, inAssigned), true);
+    // местная, но уже отправленная — по общим правилам
+    assert.equal(keepOnPurge({ project_canonical_key: 'obj-z', syncStatus: 'synced', source: 'local' }, inAssigned), false);
+  });
   it('чужой объект, отправлено — удаляется (как раньше)', () => {
     assert.equal(keepOnPurge(synced({ project_canonical_key: 'obj-z' }), inAssigned), false);
     assert.equal(keepOnPurge(synced({ project_canonical_key: 'obj-a' }), inAssigned), true);
