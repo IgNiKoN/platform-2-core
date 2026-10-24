@@ -64,9 +64,13 @@ export const HistoryState = {
 
     /* ── Сеттеры ─────────────────────────────────────────────────────── */
 
+    // P2-0024 доработка 1: номер версии списка — порция из базы, пришедшая после замены списка, отбрасывается
+    listGen: 0,
+
     setRecords(arr) {
         this.allRecords = arr || [];
         this.records = this.allRecords;
+        this.listGen++;
     },
 
     appendRecords(arr) {
@@ -92,6 +96,7 @@ export const HistoryState = {
         this.pageCursorKey = null;
         this.pageCursorPrimaryKey = null;
         this.pageHasMore = false;
+        this.isLoadingPage = false; // идущая догрузка порции из базы будет отброшена (listGen сменился)
         return true;
     },
 

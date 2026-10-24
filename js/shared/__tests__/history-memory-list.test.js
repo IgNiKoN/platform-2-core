@@ -51,3 +51,22 @@ describe('HistoryState.useMemoryHistoryIfReady', () => {
     }
   });
 });
+
+describe('доработка 1: версия списка (ревью №3 — дубли в гонке с догрузкой)', () => {
+  it('замена списка повышает listGen; переход на память сбрасывает «идёт догрузка»', () => {
+    globalThis.window = { contractorArray: [{ id: 'x', date: '2026-10-01' }] };
+    try {
+      HistoryState.setRecords([]);
+      const g0 = HistoryState.listGen;
+      HistoryState.setPageState({ pageHasMore: true, isLoadingPage: true });
+      assert.equal(HistoryState.useMemoryHistoryIfReady(), true);
+      assert.ok(HistoryState.listGen > g0, 'версия выросла — порция из базы будет отброшена');
+      assert.equal(HistoryState.isLoadingPage, false);
+      const g1 = HistoryState.listGen;
+      HistoryState.appendRecords([{ id: 'z', date: '2026-09-01' }]);
+      assert.equal(HistoryState.listGen, g1, 'добавление порции версию не меняет');
+    } finally {
+      delete globalThis.window;
+    }
+  });
+});

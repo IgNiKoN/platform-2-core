@@ -152,11 +152,18 @@ export const HistoryActions = {
 
         try {
             HistoryState.setPageState({ isLoadingPage: true });
+            const gen = HistoryState.listGen;
             const page = await svc.getPage({
                 limit: HistoryState.pageSize,
                 cursorKey: HistoryState.pageCursorKey,
                 cursorPrimaryKey: HistoryState.pageCursorPrimaryKey
             });
+            // P2-0024 доработка 1 (ревью №3): пока шла порция, список заменили (история из памяти, удаление) —
+            // порцию не добавляем (иначе дубли строк); курсор не двигаем.
+            if (HistoryState.listGen !== gen) {
+                if (HistoryState.isLoadingPage) HistoryState.setPageState({ isLoadingPage: false });
+                return;
+            }
             const newItems = page.items || [];
             HistoryState.appendRecords(newItems);
             HistoryState.setPageState({
