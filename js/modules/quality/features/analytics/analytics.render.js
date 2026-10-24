@@ -515,14 +515,26 @@ window.analyticsMarkTabPainted = analyticsMarkTabPainted;
 const _ikoMemo = new Map();
 const IKO_MEMO_MAX = 48;
 
+// P2-0024 доработка 1 (ревью №5): ключ — id И время изменения каждой записи (правка проверки с теми же id
+// даёт новый ключ), сжатый в короткий хэш (раньше ключом была строка всех id — до ≈ 400 КБ на ключ).
 function _ikoIdsSignature(arr) {
     if (!arr || !arr.length) return '0';
-    let s = String(arr.length) + ':';
+    let h1 = 0xdeadbeef ^ arr.length, h2 = 0x41c6ce57 ^ arr.length;
+    const mix = (str) => {
+        for (let k = 0; k < str.length; k++) {
+            const ch = str.charCodeAt(k);
+            h1 = Math.imul(h1 ^ ch, 2654435761);
+            h2 = Math.imul(h2 ^ ch, 1597334677);
+        }
+    };
     for (let i = 0; i < arr.length; i++) {
-        s += (arr[i] && arr[i].id) ? String(arr[i].id) : String(i);
-        s += ',';
+        const r = arr[i];
+        mix((r && r.id) ? String(r.id) : String(i));
+        mix('|' + String((r && (r.updatedAt || r.updated_at)) || '') + ',');
     }
-    return s;
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return arr.length + ':' + (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
 }
 
 /**
@@ -2220,7 +2232,7 @@ export const AnalyticsRender = {
         // Пришла новая перерисовка за это время — эту не дописываем.
         const _opGen = _analyticsRenderGen;
         await new Promise((resolve) => setTimeout(resolve, 0));
-        if (_opGen !== _analyticsRenderGen || !container.isConnected) return;
+        if (_opGen !== _analyticsRenderGen || !container.isConnected) return false; // не дорисовано (ревью №4)
 
         const selPeriod = document.getElementById('global-filter-period')?.value || 'D30';
         let prevData = [];

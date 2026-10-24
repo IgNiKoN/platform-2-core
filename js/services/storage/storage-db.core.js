@@ -312,7 +312,8 @@ function rbiTxAbortError(tx) {
  * или ошибка (в т.ч. нет места) → abort → IndexedDB откатывает всё, данные остаются в старом формате
  * (он читается как раньше). Метка «сделано» пишется в той же транзакции. После 3 неудач подряд — не пытаемся.
  */
-const SNAPSHOT_MIGRATION_FAILS_KEY = 'rbi_checklist_snapshots_migration_fails';
+// доработка 1 (ревью №8): свой счётчик у каждой базы (компания / пользователь устройства)
+const SNAPSHOT_MIGRATION_FAILS_KEY = 'rbi_checklist_snapshots_migration_fails:' + DB_NAME;
 // Чистые функции — js/services/storage/checklist-snapshot.utils.js (подключён в index.html перед этим файлом;
 // без import: тесты загружают этот файл как обычный скрипт).
 function _cs() { return window.RbiChecklistSnapshots || null; }
