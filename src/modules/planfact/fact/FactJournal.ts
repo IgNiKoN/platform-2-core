@@ -15,6 +15,7 @@ import { fmtWhen } from './FactHistory.ts';
 import { FACT_LABEL, FACT_STATUS_ORDER, historyItem } from './factStatus.ts';
 import { corpOf } from '../vor/PositionsRegistry.ts';
 import { ruDate } from '../ks2/form.ts';
+import { hashParam } from '../ProjectPicker.ts';
 
 export const JOURNAL_LINK = '#/planfact/fact/journal';
 /** Записей за один запрос (сервер отдаёт не больше; постраничность — ТД). */
@@ -107,7 +108,9 @@ export function FactJournal(props: FactJournalProps): ReactElement {
   const { api, projectId } = props;
   const save = props.save || saveXlsx;
   const today = props.today || todayMoscow();
-  const [from, setFrom] = useState(shiftDate(today, -(JOURNAL_DAYS - 1)));
+  // P2-0021: переход «Мои отклонённые» — период с даты самой ранней записи (from=ГГГГ-ММ-ДД), если она раньше 30 дней
+  const [from, setFrom] = useState(() => { const d = shiftDate(today, -(JOURNAL_DAYS - 1)); const f = hashParam(window.location.hash, 'from');
+    return /^\d{4}-\d{2}-\d{2}$/.test(f) && f < d ? f : d; });
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState<JournalRow[] | null>(null);
   const [error, setError] = useState('');

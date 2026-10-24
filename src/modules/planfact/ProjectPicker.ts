@@ -16,6 +16,23 @@ export function firstProjectId(list: PickProject[]): string {
   return (list.find((p) => !isArchived(p)) || list[0])?.id || '';
 }
 
+/** P2-0021: параметр перехода из адреса (#/planfact/…?p=<объект>&from=<дата>) — «Требует моего участия» открывает список с готовым
+ *  объектом. Реестры параметр не хранят (вид в адресе перезаписывается), поэтому он действует один раз — при открытии. */
+export function hashParam(hash: string, key: string): string {
+  const q = String(hash || '').split('?')[1] || '';
+  for (const part of q.split('&')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i) === key) { try { return decodeURIComponent(part.slice(i + 1)); } catch { return ''; } }
+  }
+  return '';
+}
+
+/** Объект при открытии раздела: из перехода (p=…), если он есть в списке; иначе — первый действующий. */
+export function initialProjectId(list: PickProject[], hash: string): string {
+  const want = hashParam(hash, 'p');
+  return want && list.some((p) => p.id === want) ? want : firstProjectId(list);
+}
+
 /** Что показать в списке: действующие; архивные — при «Показать архив» (и всегда — выбранный сейчас). */
 export function visibleProjects<T extends PickProject>(list: T[], showArchive: boolean, value: string): T[] {
   return list.filter((p) => !isArchived(p) || showArchive || p.id === value);

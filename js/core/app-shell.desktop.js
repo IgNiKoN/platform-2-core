@@ -91,6 +91,9 @@
 
     setModeChip(modeId);
     syncDemoExitPlacement();
+    // P2-0021: числа на пунктах меню — после перерисовки нижнего таббара и nav2
+    var sh = window.RBI && window.RBI.services && window.RBI.services.shell;
+    if (sh && typeof sh.paintNavBadges === 'function') sh.paintNavBadges();
   }
 
   /** Демо-выход: на ≥1280 — в шапке nav2 рядом с названием модуля; иначе fixed FAB. */

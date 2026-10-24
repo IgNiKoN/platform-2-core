@@ -1,5 +1,5 @@
 /** Подставной сервер сводки (P2-0008) для тестов экрана: числа — как их считает сервер (011_summary.sql), экран их только показывает. */
-import type { Ks2GapRow, SummaryApi, SummaryAttention, SummaryPlace, SummaryPosition, SummaryProject, SummaryWeek, SummaryWorkType } from '../summary/summary.service.ts';
+import type { InboxRow, Ks2GapRow, SummaryApi, SummaryAttention, SummaryPlace, SummaryPosition, SummaryProject, SummaryWeek, SummaryWorkType } from '../summary/summary.service.ts';
 
 /** Проект из SQL-теста 011: план 53 250 ₽, сделано 7 725 ₽ (14,5 %), темп 691,07 / 433,93 ₽/дн., нужный 379,38, выставлено 7 425, разрыв 300;
  *  P2-0010: план на сегодня 20 %, отставание 5,5 п.п. = 8,3 дн. (между порогами 3 и 10 → жёлтый), темп растёт. */
@@ -58,7 +58,7 @@ export const GAP: Ks2GapRow[] = [
 ];
 
 export function makeFakeSummary(projects: SummaryProject[], opts: { fail?: string; workTypes?: SummaryWorkType[]; positions?: SummaryPosition[]; gap?: Ks2GapRow[] | string;
-  weeks?: SummaryWeek[]; places?: Record<string, SummaryPlace[]>; attention?: SummaryAttention } = {}) {
+  weeks?: SummaryWeek[]; places?: Record<string, SummaryPlace[]>; attention?: SummaryAttention; inbox?: InboxRow[] | string } = {}) {
   const calls: string[] = [];
   const err = (m: string) => ({ ok: false as const, message: m });
   const api: SummaryApi = {
@@ -71,6 +71,7 @@ export function makeFakeSummary(projects: SummaryProject[], opts: { fail?: strin
     async places(p, l) { calls.push(`places:${p}:${l}`); const all = opts.places || { root: PLACES }; return { ok: true, value: (all[l || 'root'] || []).map((x) => ({ ...x })) }; },
     async attention(p) { calls.push(`attention:${p}`); return { ok: true, value: opts.attention || ATTENTION }; },
     async setThresholds(p, y, r, d) { calls.push(`setThresholds:${p}:${y}:${r}:${d}`); return { ok: true, value: null }; },
+    async inbox() { calls.push('inbox'); const x = opts.inbox ?? []; return typeof x === 'string' ? err(x) : { ok: true, value: x.map((r) => ({ ...r })) }; },
   };
   return { api, calls };
 }

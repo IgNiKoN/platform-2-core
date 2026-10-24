@@ -391,6 +391,22 @@ else {
         check('0020: журнал — Бета-ПТО отказ', !(await rpc('pf_fact_journal', { p_project: pv }, tok.betaPto)).ok);
         check('0020: журнал — anon отказ', !(await rpc('pf_fact_journal', { p_project: pv })).ok);
         check('0020: журнал — начало позже конца отказ', !(await rpc('pf_fact_journal', { p_project: pv, p_from: today, p_to: '2000-01-01' }, tok.alfaForeman)).ok);
+        // --- P2-0021: «Требует моего участия» (миграция 029) — только чтение; ТД №138: повторное решение — отказ. ---
+        const iProbe = await rpc('pf_my_inbox', {}, tok.alfaForeman);
+        if (iProbe.status === 404) { console.log('NOT RUN: миграция 029 не применена — проверки «Требует моего участия» пропущены'); fails++; }
+        else {
+          const inboxOf = async (who) => (await j(await rpc('pf_my_inbox', {}, tok[who])) || []).find((r) => r.project_id === pv);
+          const iAdm = await inboxOf('alfaAdmin'), iFor = await inboxOf('alfaForeman'), iPto = await inboxOf('alfaPto');
+          const pendN = (await j(await rpc('pf_fact_pending', { p_project: pv }, tok.alfaAdmin))).length;
+          check('0021: администратор (fact.approve) — «ждёт подтверждения» = pf_fact_pending', !!iAdm && iAdm.pending === pendN, JSON.stringify(iAdm));
+          check('0021: прораб — «мои отклонённые» есть, подтверждения нет', !!iFor && typeof iFor.my_rejected === 'number' && iFor.pending === null, JSON.stringify(iFor));
+          const ks2N = (await j(await rpc('pf_ks2_acts', { p_project: pv }, tok.alfaPto)) || []).filter((a) => a.status === 'draft').length;
+          check('0021: ПТО — черновики КС-2 = pf_ks2_acts, подтверждения нет', !!iPto && iPto.ks2_drafts === ks2N && iPto.pending === null, JSON.stringify(iPto));
+          check('0021: Бета-ПТО не видит объект Альфы', !(await inboxOf('betaPto')));
+          check('0021: anon — отказ', !(await rpc('pf_my_inbox', {})).ok);
+          check('0021: ТД №138 — повторное решение по отклонённой записи — отказ', !!pend[0] && !(await rpc('pf_fact_decide', { p_entry: pend[0], p_approve: true, p_note: 'REST-0021' }, tok.alfaAdmin)).ok);
+          check('0021: итог объекта не изменился', Number((await tt('alfaForeman'))?.fact_qty) === 8);
+        }
       }
       const audF = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
       check('журнал компании: бригады и факт', ['brigades', 'fact_entries'].every((t) => audF.some((r) => r.table_name === t)));
