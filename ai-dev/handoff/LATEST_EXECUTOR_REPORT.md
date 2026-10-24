@@ -18,4 +18,6 @@
 
 **Следующий шаг:** показ владельцу → `Архитектор. принято P2-0021`.
 
-STATUS: READY_FOR_ACCEPTANCE
+**Принято владельцем 24.10.2026 — DONE (`acceptance-record.md`).**
+
+STATUS: DONE
