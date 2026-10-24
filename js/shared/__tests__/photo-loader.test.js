@@ -275,6 +275,17 @@ describe('PhotoManager', () => {
     assert.equal(writes, 0);
   });
 
+  it('доработка 4: два одновременных запроса одного фото → один адрес, он не отозван', async () => {
+    db.set('local://same', { id: 'local://same', data: new ArrayBuffer(4), mimeType: 'image/jpeg' });
+    const [a, b] = await Promise.all([PM.resolvePhoto('local://same'), PM.resolvePhoto('local://same')]);
+    assert.equal(a.state, 'ok');
+    assert.equal(a.url, b.url, 'оба <img> получают один адрес');
+    assert.ok(PM.activeUrls.has(a.url), 'адрес первого превью не отозван');
+    assert.equal(PM.urlCount(), 1);
+    // после завершения — новый запрос берётся из кэша, без нового адреса
+    assert.equal((await PM.resolvePhoto('local://same')).url, a.url);
+  });
+
   it('local:// без записи и без облака → missing (не «очищено»)', async () => {
     assert.equal((await PM.resolvePhoto('local://none')).state, 'missing');
   });

@@ -294,10 +294,22 @@ const PhotoManager = {
      * @param {string|string[]} ref
      * @param {{ preferThumb?: boolean }} [opts]
      */
-    async resolvePhoto(ref, opts) {
+    resolvePhoto(ref, opts) {
         if (Array.isArray(ref)) ref = ref[0];
-        if (!ref) return { state: PHOTO_STATE.MISSING };
+        if (!ref) return Promise.resolve({ state: PHOTO_STATE.MISSING });
         ref = String(ref);
+        // Доработка 4: одновременные запросы одного фото объединяются — иначе второй createObjectURL
+        // отзывал адрес первого, и уже показанное превью ломалось.
+        const flightKey = (opts && opts.preferThumb ? 'thumb:' : 'full:') + ref;
+        if (!this._inflight) this._inflight = new Map();
+        const pending = this._inflight.get(flightKey);
+        if (pending) return pending;
+        const p = this._resolvePhotoOnce(ref, opts).finally(() => { this._inflight.delete(flightKey); });
+        this._inflight.set(flightKey, p);
+        return p;
+    },
+
+    async _resolvePhotoOnce(ref, opts) {
         const preferThumb = !!(opts && opts.preferThumb);
         const thumbKey = this._thumbCacheKey(ref);
 
