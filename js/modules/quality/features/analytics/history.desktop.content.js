@@ -6,6 +6,7 @@
 
 import { openHistoryPlanViewer } from '../audit/features/quality-plan-pin.js';
 import { planPinOf } from '../shared/plan-pin-label.js';
+import { groupByContractorWork, avgFinalUrk, avgUrkStatusCls } from '../history/history.group.js';
 
 const DESK_IDS = {
   checks: 'ana-desk-hist-checks',
@@ -18,6 +19,8 @@ let _deskChecksProject = 'ALL';
 let _deskReportsProject = 'ALL';
 let _deskPlansProject = 'ALL';
 let _deskChecksSort = { key: 'date', dir: 'desc' };
+/** P2-0026: раскрытые группы таблицы «Проверки» (ключи объект / подрядчик / вид работ) — сохраняются между перерисовками. */
+let _deskChecksOpen = new Set();
 let _deskPlansFloorItems = new Map();
 let _deskPlansFloorLabels = new Map();
 let _deskPlansSelectedFloor = null;
@@ -330,7 +333,60 @@ function sortMark(key) {
   return _deskChecksSort.dir === 'asc' ? ' ↑' : ' ↓';
 }
 
-function buildChecksTableHtml(items) {
+function checkRowHtml(item) {
+  const id = String(item.id);
+  const place = item.location || _t('quality.history.fallback.no_location', 'Без локации');
+  const when = new Date(item.date).toLocaleString('ru-RU', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+  });
+  const tmpl = item.templateTitle || '—';
+  const insp = item.inspectorName || '—';
+  const finalPct = (item.metrics && item.metrics.final != null) ? item.metrics.final : '—';
+  const statusCls = (item.metrics && item.metrics.statusCls) || '';
+  const hasPhoto = !!(item.photos && Object.keys(item.photos).length);
+  return `<div class="ana-desk-hist-row" data-hist-id="${esc(id)}" role="row">`
+    + `<input type="checkbox" class="hist-checkbox ana-desk-hist-row-cb" value="${esc(id)}">`
+    + `<button type="button" class="ana-desk-hist-row-main" data-ana-desk-open-check="${esc(id)}">`
+    + `<span class="ana-desk-hist-row-place">${esc(place)}${hasPhoto ? _t('quality.history.row.has_photo', ' · фото') : ''}</span>`
+    + `<span class="ana-desk-hist-row-when">${esc(when)}</span>`
+    + `<span class="ana-desk-hist-row-tmpl">${esc(tmpl)}</span>`
+    + `<span class="ana-desk-hist-row-insp">${esc(insp)}</span>`
+    + `<span class="ana-desk-hist-row-urk status-tag ${esc(statusCls)}">${esc(String(finalPct))}${finalPct !== '—' ? '%' : ''}</span>`
+    + `</button>`
+    + `</div>`;
+}
+
+/** P2-0026: строка-группа (объект / подрядчик / вид работ): раскрыть-свернуть, число проверок, средний УрК — как на телефоне. */
+function groupHtml(level, key, name, items, inner) {
+  const open = _deskChecksOpen.has(key);
+  const avg = avgFinalUrk(items);
+  const urk = avg !== null
+    ? `<span class="ana-desk-hist-grp-urk status-tag ${avgUrkStatusCls(avg)}">${avg}%</span>`
+    : `<span class="ana-desk-hist-grp-urk"></span>`;
+  return `<div class="ana-desk-hist-grp" data-lvl="${level}" role="row">`
+    + `<button type="button" class="ana-desk-hist-grp-main" data-ana-desk-grp="${esc(key)}" aria-expanded="${open ? 'true' : 'false'}">`
+    + `<span class="ana-desk-hist-grp-chev" aria-hidden="true">›</span>`
+    + `<span class="ana-desk-hist-grp-name">${esc(name)}</span>`
+    + `<span class="ana-desk-hist-grp-count">${esc(_t('quality.history.count.pcs', '{n} шт', { n: items.length }))}</span>`
+    + urk
+    + `</button>`
+    + `</div>`
+    + `<div class="ana-desk-hist-grp-body" data-lvl="${level}"${open ? '' : ' hidden'}>${inner}</div>`;
+}
+
+function contractorGroupsHtml(prefix, items) {
+  return groupByContractorWork(items).map((c) => {
+    const cKey = `${prefix}|c:${c.name}`;
+    const works = c.works.map((w) => {
+      const wKey = `${cKey}|w:${w.name}`;
+      return groupHtml(2, wKey, w.name, w.items, sortChecks(w.items, _deskChecksSort).map(checkRowHtml).join(''));
+    }).join('');
+    return groupHtml(1, cKey, c.name, c.items, works);
+  }).join('');
+}
+
+/** Таблица проверок с группами: «Все объекты» — Объект → Подрядчик → Вид работ; один объект — Подрядчик → Вид работ. */
+function buildChecksTableHtml(items, project) {
   const headCols = [
     ['place', _t('quality.history.sort.place', 'Место')],
     ['date', _t('quality.history.sort.date', 'Дата')],
@@ -346,28 +402,13 @@ function buildChecksTableHtml(items) {
     )).join('')
     + `</div>`;
 
-  const rows = items.map((item) => {
-    const id = String(item.id);
-    const place = item.location || _t('quality.history.fallback.no_location', 'Без локации');
-    const when = new Date(item.date).toLocaleString('ru-RU', {
-      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-    });
-    const tmpl = item.templateTitle || '—';
-    const insp = item.inspectorName || '—';
-    const finalPct = (item.metrics && item.metrics.final != null) ? item.metrics.final : '—';
-    const statusCls = (item.metrics && item.metrics.statusCls) || '';
-    const hasPhoto = !!(item.photos && Object.keys(item.photos).length);
-    return `<div class="ana-desk-hist-row" data-hist-id="${esc(id)}" role="row">`
-      + `<input type="checkbox" class="hist-checkbox ana-desk-hist-row-cb" value="${esc(id)}">`
-      + `<button type="button" class="ana-desk-hist-row-main" data-ana-desk-open-check="${esc(id)}">`
-      + `<span class="ana-desk-hist-row-place">${esc(place)}${hasPhoto ? _t('quality.history.row.has_photo', ' · фото') : ''}</span>`
-      + `<span class="ana-desk-hist-row-when">${esc(when)}</span>`
-      + `<span class="ana-desk-hist-row-tmpl">${esc(tmpl)}</span>`
-      + `<span class="ana-desk-hist-row-insp">${esc(insp)}</span>`
-      + `<span class="ana-desk-hist-row-urk status-tag ${esc(statusCls)}">${esc(String(finalPct))}${finalPct !== '—' ? '%' : ''}</span>`
-      + `</button>`
-      + `</div>`;
-  }).join('');
+  let rows = '';
+  if (project === 'ALL') {
+    const { map, names } = groupByProject(items, checkProjectOf);
+    rows = names.map((p) => groupHtml(0, `p:${p}`, p, map.get(p), contractorGroupsHtml(`p:${p}`, map.get(p)))).join('');
+  } else {
+    rows = contractorGroupsHtml(`p:${project}`, items);
+  }
 
   return `<div class="ana-desk-hist-journal" role="table">${head}${rows}</div>`;
 }
@@ -499,17 +540,16 @@ function paintDeskChecks() {
   const selectedItems = _deskChecksProject === 'ALL'
     ? filtered
     : (map.get(_deskChecksProject) || []);
-  const sorted = sortChecks(selectedItems, _deskChecksSort);
 
   const counts = new Map(names.map((n) => [n, (map.get(n) || []).length]));
   const rail = buildObjectRailHtml('checks', names, counts, _deskChecksProject, filtered.length);
   const title = _deskChecksProject === 'ALL' ? _t('quality.history.rail.all_objects', 'Все объекты') : _deskChecksProject;
 
   let body = '';
-  if (!sorted.length) {
+  if (!selectedItems.length) {
     body = emptyHtml(_t('quality.history.empty.project', 'В этом объекте нет проверок.'), _t('quality.history.empty.project_hint', 'Выберите другой объект.'));
   } else {
-    body = buildChecksTableHtml(sorted);
+    body = buildChecksTableHtml(selectedItems, _deskChecksProject);
   }
 
   let more = '';
@@ -518,7 +558,7 @@ function paintDeskChecks() {
   }
 
   const detail = `<div class="ana-desk-hist-detail">`
-    + detailHeadHtml(title, sorted.length, sorted.length === 1 ? _t('quality.history.unit.check_one', 'проверка') : _t('quality.history.unit.check_many', 'проверок'))
+    + detailHeadHtml(title, selectedItems.length, selectedItems.length === 1 ? _t('quality.history.unit.check_one', 'проверка') : _t('quality.history.unit.check_many', 'проверок'))
     + body + more
     + `</div>`;
 
@@ -1115,6 +1155,19 @@ export function bindHistoryDeskEvents() {
         _deskPlansExpanded.delete('!' + key);
         _deskPlansExpanded.add(key);
       }
+      return;
+    }
+
+    const grp = t.closest('[data-ana-desk-grp]');
+    if (grp) {
+      e.preventDefault();
+      const key = grp.getAttribute('data-ana-desk-grp');
+      const body = grp.parentElement && grp.parentElement.nextElementSibling;
+      if (!key || !body) return;
+      const open = !_deskChecksOpen.has(key);
+      if (open) _deskChecksOpen.add(key); else _deskChecksOpen.delete(key);
+      grp.setAttribute('aria-expanded', open ? 'true' : 'false');
+      body.hidden = !open;
       return;
     }
 

@@ -15,6 +15,13 @@ import {
     assignFloorPointNumbers
 } from '../shared/plan-pin-label.js';
 import { openHistoryPlanViewer } from '../audit/features/quality-plan-pin.js';
+import {
+    histCollator as _histCollator,
+    contractorNameOf as _contractorNameOf,
+    workTypeNameOf as _workTypeNameOf,
+    avgFinalUrk as _avgFinalUrk,
+    avgUrkStatusCls as _avgUrkStatusCls
+} from './history.group.js';
 
 let _ctx = null;
 /** Cache floorId → Map(id→num) for one History render pass. */
@@ -272,20 +279,8 @@ function _escAttr(s) {
         .replace(/>/g, '&gt;');
 }
 
-function _histCollator() {
-    return new Intl.Collator('ru');
-}
-
 function _projectNameOf(item) {
     return (item && item.projectName) || _t('quality.history.fallback.no_project', 'Без объекта');
-}
-
-function _contractorNameOf(item) {
-    return (item && item.contractorName) || _t('quality.history.fallback.unspecified', 'Не указан');
-}
-
-function _workTypeNameOf(item) {
-    return (item && item.templateTitle) || _t('quality.history.fallback.unknown_work', 'Неизвестный вид работ');
 }
 
 function _filterHistoryRecords(allRecords) {
@@ -1266,31 +1261,6 @@ function _getDocumentaryScore(item) {
     const checklist = type === 'sys' && _templates().getSystemTemplates()[key] ? _templates().getSystemTemplates()[key].groups : (_templates().getUserTemplates()[key] ? _templates().getUserTemplates()[key].groups : []);
     const flatList = typeof window.getFlatList === 'function' ? window.getFlatList(checklist) : [];
     return window.getDocumentaryScore(item.state, flatList);
-}
-
-// Средний итоговый УрК по списку проверок (для свёрнутых заголовков
-// объекта/подрядчика). null — если ни у одной записи нет metrics.final.
-function _avgFinalUrk(items) {
-    let sum = 0;
-    let n = 0;
-    for (let i = 0; i < items.length; i++) {
-        const m = items[i] && items[i].metrics;
-        if (m && m.final !== undefined && m.final !== null) {
-            sum += Number(m.final) || 0;
-            n++;
-        }
-    }
-    if (!n) return null;
-    return Math.round(sum / n);
-}
-
-// Класс цветного status-tag по порогам той же шкалы, что и у отдельной
-// проверки (math.utils.js: ≥85 зелёный, 70–84 жёлтый, <70 красный).
-function _avgUrkStatusCls(avg) {
-    if (avg === null || avg === undefined) return 'tag-blue';
-    if (avg < 70) return 'tag-red';
-    if (avg >= 85) return 'tag-green';
-    return 'tag-yellow';
 }
 
 // Приватная функция — перенесена из history.legacy.js (изначально app.js, строка 3971).
