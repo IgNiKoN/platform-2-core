@@ -335,6 +335,7 @@ var SettingsRender = {
                                 <option value="ru" data-i18n="settings.locale.ru">Русский</option>
                                 <option value="en" data-i18n="settings.locale.en">English</option>
                                 <option value="sr-Latn" data-i18n="settings.locale.sr-Latn">Srpski (latinica)</option>
+                                <option value="ka" data-i18n="settings.locale.ka">ქართული</option>
                             </select>
                         </div>
                         <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">

@@ -3124,6 +3124,7 @@
   "settings.locale.en": "English",
   "settings.locale.ru": "Русский",
   "settings.locale.sr-Latn": "Srpski (latinica)",
+  "settings.locale.ka": "ქართული",
   "settings.official_templates.action_edit": "Изменить",
   "settings.official_templates.action_pick_existing": "Выбрать существующую копию",
   "settings.official_templates.action_revert": "Вернуть к стандартной версии",

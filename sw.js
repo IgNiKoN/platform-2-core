@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.77.0';
+const SW_VERSION = '18.78.0';
 // P2-0013: «разработка / выпуск» — из единственного переключателя js/services/config.service.js (выпуск: rbi-quality-* вместо старой версии).
 importScripts('./js/services/config.service.js');
 const CACHE_PREFIX = (self.APP_CONFIG && self.APP_CONFIG.SW_CACHE_PREFIX) || 'platform2-';
@@ -132,6 +132,7 @@ const urlsToCache = [
   './data/system_templates.js',
   './data/system_templates.en.js',
   './data/system_templates.sr-Latn.js',
+  './data/system_templates.ka.js',
   './js/shared/system-templates-locale.js',
   './js/core/router.js',
   './js/core/views.js',
@@ -232,6 +233,7 @@ const urlsToCache = [
   './locales/ru.json',
   './locales/en.json',
   './locales/sr-Latn.json',
+  './locales/ka.json',
   './js/services/app-mode.service.js',
   './js/services/company.service.js',
   './js/services/user-context.service.js',

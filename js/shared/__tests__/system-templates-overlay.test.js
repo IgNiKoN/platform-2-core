@@ -1,5 +1,6 @@
 /**
- * Системные чек-листы Качества: у каждого пункта RU есть перевод en / sr-Latn, разделы совпадают по числу, id уникальны.
+ * Системные чек-листы Качества: у каждого пункта RU есть перевод en / sr-Latn / ka, разделы совпадают по числу, id уникальны.
+ * Каталоги интерфейса locales/*.json — одинаковый набор ключей.
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,10 +16,11 @@ function load() {
   vm.runInContext(read('system_templates.js'), ctx);
   vm.runInContext(read('system_templates.en.js'), ctx);
   vm.runInContext(read('system_templates.sr-Latn.js'), ctx);
+  vm.runInContext(read('system_templates.ka.js'), ctx);
   return window;
 }
 
-const { SYSTEM_TEMPLATES: T, SYSTEM_TEMPLATES_LOCALE_EN: EN, SYSTEM_TEMPLATES_LOCALE_SR_LATN: SR } = load();
+const { SYSTEM_TEMPLATES: T, SYSTEM_TEMPLATES_LOCALE_EN: EN, SYSTEM_TEMPLATES_LOCALE_SR_LATN: SR, SYSTEM_TEMPLATES_LOCALE_KA: KA } = load();
 
 describe('system templates', () => {
   it('id пунктов уникальны во всех чек-листах, у пунктов есть n, t, вес 1–3', () => {
@@ -35,7 +37,7 @@ describe('system templates', () => {
     }
   });
 
-  for (const [name, ov] of [['en', EN], ['sr-Latn', SR]]) {
+  for (const [name, ov] of [['en', EN], ['sr-Latn', SR], ['ka', KA]]) {
     it(`${name}: перевод есть для каждого чек-листа, раздела и пункта`, () => {
       for (const [key, tpl] of Object.entries(T)) {
         const t = ov.templates[key];
@@ -50,4 +52,13 @@ describe('system templates', () => {
       }
     });
   }
+
+  it('locales: ru / en / sr-Latn / ka — одинаковый набор ключей', () => {
+    const cat = (f) => JSON.parse(readFileSync(new URL('../../../locales/' + f, import.meta.url), 'utf8'));
+    const ru = Object.keys(cat('ru.json')).sort();
+    for (const f of ['en.json', 'sr-Latn.json', 'ka.json']) {
+      const c = cat(f);
+      assert.deepEqual(Object.keys(c).sort(), ru, f + ': набор ключей отличается от ru.json');
+    }
+  });
 });
