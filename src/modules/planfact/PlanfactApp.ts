@@ -43,7 +43,7 @@ const SUBS: { id: Sub; label: string; estimate?: boolean }[] = [{ id: 'objects',
 /** Адрес #/planfact[/vor|/estimate|/fact|/ks2|/summary|/directories[/objects|/units|/prices|/overheads]] → страница и вкладка справочников.
  *  #/planfact и неизвестный адрес — «Сводка». Пункты верхнего уровня — в боковом меню (манифест модуля). */
 export function routeFromHash(hash: string): { page: Page; sub: Sub } {
-  const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
+  const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('?')[0].split('/');
   return { page: parts[0] === 'directories' ? 'directories' : parts[0] === 'fact' ? 'fact' : parts[0] === 'ks2' ? 'ks2' : parts[0] === 'summary' ? 'summary' : parts[0] === 'vor' ? 'vor' : parts[0] === 'estimate' ? 'estimate' : 'summary', sub: parts[1] === 'units' ? 'units' : parts[1] === 'brigades' ? 'brigades' : parts[1] === 'prices' ? 'prices' : parts[1] === 'overheads' ? 'overheads' : 'objects' };
 }
 
@@ -78,7 +78,8 @@ export function canonicalHash(hash: string, a: RouteAccess): string | null {
   const parts = String(hash || '').replace(/^#\/planfact\/?/, '').split('/');
   const r = routeFromHash(hash);
   const known = ['', 'summary', 'vor', 'fact', 'estimate', 'ks2', 'directories'];
-  const pageOk = known.indexOf(parts[0]) >= 0 && (r.page !== 'estimate' || a.estimate) && (r.page !== 'ks2' || a.ks2) && (r.page !== 'fact' || a.fact);
+  const page0 = parts[0].split('?')[0];   // вид реестра в адресе (#/planfact/ks2?f.status=…, P2-0020)
+  const pageOk = known.indexOf(page0) >= 0 && (r.page !== 'estimate' || a.estimate) && (r.page !== 'ks2' || a.ks2) && (r.page !== 'fact' || a.fact);
   if (!pageOk) return BASE;
   if (r.page === 'directories' && parts.length > 1 && parts[1] !== '') {
     const subOk = parts[1] === r.sub && !((r.sub === 'prices' || r.sub === 'overheads') && !a.estimate) && !(r.sub === 'brigades' && !a.brigades);
@@ -232,7 +233,7 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const body = sm
     ? h('div', { className: 'pf-root' }, h(SummaryTab, { api: summaryApi!, links: { go: (pg) => nav(`${BASE}/${pg}`), can: { ks2: !!canKs2, estimate: !!canEstimate, fact: true } } }))
     : k2
-    ? h('div', { className: 'pf-root' }, h(Ks2Tab, { api: ks2Api!, vor: vorApi! }))
+    ? h('div', { className: 'pf-root' }, h(Ks2Tab, { api: ks2Api!, vor: vorApi!, me: who }))
     : fct
     ? h('div', { className: 'pf-root' }, h(FactTab, { api: factApi!, vor: vorApi!, projects: projects!, me: who, mode: fsub, onApprove: setFactApprove }))
     : est
