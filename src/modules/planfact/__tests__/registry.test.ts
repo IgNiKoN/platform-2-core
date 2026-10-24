@@ -308,3 +308,18 @@ test('боковая карточка: «пред. / след.» по списк
   const empty = mount(h(ui.HistoryFeed, { items: [], empty: 'Факта ещё нет' }));
   assert.equal(empty.textContent, 'Факта ещё нет');
 });
+
+test('P2-0020: вид → адрес своего реестра (replaceState); чужой адрес не трогается; пустой вид — база без «?»', () => {
+  const s = { ...ui.EMPTY_STATE, f: { corp: ['Корпус 1'] } };
+  win.history.replaceState(null, '', '#/planfact/fact/pending');
+  ui.syncRegistryAddress('#/planfact/fact/pending', s);
+  assert.equal(win.location.hash, '#/planfact/fact/pending?f.corp=%D0%9A%D0%BE%D1%80%D0%BF%D1%83%D1%81%201');
+  ui.syncRegistryAddress('#/planfact/fact/pending', ui.EMPTY_STATE);
+  assert.equal(win.location.hash, '#/planfact/fact/pending');
+  win.history.replaceState(null, '', '#/planfact/fact/pendingx');
+  ui.syncRegistryAddress('#/planfact/fact/pending', s);
+  assert.equal(win.location.hash, '#/planfact/fact/pendingx', 'похожий, но другой адрес');
+  win.history.replaceState(null, '', '#/planfact/summary');
+  ui.syncRegistryAddress('#/planfact/fact/pending', s);
+  assert.equal(win.location.hash, '#/planfact/summary', 'ушли в другой раздел — адрес не меняется');
+});

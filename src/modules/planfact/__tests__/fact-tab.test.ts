@@ -39,10 +39,10 @@ function setup(perms = FOREMAN, me = 'foreman@test.invalid') {
   const projects = { async listLocations(_p: string, parent: string | null) { return NODES[parent || 'root'] || []; } } as any;
   return { ...f, vor, projects };
 }
-function mount(s: any, me = 'foreman@test.invalid') {
+function mount(s: any, me = 'foreman@test.invalid', extra: Record<string, unknown> = {}) {
   const el = win.document.createElement('div');
   win.document.body.appendChild(el);
-  flushSync(() => createRoot(el as unknown as HTMLElement).render(createElement(FactTab, { api: s.api, vor: s.vor, projects: s.projects, me } as N)));
+  flushSync(() => createRoot(el as unknown as HTMLElement).render(createElement(FactTab, { api: s.api, vor: s.vor, projects: s.projects, me, ...extra } as N)));
   return el as N;
 }
 function typeIn(input: N, value: string): void {
@@ -152,30 +152,33 @@ test('перебор плана → ждёт РП (в итог не входит
   assert.match(card(el, 'p5').querySelector('[data-testid="ft-pending-badge"]').textContent, /Ждёт подтверждения РП: 95/);
 
   const pm = { ...s, vor: { async listProjects() { return [{ id: 'pr1', name: 'ЖК Тест', company_id: 'c1' }]; }, async permissions() { return PM; } } };
-  const el2 = mount(pm, 'pm@test.invalid');
-  await toFloor5(el2);
-  assert.equal(el2.querySelector('[data-testid="ft-count"]').textContent, '1', 'счётчик «На подтверждение»');
-  el2.querySelector('[data-testid="ft-view-pending"]').click(); await tick(); await tick();
-  assert.equal(el2.querySelectorAll('[data-testid="ft-pending"] [data-entry-id]').length, 1);
+  // P2-0020: очередь РП — подвкладка «Ждёт подтверждения» (реестр); решение по одной записи — в карточке
+  let count: number | null = -1;
+  const el2 = mount(pm, 'pm@test.invalid', { mode: 'pending', onApprove: (n: number | null) => { count = n; } });
+  await tick(); await tick();
+  assert.equal(count, 1, 'счётчик подвкладки «Ждёт подтверждения»');
+  assert.equal(el2.querySelectorAll('[data-testid="fp-table"] tr[data-row]').length, 1);
+  el2.querySelector('[data-testid="p2-reg-open"]').click(); await tick(); await tick();
   el2.querySelector('[data-testid="ft-reject"]').click(); await tick();
   el2.querySelector('[data-testid="ft-reject-yes"]').click(); await tick();
-  assert.match(el2.querySelector('[role="alert"]').textContent, /причину отказа/, 'отказ без причины не проходит');
+  assert.match(el2.querySelector('[data-testid="ft-decide"] [role="alert"]').textContent, /причину отказа/, 'отказ без причины не проходит');
   typeIn(el2.querySelector('[data-testid="ft-reject-note"]'), 'лишний объём'); await tick();
   el2.querySelector('[data-testid="ft-reject-yes"]').click(); await tick(); await tick();
-  assert.ok(el2.querySelector('[data-testid="ft-pending-empty"]'));
+  assert.ok(el2.querySelector('[data-testid="p2-reg-empty"]'));
+  assert.equal(count, 0, 'счётчик обновился после решения');
   // прораб видит причину отказа
   const el3 = mount(s);
   await toFloor5(el3);
   assert.match(card(el3, 'p5').querySelector('[data-testid="ft-rejected"]').textContent, /лишний объём/);
   // новый перебор → подтверждение
   await enter(el3, 'p5', '95');
-  s.entries.filter((e: any) => e.status === 'pending_approval');
-  const el4 = mount(pm, 'pm@test.invalid');
-  await toFloor5(el4);
-  el4.querySelector('[data-testid="ft-view-pending"]').click(); await tick(); await tick();
+  const el4 = mount(pm, 'pm@test.invalid', { mode: 'pending' });
+  await tick(); await tick();
+  el4.querySelector('[data-testid="p2-reg-open"]').click(); await tick(); await tick();
   el4.querySelector('[data-testid="ft-approve"]').click(); await tick(); await tick();
-  el4.querySelector('[data-testid="ft-view-entry"]').click(); await tick(); await tick();
-  assert.equal(card(el4, 'p5').querySelector('[data-testid="ft-pct"]').textContent, '105 %', 'после подтверждения вошёл в итог');
+  const el5 = mount(pm, 'pm@test.invalid');
+  await toFloor5(el5);
+  assert.equal(card(el5, 'p5').querySelector('[data-testid="ft-pct"]').textContent, '105 %', 'после подтверждения вошёл в итог');
 });
 
 test('закрыть этаж целиком: остатки этажа и квартиры, правка строки и снятая галочка, одна пачка, этаж 100 % (кроме снятой)', async () => {
