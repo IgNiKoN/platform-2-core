@@ -86,6 +86,7 @@ test('корпус из пути; строка истории — «было →
   const a = historyItem({ ...base, status: 'accepted' } as N, 'м²');
   assert.deepEqual([a.from, a.to.label, a.who, a.when], [null, 'Принято', 'f@x', '20.10.2026']);
   assert.match(a.text, /^5 м² · Иванов · за 20\.10\.2026$/);
+  assert.match(historyItem({ ...base, status: 'accepted', period_from: '2026-10-07' } as N, 'м²').text, /^5 м² · Иванов · за период 07\.10–20\.10$/, 'P2-0022: запись «за период»');
   const ap = historyItem({ ...base, status: 'accepted', decided_by_email: 'rp@x', decided_at: '2026-10-21T09:00:00Z', decision_note: 'ок', note: 'Закрытие через РП' } as N, 'м²');
   assert.deepEqual([ap.from!.label, ap.to.label, ap.to.tone, ap.who, ap.when, ap.note], ['Ждёт РП', 'Принято', 'green', 'rp@x', '21.10.2026', 'Решение: ок']);
   assert.match(ap.text, /Закрытие через РП/);
@@ -211,4 +212,30 @@ test('вкладка ВОР: «Позиции» — реестр; «Загруз
   const old = await mount(h(VorTab, { api: vor, sub: 'positions' }));
   for (let i = 0; i < 4; i++) await tick();
   assert.ok(old.querySelector('[data-testid="vor-positions"]'), 'без факта и сводки — прежний список');
+});
+
+test('P2-0022: карточка позиции — блок «Прогноз»: прогноз окончания (позже финиша — красная рамка), план % на сегодня, факт %, отклонение, темп 14 дней', async () => {
+  win.history.replaceState(null, '', '#/planfact/vor/positions');
+  const stand = makeStand(standPositions(1, 1, 2), { finish: '2026-11-10', planPctToday: 40 });
+  stand.add('p1-1-1', 28, stand.minus(T, 3));   // темп 28 за 14 дн. → остаток 72 · 14 / 28 = 36 дн. → 29.11.2026, на 19 дн. позже финиша
+  const box = await mount(h(PositionsRegistry, { fact: stand.fact, summary: stand.summary, projectId: 'pr1', companyId: 'c1', user: 'pto@x', today: T }));
+  click(box.querySelector('tr[data-row="p1-1-1"] [data-testid="p2-reg-open"]'));
+  for (let i = 0; i < 3; i++) await tick();
+  const fc = box.querySelector('[data-testid="p2-side"] [data-testid="vr-forecast"]');
+  assert.ok(fc, 'блок «Прогноз» в карточке');
+  const tile = (m: string) => fc.querySelector(`[data-metric="${m}"]`);
+  const val = (m: string) => tile(m).querySelector('[data-testid="p2-kpi-value"]').textContent;
+  assert.equal(val('forecast'), '29.11.2026');
+  assert.ok(tile('forecast').className.includes('p2-kpi--red'), 'позже финиша объекта — красная рамка');
+  assert.match(tile('forecast').textContent, /на 19 дн\. позже финиша/);
+  assert.equal(val('plan_pct'), '40 %');
+  assert.equal(val('fact_pct'), '28 %');
+  assert.equal(val('dev'), 'отставание 12 %');
+  assert.ok(tile('dev').className.includes('p2-kpi--red'), '12 п.п. > красного порога 10');
+  assert.equal(val('pace14'), '28 м²');
+  click(box.querySelector('[data-testid="p2-side-next"]'));
+  for (let i = 0; i < 3; i++) await tick();
+  const fc2 = box.querySelector('[data-testid="vr-forecast"]');
+  assert.equal(fc2.querySelector('[data-metric="forecast"] [data-testid="p2-kpi-value"]').textContent, 'нет темпа');
+  assert.match(fc2.querySelector('[data-metric="pace14"]').textContent, /нет темпа — прогноз не считается/);
 });

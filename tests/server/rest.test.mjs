@@ -407,6 +407,32 @@ else {
           check('0021: ТД №138 — повторное решение по отклонённой записи — отказ', !!pend[0] && !(await rpc('pf_fact_decide', { p_entry: pend[0], p_approve: true, p_note: 'REST-0021' }, tok.alfaAdmin)).ok);
           check('0021: итог объекта не изменился', Number((await tt('alfaForeman'))?.fact_qty) === 8);
         }
+        // --- P2-0022: запись «за период» и прогноз (миграция 030). Запись за период — перебор → ждёт РП → отклоняется: итог не меняется. ---
+        const shiftD = (d, k) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + k); return t.toISOString().slice(0, 10); };
+        const perBody = { p_position: posId, p_brigade: brigId, p_date: today, p_qty: 1000, p_note: 'REST-0022', p_period_from: shiftD(today, -3) };
+        const per = await rpc('pf_fact_add', perBody, tok.alfaForeman);
+        if (per.status === 404) { console.log('NOT RUN: миграция 030 не применена — проверки периода и прогноза пропущены'); fails++; }
+        else {
+          const perJ = await j(per);
+          check('0022: запись за период (перебор) — одна запись, ждёт РП', per.ok && perJ.status === 'pending_approval', `статус ${per.status}`);
+          const hp = (await j(await rpc('pf_fact_history', { p_position: posId }, tok.alfaForeman))).find((h) => h.id === perJ.id);
+          check('0022: история — period_from = начало, work_date = конец', hp?.period_from === shiftD(today, -3) && hp?.work_date === today, JSON.stringify(hp));
+          check('0022: журнал — period_from', (await j(await rpc('pf_fact_journal', { p_project: pv, p_from: today, p_to: today }, tok.alfaForeman))).some((r) => r.id === perJ.id && r.period_from === shiftD(today, -3)));
+          check('0022: начало позже конца — отказ', !(await rpc('pf_fact_add', { ...perBody, p_period_from: shiftD(today, 1) }, tok.alfaForeman)).ok);
+          check('0022: больше 31 дня — отказ', !(await rpc('pf_fact_add', { ...perBody, p_period_from: shiftD(today, -31) }, tok.alfaForeman)).ok);
+          check('0022: Бета-ПТО — отказ', !(await rpc('pf_fact_add', perBody, tok.betaPto)).ok);
+          check('0022: anon — отказ', !(await rpc('pf_fact_add', perBody)).ok);
+          const directP = await fetch(`${URL_}/rest/v1/fact_entries?id=eq.${perJ.id}`, { method: 'PATCH', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaForeman}`, 'Content-Type': 'application/json', 'Accept-Profile': 'planfact', 'Content-Profile': 'planfact' }, body: JSON.stringify({ period_from: null }) });
+          check('0022: период не изменить через REST', !directP.ok, `статус ${directP.status}`);
+          check('0022: РП отклонил тестовую запись за период', (await rpc('pf_fact_decide', { p_entry: perJ.id, p_approve: false, p_note: 'REST-0022: уборка' }, tok.alfaAdmin)).ok);
+          check('0022: итог объекта не изменился', Number((await tt('alfaForeman'))?.fact_qty) === 8);
+          const sp = (await j(await rpc('pf_summary_positions', { p_project: pv }, tok.alfaForeman)) || []).find((r) => r.position_id === posId);
+          check('0022: прогноз позиции — поля есть, факт 8 как в итоге', !!sp && 'forecast_finish' in sp && 'delta_days' in sp && 'plan_pct_today' in sp && 'dev_pp' in sp && Number(sp.fact_qty) === 8, JSON.stringify(sp));
+          const wts = await j(await rpc('pf_summary_worktypes', { p_project: pv }, tok.alfaForeman)) || [];
+          check('0022: вид работ — прогноз по ЕИ, прораб без ₽', wts.length > 0 && wts.every((w) => 'plan_pct_today' in w && w.plan_money === null && w.units.every((u) => 'forecast_finish' in u && 'dev_pp' in u)), JSON.stringify(wts[0]));
+          check('0022: сводка — Бета-ПТО отказ', !(await rpc('pf_summary_positions', { p_project: pv }, tok.betaPto)).ok && !(await rpc('pf_summary_worktypes', { p_project: pv }, tok.betaPto)).ok);
+          check('0022: сводка — anon отказ', !(await rpc('pf_summary_positions', { p_project: pv })).ok);
+        }
       }
       const audF = await j(await rpc('pf_list_company_audit', { p_company: cV, p_limit: 200 }, tok.alfaAdmin));
       check('журнал компании: бригады и факт', ['brigades', 'fact_entries'].every((t) => audF.some((r) => r.table_name === t)));

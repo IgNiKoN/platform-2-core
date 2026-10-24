@@ -4,7 +4,7 @@
  */
 import type { HistoryItem, Status } from '../../../platform/ui/index.ts';
 import type { FactHistoryRow, FactStatus } from './fact.service.ts';
-import { fmtQty } from './fact.ts';
+import { fmtPeriod, fmtQty } from './fact.ts';
 import { ruDate } from '../ks2/form.ts';
 
 export const FACT_LABEL: Record<FactStatus, { label: string; tone: Status }> = {
@@ -20,7 +20,7 @@ export const isViaPm = (note: string | null): boolean => String(note || '').star
 export function historyItem(e: FactHistoryRow, unit: string): HistoryItem {
   const decided = !!e.decided_at;
   const from = e.status === 'superseded' ? FACT_LABEL.accepted : decided && (e.status === 'accepted' || e.status === 'rejected') ? FACT_LABEL.pending_approval : null;
-  const parts = [`${fmtQty(e.qty)} ${unit}`, e.brigade_name, `за ${ruDate(e.work_date)}`];
+  const parts = [`${fmtQty(e.qty)} ${unit}`, e.brigade_name, e.period_from ? fmtPeriod(e.period_from, e.work_date) : `за ${ruDate(e.work_date)}`];   // P2-0022: запись «за период»
   if (e.correction_reason) parts.push(`исправление: ${e.correction_reason}`);
   if (e.note) parts.push(e.note);
   return {

@@ -15,7 +15,7 @@ export function standPositions(corps = 3, floors = 10, works = 20): StandPos[] {
   return out;
 }
 
-export function makeStand(positions: StandPos[], o: { finish?: string | null; today?: string; canCreate?: boolean; tolerance?: number; failBatchAt?: number; batchError?: string } = {}) {
+export function makeStand(positions: StandPos[], o: { finish?: string | null; today?: string; planPctToday?: number | null; canCreate?: boolean; tolerance?: number; failBatchAt?: number; batchError?: string } = {}) {
   const today = o.today || '2026-10-24';
   const entries: Entry[] = [];
   const calls: { fn: string; args: unknown }[] = [];
@@ -35,7 +35,8 @@ export function makeStand(positions: StandPos[], o: { finish?: string | null; to
         const fact = sum(x.id, 'accepted');
         return { position_id: x.id, location_id: 'l-' + x.path, location_path: x.path, work_type_id: 'w-' + x.work, work_name: x.work, unit_code: x.unit,
           plan_qty: x.plan, fact_qty: fact, pct: x.plan > 0 ? Math.round(fact / x.plan * 1000) / 10 : null, rest_qty: Math.max(0, x.plan - fact),
-          fact7: sum(x.id, 'accepted', minus(today, 6)), fact14: sum(x.id, 'accepted', minus(today, 13)), pending_qty: sum(x.id, 'pending_approval') };
+          fact7: sum(x.id, 'accepted', minus(today, 6)), fact14: sum(x.id, 'accepted', minus(today, 13)), pending_qty: sum(x.id, 'pending_approval'),
+          ...fakeForecast(x.plan, fact, sum(x.id, 'accepted', minus(today, 13)), today, project.planned_finish, o.planPctToday ?? null) };
       }) };
     },
   } as unknown as SummaryApi;
@@ -81,4 +82,14 @@ export function makeStand(positions: StandPos[], o: { finish?: string | null; to
   } as unknown as FactApi;
   const decide = (id: string, approve: boolean, note: string | null = null) => { const e = entries.find((x) => x.id === id)!; e.status = approve ? 'accepted' : 'rejected'; e.decided_at = `${today}T12:00:00Z`; e.decision_note = note; };
   return { summary, fact, entries, calls, add, decide, minus, today };
+}
+
+/** Прогноз подставного сервера (как 030: остаток × 14 / факт14, выполнено — сегодня, Δ к финишу объекта, отклонение = план % − факт %). */
+export function fakeForecast(plan: number, fact: number, f14: number, today: string, finish: string | null, ppl: number | null) {
+  const rest = Math.max(0, plan - fact);
+  const days = (a: string, b: string) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+  const shift = (d: string, k: number) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + k); return t.toISOString().slice(0, 10); };
+  const forecast_finish = !(plan > 0) ? null : rest === 0 ? today : f14 > 0 ? shift(today, Math.ceil(rest * 14 / f14)) : null;
+  const delta_days = rest > 0 && forecast_finish && finish ? days(finish, forecast_finish) : null;
+  return { forecast_finish, delta_days, plan_pct_today: ppl, dev_pp: ppl !== null && plan > 0 ? Math.round((ppl - fact / plan * 100) * 10) / 10 : null };
 }

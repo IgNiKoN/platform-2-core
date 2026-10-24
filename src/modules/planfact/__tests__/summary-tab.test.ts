@@ -188,8 +188,9 @@ test('объект → виды работ: 10 из 100 м² = 10 %, 3 из 10 �
 });
 
 test('вид работ в двух ЕИ — две строки, без суммы; без права — ₽ вида работ не показаны', async () => {
-  const two = [{ work_type_id: 'wt1', work_name: 'Штукатурка стен', positions: 2, plan_money: null, done_money: null, pct_money: null, unpriced_rows: 0,
-    units: [{ unit: 'м²', plan: 100, fact: 10, pct: 10, rest: 90, fact7: 3, fact14: 6, pending: 0 }, { unit: 'шт.', plan: 5, fact: 0, pct: 0, rest: 5, fact7: 0, fact14: 0, pending: 0 }] }];
+  const fc = { forecast_finish: null, delta_days: null, dev_pp: null };
+  const two = [{ work_type_id: 'wt1', work_name: 'Штукатурка стен', positions: 2, plan_money: null, done_money: null, pct_money: null, unpriced_rows: 0, plan_pct_today: null,
+    units: [{ unit: 'м²', plan: 100, fact: 10, pct: 10, rest: 90, fact7: 3, fact14: 6, pending: 0, ...fc }, { unit: 'шт.', plan: 5, fact: 0, pct: 0, rest: 5, fact7: 0, fact14: 0, pending: 0, ...fc }] }];
   const fore: SummaryProject = { ...PTO_PROJECT, can_money: false, plan_money: null, done_money: null, pct_money: null };
   const el = mount(makeFakeSummary([fore], { workTypes: two }).api);
   await tick();
@@ -331,4 +332,42 @@ test('пороги светофора: только с правом; прове�
   const el2 = mount(makeFakeSummary([{ ...PTO_PROJECT, can_thresholds: false }]).api);
   await tick();
   assert.equal(el2.querySelector('[data-testid="sm-th-btn"]'), null, 'без права — кнопки нет');
+});
+
+// P2-0022: прогноз окончания по видам работ и позициям — числа с сервера (030), здесь только подписи и цвет.
+test('P2-0022: «Виды работ» — прогноз окончания, Δ к финишу (позже — красным), % отклонения с заливкой по порогам; нет темпа; позиция — прогноз', async () => {
+  const f = makeFakeSummary([PTO_PROJECT]);
+  const el = mount(f.api);
+  await tick();
+  const fc = (wt: string) => el.querySelector(`[data-wt="${wt}"] [data-testid="sm-unit-fc"]`);
+  const q = (root: N, id: string) => root.querySelector(`[data-testid="${id}"]`);
+  // wt1: 21.05.2027, +141 (позже финиша — красным), отставание 25 % > красного порога 10 → красная заливка
+  assert.equal(q(fc('wt1'), 'sm-fc-finish').textContent, '21.05.2027');
+  assert.equal(q(fc('wt1'), 'sm-fc-delta').textContent, '+141');
+  assert.ok(q(fc('wt1'), 'sm-fc-delta').className.includes('sm-fc-late'));
+  assert.equal(q(fc('wt1'), 'sm-fc-dev').getAttribute('data-status'), 'red');
+  assert.match(q(fc('wt1'), 'sm-fc-dev').textContent, /отставание 25 %/);
+  // wt3: раньше финиша — не красным; отставание 5 % между порогами 3 и 10 → жёлтая
+  assert.equal(q(fc('wt3'), 'sm-fc-delta').textContent, '−35');
+  assert.ok(!q(fc('wt3'), 'sm-fc-delta').className.includes('sm-fc-late'));
+  assert.equal(q(fc('wt3'), 'sm-fc-dev').getAttribute('data-status'), 'yellow');
+  // wt4: нет факта за 14 дней — «нет темпа», Δ нет
+  assert.equal(q(fc('wt4'), 'sm-fc-finish').textContent, 'нет темпа');
+  assert.equal(q(fc('wt4'), 'sm-fc-delta').textContent, '—');
+  // позиции вида
+  el.querySelector('[data-wt="wt1"] [data-testid="sm-wt-toggle"]').click(); await tick(); await tick();
+  assert.match(el.querySelector('[data-position-id="p12"] [data-testid="sm-pos-fc"]').textContent, /^21\.05\.2027 \(\+141 дн\.\)$/);
+});
+
+test('P2-0022: подписи прогноза — выполнено / нет темпа / без дат; заливка отклонения только выше порогов объекта', async () => {
+  const { forecastView } = await import('../summary/model.ts');
+  const th = { yellow: 3, red: 10 };
+  assert.deepEqual(forecastView({ plan: 100, fact: 100, forecast_finish: '2026-10-24', delta_days: null, dev_pp: -60 }, th),
+    { finish: 'выполнено', noPace: false, delta: '—', late: false, dev: 'опережение 60 %', devTone: null });
+  assert.equal(forecastView({ plan: 100, fact: 30, forecast_finish: null, delta_days: null, dev_pp: 3 }, th).finish, 'нет темпа');
+  assert.equal(forecastView({ plan: 100, fact: 30, forecast_finish: null, delta_days: null, dev_pp: 3 }, th).devTone, null, 'ровно порог — без заливки');
+  assert.equal(forecastView({ plan: 100, fact: 30, forecast_finish: '2026-12-01', delta_days: 0, dev_pp: 10 }, th).devTone, 'yellow', 'ровно красный порог — жёлтая');
+  assert.equal(forecastView({ plan: 100, fact: 30, forecast_finish: '2026-12-01', delta_days: 0, dev_pp: 10.1 }, th).devTone, 'red');
+  assert.equal(forecastView({ plan: 100, fact: 30, forecast_finish: '2026-12-01', delta_days: null, dev_pp: null }, th).dev, '—', 'без дат объекта — отклонения нет');
+  assert.equal(forecastView({ plan: 0, fact: 0, forecast_finish: null, delta_days: null, dev_pp: null }, th).finish, '—');
 });

@@ -89,3 +89,20 @@ export function positionStatus(p: PositionNumbers, ctx: { today: string; planned
   const tone: Status = state === 'pending' || state === 'done' || state === 'rejected' ? STATE_TONE[state] : overdue ? 'red' : STATE_TONE[state];
   return { state, label: POSITION_STATE_LABEL[state], tone, step, pending, overdue, pace, paceText };
 }
+
+/** Прогноз окончания вида работ / позиции (P2-0022): числа — с сервера (030: planfact.forecast — формула ТЗ §9, темп за 14 дней);
+ *  здесь только подписи и цвет. Δ > 0 — позже финиша объекта (красным). % отклонения = план % на сегодня − факт %:
+ *  больше порога объекта «красный» — красная заливка, больше «жёлтого» — жёлтая (те же пороги, что светофор объекта). */
+export interface ForecastNumbers { plan: number; fact: number; forecast_finish: string | null; delta_days: number | null; dev_pp: number | null }
+export interface ForecastView { finish: string; noPace: boolean; delta: string; late: boolean; dev: string; devTone: Status | null }
+export function forecastView(x: ForecastNumbers, th: { yellow: number; red: number }): ForecastView {
+  const done = x.plan > 0 && x.fact >= x.plan - 1e-9;
+  const noPace = x.plan > 0 && !done && !x.forecast_finish;
+  const finish = !(x.plan > 0) ? '—' : done ? 'выполнено' : noPace ? 'нет темпа' : ruDate(x.forecast_finish!);
+  const d = x.delta_days;
+  const delta = d === null ? '—' : d > 0 ? `+${d}` : d < 0 ? `−${Math.abs(d)}` : '0';
+  const v = x.dev_pp;
+  const dev = v === null ? '—' : v > 0 ? `отставание ${num(v)} %` : v < 0 ? `опережение ${num(-v)} %` : 'по плану';
+  const devTone: Status | null = v === null ? null : v > th.red ? 'red' : v > th.yellow ? 'yellow' : null;
+  return { finish, noPace, delta, late: d !== null && d > 0, dev, devTone };
+}

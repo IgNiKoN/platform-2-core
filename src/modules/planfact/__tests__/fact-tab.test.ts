@@ -55,6 +55,8 @@ function pick(sel: N, value: string): void {
 }
 const submit = (f: N) => f.dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }));
 const card = (el: N, id: string) => el.querySelector(`[data-position-id="${id}"]`);
+/** P2-0022: форма ввода — в окне факта (как в «Шахматке»), а не в карточке. */
+const winForm = (el: N) => el.querySelector('[data-testid="ft-win"] [data-testid="ft-form"]');
 async function toFloor5(el: N) {
   await tick();
   el.querySelector('[data-location-id="b1"]').click(); await tick(); await tick();
@@ -62,7 +64,7 @@ async function toFloor5(el: N) {
 }
 async function enter(el: N, id: string, qty: string, brigade = 'b1') {
   card(el, id).querySelector('[data-testid="ft-enter"]').click(); await tick();
-  const form = card(el, id).querySelector('[data-testid="ft-form"]');
+  const form = winForm(el);
   typeIn(form.querySelector('[name="qty"]'), qty); pick(form.querySelector('[name="brigade"]'), brigade); await tick();
   submit(form); await tick(); await tick();
 }
@@ -77,7 +79,7 @@ test('ввод факта: этаж → работы этажа и кварти�
   assert.doesNotMatch(card(el, 'p5').querySelector('.ft-place')?.textContent || '', /Корпус/, 'свой этаж в подписи не повторяется');
 
   card(el, 'p5').querySelector('[data-testid="ft-enter"]').click(); await tick();
-  let form = card(el, 'p5').querySelector('[data-testid="ft-form"]');
+  let form = winForm(el);
   submit(form); await tick();
   assert.match(form.textContent, /Введите объём/);
   typeIn(form.querySelector('[name="qty"]'), '10'); submit(form); await tick();
@@ -96,7 +98,7 @@ test('ввод факта: этаж → работы этажа и кварти�
   await enter(el, 'p5', '12,5');
   assert.equal(card(el, 'p5').querySelector('[data-testid="ft-pct"]').textContent, '22,5 %');
   card(el, 'p5').querySelector('[data-testid="ft-enter"]').click(); await tick();
-  form = card(el, 'p5').querySelector('[data-testid="ft-form"]');
+  form = winForm(el);
   assert.equal(form.querySelector('[name="brigade"]').value, 'b1', 'бригада — последняя выбранная');
 });
 
@@ -237,4 +239,77 @@ test('нет права на факт — понятное сообщение; �
   assert.equal(el2.querySelector('[data-testid="ft-enter"]'), null);
   assert.equal(el2.querySelector('[data-testid="ft-close-open"]'), null);
   assert.ok(card(el2, 'p6').querySelector('[data-testid="ft-history-btn"]'));
+});
+
+// P2-0022: «Ввод» открывает то же окно, что «Шахматка»; «День / Период».
+const sel = (root: N, q: string) => root.querySelector(q);
+function setDate(input: N, value: string): void { typeIn(input, value); input.dispatchEvent(new win.Event('change', { bubbles: true })); }
+const isoShift = (d: string, n: number): string => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+
+test('P2-0022: «Внести факт» в «Вводе» — окно как в шахматке: «Внесено / Осталось», плитки, −/+, «День / Период», История; закрывается', async () => {
+  const s = setup();
+  const el = mount(s);
+  await toFloor5(el);
+  assert.equal(sel(el, '[data-testid="ft-win"]'), null, 'окна нет до нажатия');
+  card(el, 'p5').querySelector('[data-testid="ft-enter"]').click(); await tick(); await tick();
+  const w = sel(el, '[data-testid="ft-win"]');
+  assert.ok(w, 'окно открыто');
+  assert.equal(w.getAttribute('role'), 'dialog');
+  assert.equal(card(el, 'p5').querySelector('[data-testid="ft-form"]'), null, 'формы в карточке больше нет');
+  assert.match(w.textContent, /Штукатурка стен/);
+  assert.match(sel(w, '[data-testid="ft-quick-sum"]').textContent, /Внесено 0 м².*Осталось 100 м²/);
+  assert.equal(w.querySelectorAll('[data-testid="ft-steps"] .ft-step').length, 4, 'плитки 25/50/75/100 %');
+  sel(w, '[data-pct="50"]').click(); await tick();
+  assert.equal(sel(w, '[name="qty"]').value, '50', 'плитка «до 50 %» → 50');
+  sel(w, '[data-testid="ft-plus"]').click(); await tick();
+  assert.equal(sel(w, '[name="qty"]').value, '51');
+  assert.ok(sel(w, '[data-testid="ft-mode-day"]').className.includes('pf-seg-btn--active'), 'по умолчанию — «День»');
+  assert.equal(sel(w, '[name="date_from"]'), null);
+  assert.match(sel(w, '[data-testid="ft-quick-history"]').textContent, /История \(0\)/);
+  sel(w, '[data-testid="ft-quick-history"]').click(); await tick();
+  assert.ok(sel(el, '[data-testid="ft-win"] [data-testid="ft-history-close"]'), 'история — в том же окне');
+  sel(el, '[data-testid="ft-history-close"]').click(); await tick();
+  assert.ok(sel(el, '[data-testid="ft-win"] [data-testid="ft-form"]'), 'назад к форме');
+  win.document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick();
+  assert.equal(sel(el, '[data-testid="ft-win"]'), null, 'Esc закрывает');
+  card(el, 'p5').querySelector('[data-testid="ft-enter"]').click(); await tick();
+  sel(el, '[data-testid="ft-win-backdrop"]').click(); await tick();
+  assert.equal(sel(el, '[data-testid="ft-win"]'), null, 'нажатие мимо окна закрывает');
+});
+
+test('P2-0022: «Период» — «с … по …», проверки дат до сервера, одна запись с началом периода; история и журнал — «за период»', async () => {
+  const s = setup();
+  const el = mount(s);
+  await toFloor5(el);
+  card(el, 'p5').querySelector('[data-testid="ft-enter"]').click(); await tick(); await tick();
+  const form = winForm(el);
+  sel(form, '[data-testid="ft-mode-period"]').click(); await tick();
+  assert.ok(sel(form, '[data-testid="ft-mode-period"]').className.includes('pf-seg-btn--active'));
+  assert.ok(sel(form, '[name="date_from"]'), 'поле «С»');
+  assert.match(form.textContent, /По/);
+  const today = sel(form, '[name="date"]').value;
+  typeIn(sel(form, '[name="qty"]'), '28'); pick(sel(form, '[name="brigade"]'), 'b1'); await tick();
+  submit(form); await tick();
+  assert.match(form.textContent, /начало и конец периода/, 'без «с» — отказ');
+  setDate(sel(form, '[name="date_from"]'), isoShift(today, 1)); submit(form); await tick();
+  assert.match(form.textContent, /позже конца|в будущем/);
+  setDate(sel(form, '[name="date_from"]'), isoShift(today, -31)); submit(form); await tick();
+  assert.match(form.textContent, /не больше 31 дня/);
+  assert.equal(s.calls.filter((c: any) => c.fn === 'add').length, 0, 'с ошибкой периода на сервер не уходит');
+  setDate(sel(form, '[name="date_from"]'), isoShift(today, -13)); submit(form); await tick(); await tick();
+  const add = s.calls.find((c: any) => c.fn === 'add')!.args as any;
+  assert.equal(add.periodFrom, isoShift(today, -13), 'начало периода — на сервер');
+  assert.equal(add.date, today, 'конец периода — дата работ');
+  assert.equal(add.qty, 28, 'общий объём — одной записью');
+  assert.equal(sel(el, '[data-testid="ft-win"]'), null, 'после записи окно закрыто');
+  const dm = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}`;
+  assert.match(sel(el, '[data-testid="ft-notice"]').textContent, new RegExp(`Записано: 28 м² за период ${dm(isoShift(today, -13)).replace('.', '\\.')}`));
+  assert.match(card(el, 'p5').querySelector('[data-testid="ft-nums"]').textContent, /факт 28 из 100/);
+  // История позиции
+  card(el, 'p5').querySelector('[data-testid="ft-history-btn"]').click(); await tick(); await tick();
+  assert.match(sel(el, '[data-testid="ft-hdate"]').textContent, new RegExp(`за период ${dm(isoShift(today, -13)).replace('.', '\\.')}–${dm(today).replace('.', '\\.')}`));
+  // Обычная запись «День» — без периода
+  await enter(el, 'p5', '2');
+  const second = s.calls.filter((c: any) => c.fn === 'add')[1].args as any;
+  assert.equal(second.periodFrom, undefined, '«День» — без периода (вызов как до 030)');
 });

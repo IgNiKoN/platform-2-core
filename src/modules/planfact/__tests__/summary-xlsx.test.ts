@@ -31,6 +31,11 @@ test('ПТО: листы «Сводка», «Позиции», «КС-2»; де�
   const p = wb.getWorksheet('Позиции');
   assert.equal(p.rowCount, 1 + POSITIONS.length, 'каждая позиция — строкой');
   assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map((c) => p.getRow(3).getCell(c).value), ['5 этаж · Кв. 1', 'Установка дверей', 'шт.', 10, 3, 30, 7]);
+  // P2-0022: прогноз по объёму — те же колонки, что на экране
+  assert.deepEqual([11, 12, 13].map((c) => p.getRow(1).getCell(c).value), ['Прогноз окончания по объёму', 'Δ к финишу, дн.', '% отклонения (план − факт, п.п.)']);
+  assert.deepEqual([11, 12, 13].map((c) => p.getRow(2).getCell(c).value), ['21.05.2027', 141, 25]);
+  assert.deepEqual([11, 12, 13].map((c) => p.getRow(4).getCell(c).value), ['нет темпа', null, 35]);
+  assert.deepEqual([12, 13, 14].map((c) => plas.getCell(c).value), ['21.05.2027', 141, 25], 'вид работ: прогноз после колонок ₽');
   const k = wb.getWorksheet('КС-2');
   assert.deepEqual([1, 6, 7, 8, 9, 12].map((c) => k.getRow(2).getCell(c).value), [12, 10, 9, 1, 300, 300]);
   assert.equal(k.getRow(2 + GAP.length).getCell(12).value, 300, 'итог разрыва объекта — из сводки');
@@ -42,7 +47,9 @@ test('без права money.view: в файле нет ни одной кол�
   const wt = WORK_TYPES.map((w) => ({ ...w, plan_money: null, done_money: null, pct_money: null }));
   const gap = GAP.map((r) => ({ ...r, price: null, done_money: null, issued_money: null, gap_money: null }));
   const wb = await read(await buildSummaryXlsx({ project: fore, workTypes: wt, positions: POSITIONS, gap, gapError: '', today: '2026-10-21' }));
-  for (const ws of wb.worksheets) assert.ok(!/₽|Готовность по деньгам|Прогноз/.test(texts(ws)), ws.name);
+  // прогноз объекта (в ₽) скрыт; прогноз по объёму (P2-0022) — без денег, виден как на сервере
+  for (const ws of wb.worksheets) assert.ok(!/₽|Готовность по деньгам|Прогноз окончания(?! по объёму)/.test(texts(ws)), ws.name);
+  assert.ok(texts(wb.getWorksheet('Позиции')).includes('Прогноз окончания по объёму'));
   assert.equal(wb.getWorksheet('КС-2').getRow(1).cellCount, 8);
   assert.equal(wb.getWorksheet('КС-2').getRow(2).getCell(8).value, 1, 'объём разрыва есть');
 });

@@ -41,14 +41,17 @@ export interface SummaryAttention {
   gap: AttentionGap[]; unpriced: AttentionUnpriced[]; stale: AttentionStale[];
   completeness: { rows_total: number; rows_priced: number; priced_pct: number | null; dates_pct: number; positions_total: number; positions_placed: number; placed_pct: number | null };
 }
-export interface UnitVolume { unit: string; plan: number; fact: number; pct: number | null; rest: number; fact7: number; fact14: number; pending: number }
+/** forecast_finish / delta_days / dev_pp — прогноз по ЕИ (P2-0022, 030; null — нет темпа / нет дат объекта). */
+export interface UnitVolume { unit: string; plan: number; fact: number; pct: number | null; rest: number; fact7: number; fact14: number; pending: number;
+  forecast_finish: string | null; delta_days: number | null; dev_pp: number | null }
 export interface SummaryWorkType {
   work_type_id: string | null; work_name: string; units: UnitVolume[]; positions: number;
-  plan_money: number | null; done_money: number | null; pct_money: number | null; unpriced_rows: number;
+  plan_money: number | null; done_money: number | null; pct_money: number | null; unpriced_rows: number; plan_pct_today: number | null;
 }
 export interface SummaryPosition {
   position_id: string; location_id: string; location_path: string; work_type_id: string; work_name: string; unit_code: string;
   plan_qty: number; fact_qty: number; pct: number | null; rest_qty: number; fact7: number; fact14: number; pending_qty: number;
+  forecast_finish: string | null; delta_days: number | null; plan_pct_today: number | null; dev_pp: number | null;
 }
 export interface Ks2GapRow {
   source_row_id: string; import_id: string; row_no: number; number: string | null; name: string; unit_text: string | null; kind: 'work' | 'material';
@@ -93,9 +96,11 @@ export const normPlace = (x: SummaryPlace): SummaryPlace => ({
   units: (x.units || []).map((u) => ({ unit: u.unit, plan: n(u.plan), fact: n(u.fact), pct: nn(u.pct) })) });
 export const normWorkType = (w: SummaryWorkType): SummaryWorkType => ({
   ...w, positions: n(w.positions), plan_money: nn(w.plan_money), done_money: nn(w.done_money), pct_money: nn(w.pct_money), unpriced_rows: n(w.unpriced_rows),
-  units: (w.units || []).map((u) => ({ unit: u.unit, plan: n(u.plan), fact: n(u.fact), pct: nn(u.pct), rest: n(u.rest), fact7: n(u.fact7), fact14: n(u.fact14), pending: n(u.pending) })) });
+  units: (w.units || []).map((u) => ({ unit: u.unit, plan: n(u.plan), fact: n(u.fact), pct: nn(u.pct), rest: n(u.rest), fact7: n(u.fact7), fact14: n(u.fact14), pending: n(u.pending),
+    forecast_finish: u.forecast_finish ?? null, delta_days: nn(u.delta_days), dev_pp: nn(u.dev_pp) })), plan_pct_today: nn(w.plan_pct_today) });
 export const normPosition = (p: SummaryPosition): SummaryPosition => ({
-  ...p, plan_qty: n(p.plan_qty), fact_qty: n(p.fact_qty), pct: nn(p.pct), rest_qty: n(p.rest_qty), fact7: n(p.fact7), fact14: n(p.fact14), pending_qty: n(p.pending_qty) });
+  ...p, plan_qty: n(p.plan_qty), fact_qty: n(p.fact_qty), pct: nn(p.pct), rest_qty: n(p.rest_qty), fact7: n(p.fact7), fact14: n(p.fact14), pending_qty: n(p.pending_qty),
+  forecast_finish: p.forecast_finish ?? null, delta_days: nn(p.delta_days), plan_pct_today: nn(p.plan_pct_today), dev_pp: nn(p.dev_pp) });
 export const normGap = (r: Ks2GapRow): Ks2GapRow => ({
   ...r, row_no: n(r.row_no), done_qty: n(r.done_qty), issued_qty: n(r.issued_qty), gap_qty: n(r.gap_qty),
   price: nn(r.price), done_money: nn(r.done_money), issued_money: nn(r.issued_money), gap_money: nn(r.gap_money) });

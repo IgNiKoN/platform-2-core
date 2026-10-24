@@ -5,7 +5,7 @@
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import type { FactApi, FactHistoryRow, FactPosition, FactStatus } from './fact.service.ts';
-import { fmtQty, parseQty } from './fact.ts';
+import { fmtPeriod, fmtQty, parseQty } from './fact.ts';
 
 const STATUS: Record<FactStatus, string> = { accepted: 'Принято', pending_approval: 'Ждёт РП', rejected: 'Отклонено', superseded: 'Заменено' };
 export const fmtWhen = (iso: string): string => { try { return new Date(iso).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }); } catch { return iso; } };
@@ -57,7 +57,7 @@ export function FactHistory(props: { api: FactApi; pos: FactPosition; me: string
         h('div', { className: 'ft-hmain' },
           h('span', { className: 'ft-badge ft-badge--' + e.status }, STATUS[e.status]),
           h('b', null, `${fmtQty(e.qty)} ${pos.unit_code}`),
-          h('span', { className: 'pf-muted' }, `${fmtDate(e.work_date)} · ${e.brigade_name}${e.workers ? ` · ${e.workers} чел.` : ''}${e.man_hours ? ` · ${fmtQty(e.man_hours)} чел.-ч` : ''}`)),
+          h('span', { className: 'pf-muted', 'data-testid': 'ft-hdate' }, `${e.period_from ? fmtPeriod(e.period_from, e.work_date) : fmtDate(e.work_date)} · ${e.brigade_name}${e.workers ? ` · ${e.workers} чел.` : ''}${e.man_hours ? ` · ${fmtQty(e.man_hours)} чел.-ч` : ''}`)),
         h('div', { className: 'ft-hmeta pf-muted' },
           `${e.created_by_email || '—'}, ${fmtWhen(e.created_at)}`,
           e.batch_id ? ' · закрытие пачкой' : '',

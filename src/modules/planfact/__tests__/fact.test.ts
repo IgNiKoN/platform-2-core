@@ -1,7 +1,7 @@
 /** Расчёты экрана «Факт» (P2-0007): процент, остаток, разбор объёма, разбивка «закрыть этаж» — Σ по ЕИ равна заданному. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fmtQty, parseQty, percent, remainder, round3, splitFloor, sumByUnit, todayMoscow, vorHints } from '../fact/fact.ts';
+import { daysBetween, fmtPeriod, fmtQty, parseQty, percent, periodError, remainder, round3, splitFloor, sumByUnit, todayMoscow, vorHints } from '../fact/fact.ts';
 
 test('процент и остаток: 10 из 100 → 10 %, остаток 90; план 0 → 0 %; сверх плана — больше 100', () => {
   assert.equal(percent(10, 100), 10);
@@ -79,4 +79,22 @@ test('подсказка позиции с КВР (P2-0012): № · КВР · п
   assert.equal(h.get('a'), '№ 8. · КВР-группа 8 · Пояснение 17');
   assert.equal(h.get('b'), '№ 8. · КВР-группа 8 · Пояснение 18');
   assert.equal(h.get('c'), '№ 8. · КВР-группа 8');
+});
+
+test('P2-0022: период «с … по …» — те же правила, что на сервере (030): ≤ 31 дня, начало ≤ конца, конец не в будущем', () => {
+  const today = '2026-10-24';
+  assert.equal(daysBetween('2026-10-01', '2026-10-31'), 30);
+  assert.equal(periodError('2026-10-11', '2026-10-24', today), '', '14 дней — можно');
+  assert.equal(periodError('2026-09-24', '2026-10-24', today), '', 'ровно 31 день — можно');
+  assert.match(periodError('2026-09-23', '2026-10-24', today), /не больше 31 дня/);
+  assert.match(periodError('2026-10-20', '2026-10-19', today), /Начало периода позже конца/);
+  assert.match(periodError('2026-10-20', '2026-10-25', today), /в будущем/);
+  assert.match(periodError('', '2026-10-24', today), /начало и конец/);
+  assert.equal(periodError('2026-10-24', '2026-10-24', today), '', 'один день периодом — можно');
+});
+
+test('P2-0022: подпись «за период dd.mm–dd.mm»; запись за день — без подписи', () => {
+  assert.equal(fmtPeriod('2026-10-11', '2026-10-24'), 'за период 11.10–24.10');
+  assert.equal(fmtPeriod(null, '2026-10-24'), '');
+  assert.equal(fmtPeriod(undefined, '2026-10-24'), '');
 });
