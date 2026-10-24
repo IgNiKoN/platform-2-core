@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.64.0';
+const SW_VERSION = '18.65.0';
 // P2-0013: «разработка / выпуск» — из единственного переключателя js/services/config.service.js (выпуск: rbi-quality-* вместо старой версии).
 importScripts('./js/services/config.service.js');
 const CACHE_PREFIX = (self.APP_CONFIG && self.APP_CONFIG.SW_CACHE_PREFIX) || 'platform2-';
@@ -163,6 +163,7 @@ const urlsToCache = [
   './js/services/storage/storage-cache-manager.js',
   './js/services/storage/storage-offline-cache.utils.js',
   './js/services/storage/storage-diagnostics.render.js',
+  './js/services/storage/storage-photo-loader.js',
   './js/services/storage/storage-photo-manager.js',
   './js/services/storage/storage-file-queue.actions.js',
   './js/shared/math.utils.js',
