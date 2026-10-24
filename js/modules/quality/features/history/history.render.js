@@ -811,14 +811,7 @@ function _renderProjectGroupHtml(pName, contractorsMap, lazy) {
 
     let groupHtml = `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden" data-hist-project="${pEsc}">
-            <div class="flex justify-between items-center p-2.5 cursor-pointer hover:bg-[var(--hover-bg)] active:bg-[var(--hover-bg)] transition-colors select-none rounded-t-[14px]" onclick="
-                const body = document.getElementById('${safeGroupName}');
-                const icon = this.querySelector('.chevron-icon');
-                if (!body) return;
-                if (window.rbiHistMaterializeProject) window.rbiHistMaterializeProject(this.parentElement);
-                const open = body.classList.toggle('is-open');
-                if (icon) icon.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
-            ">
+            <div class="flex justify-between items-center p-2.5 cursor-pointer hover:bg-[var(--hover-bg)] active:bg-[var(--hover-bg)] transition-colors select-none rounded-t-[14px]" onclick="if (window.rbiHistToggleProject) window.rbiHistToggleProject(this);">
                 <div class="flex items-center gap-2.5 min-w-0 pr-2">
                     <div class="w-8 h-8 bg-brand-soft text-brand rounded-[10px] flex items-center justify-center shrink-0 border border-brand-soft">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
@@ -879,9 +872,33 @@ function _histMaterializeProject(card) {
     return true;
 }
 
+/**
+ * Раскрыть/свернуть объект по нажатию на шапку. P2-0025 доработка 1: если дорисовка перестроила
+ * устаревший список, шапка уже отсоединена — действовать на карточку того же объекта в новом списке.
+ */
+function _histToggleProject(header) {
+    let card = header && header.parentElement;
+    if (!card) return;
+    const pName = card.getAttribute('data-hist-project');
+    _histMaterializeProject(card);
+    if (!card.isConnected) {
+        card = _findHistCard(document.getElementById('history-list'), pName);
+        if (!card) return;
+        _histMaterializeProject(card);
+    }
+    const head = card.firstElementChild;
+    const body = Array.from(card.children).find((el) => el.hasAttribute('data-hist-project-body'));
+    if (!body) return;
+    const icon = head && head.querySelector('.chevron-icon');
+    const open = body.classList.toggle('is-open');
+    if (icon) icon.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+}
+
 function _histMaterializeAllProjects() {
     const listDiv = document.getElementById('history-list');
     if (!listDiv) return 0;
+    // P2-0025 доработка 1: устаревший список — один раз перестроить, затем дорисовать уже новые карточки
+    if (HistoryState.refreshFromMemoryIfStale()) HistoryRender.render();
     let n = 0;
     listDiv.querySelectorAll('[data-hist-project]').forEach((card) => { if (_histMaterializeProject(card)) n++; });
     return n;
@@ -1711,6 +1728,7 @@ if (typeof window !== 'undefined') {
     window.renderHistoryTab = HistoryRender.render;
     window.rbiHistMaterializeProject = _histMaterializeProject;
     window.rbiHistMaterializeAllProjects = _histMaterializeAllProjects;
+    window.rbiHistToggleProject = _histToggleProject;
     window.showHistoryDetail = HistoryRender.renderDetail;
     window.applyHistoryFilters = HistoryRender.applyFilters;
     window.updateAllDynamicFilters = HistoryRender.updateFilters;
