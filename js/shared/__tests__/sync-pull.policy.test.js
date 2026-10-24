@@ -293,3 +293,25 @@ describe('clientScopeMode', () => {
     assert.equal(clientScopeMode({ serverScoped: false, dataScope: 'ownProjectOrOwnRecords', approved: true }), 'client');
   });
 });
+
+describe('P2-0025 этап 2: число запросов нового телефона при разном лимите строк сервера', () => {
+  it('3000 проверок: без потерь при любом лимите; ≤ 40 запросов — при лимите ≥ 4000 (при 1000 — ограничено лимитом)', async () => {
+    const { ids, items, photos } = bigDataset();
+    const OPTS = { batchSize: PULL_BATCH_SIZE, pageSize: 5000, concurrency: PULL_CONCURRENCY };
+    const table = {};
+    for (const cap of [1000, 2000, 3000, 4000, 5000]) {
+      const si = slowServer(items, { maxRows: cap });
+      const sp = slowServer(photos, { maxRows: cap });
+      const gi = await pullPagedByIds(si.fetchPage, ids, OPTS);
+      const gp = await pullPagedByIds(sp.fetchPage, ids, OPTS);
+      assert.equal(new Set(gi.map(r => r.id)).size, 53325, `пункты при лимите ${cap}`);
+      assert.equal(new Set(gp.map(r => r.id)).size, 3864, `фото при лимите ${cap}`);
+      table[cap] = Math.ceil(3000 / Math.min(500, cap)) + 1 + si.st.calls + sp.st.calls;
+    }
+    console.log('  [замер] запросов на 3000 проверок по лимиту сервера:', JSON.stringify(table));
+    assert.ok(table[1000] > 40, 'при 1000 цель недостижима без серверной выдачи пачкой');
+    assert.ok(table[4000] <= 40 && table[5000] <= 40);
+    // меньше запросов при лимите 1000 нельзя: одних пунктов 53 325 → не меньше 54 страниц
+    assert.ok(table[1000] >= Math.ceil(53325 / 1000));
+  });
+});

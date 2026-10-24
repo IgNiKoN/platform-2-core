@@ -801,5 +801,15 @@ else {
     }
   }
 }
+// --- P2-0025: лимит строк сервера (max-rows), только чтение planfact. Выдача, меньшая лимита, лимит не показывает —
+// тогда печатается нижняя граница; если выдача обрезана (строк меньше общего числа) — печатается сам лимит.
+{
+  const r = await fetch(`${URL_}/rest/v1/rpc/pf_list_works`, { method: 'POST', headers: { apikey: ANON, Authorization: `Bearer ${tok.alfaPto}`, 'Content-Type': 'application/json', Prefer: 'count=exact' }, body: JSON.stringify({ p_project: pA }) });
+  const rows = r.ok ? await r.json() : null;
+  const total = Number(String(r.headers.get('content-range') || '').split('/')[1]);
+  const n = Array.isArray(rows) ? rows.length : -1;
+  check('P2-0025: лимит строк сервера — чтение planfact', n >= 0 && Number.isFinite(total),
+    n < total ? `лимит = ${n} (выдача обрезана, всего ${total})` : `лимит не достигнут: не меньше ${n} (наибольшая тестовая выдача)`);
+}
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');
 process.exit(fails ? 1 : 0);
