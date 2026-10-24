@@ -690,6 +690,9 @@ async function _gameGenerateWeeklyPlan(force) {
 
                 if (existingTask) {
                     var oldId = existingTask.id;
+                    // P2-0023: «к отправке» — только если план правда изменил задачу. Раньше каждая
+                    // существующая задача помечалась при каждом пересчёте → отправка всех задач на каждом круге.
+                    var beforeSig = [existingTask.id, existingTask.engineerId, existingTask.target, existingTask.date].join('|');
                     if (String(oldId) !== String(taskId)) {
                         var ghost = Object.assign({}, existingTask, {
                             id: oldId, _deleted: true, is_deleted: true,
@@ -716,8 +719,11 @@ async function _gameGenerateWeeklyPlan(force) {
                             existingTask.date = tDate.toISOString();
                         }
                     }
-                    _touchTaskForSync(existingTask);
-                    _storage().put(_storage().stores().TASKS, existingTask);
+                    var afterSig = [existingTask.id, existingTask.engineerId, existingTask.target, existingTask.date].join('|');
+                    if (afterSig !== beforeSig) {
+                        _touchTaskForSync(existingTask);
+                        _storage().put(_storage().stores().TASKS, existingTask);
+                    }
                     return existingTask;
                 }
 
