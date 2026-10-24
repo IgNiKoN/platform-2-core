@@ -30,9 +30,16 @@
       const key = keys[Math.floor(R() * keys.length)];
       const tpl = sys[key];
       const groups = tpl.groups;
-      const full = R() < 0.7;
-      const used = full ? groups : groups.filter(() => R() < 0.5);
-      const usedGroups = used.length ? used : [groups[0]];
+      // ≈ 18 пунктов на проверку, как в замерах (53 325 пунктов на 3000): полная — если чек-лист короткий
+      const total = groups.reduce((n, g) => n + ((g.items || []).length), 0);
+      const full = total <= 22 && R() < 0.8;
+      let usedGroups = full ? groups : [];
+      if (!full) {
+        const order = groups.map((g, k) => k).sort(() => R() - 0.5);
+        let n = 0;
+        for (const k of order) { if (n >= 14 + Math.floor(R() * 8)) break; usedGroups.push(groups[k]); n += (groups[k].items || []).length; }
+        usedGroups = groups.filter(g => usedGroups.includes(g));
+      }
       const state = {}, details = {}, photos = {};
       usedGroups.forEach(g => (g.items || []).forEach(it => {
         const r = R();
@@ -54,7 +61,7 @@
         inspectorName: INSPECTORS[Math.floor(R() * INSPECTORS.length)],
         contractorName: contractor, contractor_name: contractor, contractor_raw_name: contractor, contractor_canonical_key: contractor.toLowerCase(), contractorId: '',
         templateKey: 'sys_' + key, templateTitle: tpl.title || key,
-        checklistSnapshot: snapshot(usedGroups),
+        checklistSnapshot: snapshot(groups), // как audit.actions.js: весь текущий чек-лист, не только заполненное
         section: 'С' + (1 + (i % 4)), floor: String(1 + (i % 25)), room: '', location: 'Корпус ' + (1 + (i % 3)) + ' / этаж ' + (1 + (i % 25)),
         stageId: 0, stageName: full ? 'Полная проверка' : 'Частичная проверка', checkedStagesInfo: usedGroups.map(g => g.group || g.title),
         isCompleted: full, state, details, photos, metrics, planPin: null,

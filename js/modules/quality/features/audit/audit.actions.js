@@ -804,6 +804,18 @@ function _t(key, fallback, vars) {
       var initialSyncStatus = isConstructionMode ? 'blocked' : 'not_synced';
       var initialSyncReason = isConstructionMode ? _t('quality.audit.sync.sk_offline', 'Модуль СК временно отключен от облака') : '';
 
+      // P2-0024: снимок чек-листа — один раз на версию шаблона (хранилище checklist_snapshots),
+      // в проверке — ссылка. Демо / ошибка хранилища — как раньше, копией в записи (читается так же).
+      var checklistSnapshot = _buildChecklistSnapshot(AuditState.currentChecklist);
+      var checklistSnapshotRef = '';
+      if (checklistSnapshot && !_isDemoMode() && typeof window.rbiPutChecklistSnapshot === 'function') {
+        try {
+          checklistSnapshotRef = await window.rbiPutChecklistSnapshot(checklistSnapshot);
+        } catch (_e) {
+          checklistSnapshotRef = '';
+        }
+      }
+
       var newItem = {
         id: String(Date.now() + Math.floor(Math.random() * 1000)),
         date: new Date().toISOString(),
@@ -820,7 +832,8 @@ function _t(key, fallback, vars) {
         contractorId: contractorNormalized.contractorId || '',
         templateKey: AuditState.currentTemplateKey,
         templateTitle: tTitle,
-        checklistSnapshot: _buildChecklistSnapshot(AuditState.currentChecklist),
+        checklistSnapshot: checklistSnapshotRef ? undefined : checklistSnapshot,
+        checklistSnapshotRef: checklistSnapshotRef || undefined,
         section: secInput.value.trim(),
         floor: floorInput.value.trim(),
         room: roomInput.value.trim(),
@@ -847,6 +860,9 @@ function _t(key, fallback, vars) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
+
+      if (newItem.checklistSnapshot === undefined) delete newItem.checklistSnapshot;
+      if (newItem.checklistSnapshotRef === undefined) delete newItem.checklistSnapshotRef;
 
       _pushInspection(newItem);
       if (!_isDemoMode()) {
