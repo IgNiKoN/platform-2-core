@@ -4,6 +4,8 @@
  */
 import { createElement } from 'react';
 import { flushSync } from 'react-dom';
+import { visibleNavItems } from './nav-items.ts';
+import type { NavItem } from './nav-items.ts';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { PLANFACT_CSS } from './PlanfactTable.ts';
@@ -92,7 +94,6 @@ function getAuth(): AuthApi | null {
 }
 
 /** requiresAccess: true — доступ к компании; 'estimate' — право на цены и сметы (planfact.estimate.manage); 'ks2' — право на КС-2 (ks2.view/ks2.edit). */
-interface NavItem { id: string; label: string; path: string; icon?: string; requiresAccess?: boolean | 'estimate' | 'ks2' }
 interface ShellCtx {
   shell?: { renderSidebar?: () => void } | null;
   /** P2-0013: маршрут #/planfact держит обёртка js/modules/planfact/index.js (проверка доступа до загрузки бандла) — бандл свой не регистрирует. */
@@ -106,6 +107,7 @@ let navItems: NavItem[] = [];
 let hasDirectories = false;
 let hasEstimate = false;
 let hasKs2 = false;
+let demoNav = false;
 let navActive = false;
 
 /** Подвкладки модуля в нижнем таббаре (телефон/планшет) и nav2 (≥1280) — общий механизм оболочки window.RBI.platformNav. */
@@ -113,7 +115,7 @@ function syncPlatformNav(): void {
   const w = window as unknown as RbiGlobal & ModeMgr;
   w.RBI = w.RBI || {};
   w.RBI.platformNav = navActive
-    ? { id: 'planfact', title: 'План/Факт', items: navItems.filter((i) => !i.requiresAccess || (i.requiresAccess === 'estimate' ? hasEstimate : i.requiresAccess === 'ks2' ? hasKs2 : hasDirectories)).map((i) => ({ path: i.path, label: i.label, icon: i.icon })) }
+    ? { id: 'planfact', title: 'План/Факт', items: visibleNavItems(navItems, { directories: hasDirectories, estimate: hasEstimate, ks2: hasKs2, demo: demoNav }).map((i) => ({ path: i.path, label: i.label, icon: i.icon })) }
     : null;
   if (w.AppModeManager && typeof w.AppModeManager.renderBottomNav === 'function') w.AppModeManager.renderBottomNav();
 }
@@ -123,6 +125,13 @@ function onAccess(has: boolean, est: boolean, k2: boolean): void {
   hasDirectories = has;
   hasEstimate = est;
   hasKs2 = k2;
+  if (navActive) syncPlatformNav();
+}
+
+/** P2-0026: раздел в демо-режиме (без входа) — в меню все подвкладки. */
+function onDemo(demo: boolean): void {
+  if (demo === demoNav) return;
+  demoNav = demo;
   if (navActive) syncPlatformNav();
 }
 
@@ -141,7 +150,7 @@ export function mount(el: HTMLElement): void {
   mountedEl = el;
   root = createRoot(el);
   const r = root;
-  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, ks2: ks2Api, summary: summaryApi, core: coreApi, onAccess })));
+  flushSync(() => r.render(createElement(PlanfactApp, { auth: getAuth(), data: demo as PlanfactDemo, api: dataApi, projects: projectsApi, vor: vorApi, estimate: estimateApi, fact: factApi, ks2: ks2Api, summary: summaryApi, core: coreApi, onAccess, onDemo })));
 }
 
 /** Снимает React-экран и очищает контейнер. Безопасен при повторном вызове. */

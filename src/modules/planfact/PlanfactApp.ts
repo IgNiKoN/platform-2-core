@@ -105,8 +105,8 @@ function accessLabel(entries: AccessEntry[]): string {
   return Array.from(new Set(parts)).join('; ');
 }
 
-export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; estimate?: EstimateApi | null; fact?: FactApi | null; ks2?: Ks2Api | null; summary?: SummaryApi | null; core?: CoreApi | null; onAccess?: (hasDirectories: boolean, hasEstimate: boolean, hasKs2: boolean) => void }): ReactElement {
-  const { auth, projects, vor: vorApi, estimate, fact: factApi, ks2: ks2Api, summary: summaryApi, onAccess } = props;
+export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; api?: DataApi | null; projects?: ProjectsApi | null; vor?: VorApi | null; estimate?: EstimateApi | null; fact?: FactApi | null; ks2?: Ks2Api | null; summary?: SummaryApi | null; core?: CoreApi | null; onAccess?: (hasDirectories: boolean, hasEstimate: boolean, hasKs2: boolean) => void; onDemo?: (demo: boolean) => void }): ReactElement {
+  const { auth, projects, vor: vorApi, estimate, fact: factApi, ks2: ks2Api, summary: summaryApi, onAccess, onDemo } = props;
   const [mode, setMode] = useState<Mode>(auth ? 'loading' : 'demo');
   const [who, setWho] = useState('');
   const [vorCount, setVorCount] = useState<number | null>(null);
@@ -117,6 +117,9 @@ export function PlanfactApp(props: { auth: AuthApi | null; data: PlanfactDemo; a
   const [canKs2, setCanKs2] = useState(false);
   const [factApprove, setFactApprove] = useState<number | null>(null);   // ждут РП в выбранном объекте; null — нет права fact.approve
   const [p2, setP2] = useState(readPlatformView());
+
+  // P2-0026: в демо (без входа) меню оболочки показывает все подвкладки, закрытые открывают подсказку «Войдите».
+  useEffect(() => { if (onDemo) onDemo(mode === 'demo'); }, [mode]);
 
   useEffect(() => {
     const onP2 = (): void => setP2(readPlatformView());
