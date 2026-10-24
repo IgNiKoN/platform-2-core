@@ -211,6 +211,10 @@ export const HistoryActions = {
      * Вызывается из inline handler: onchange="toggleAllHistory(this)"
      */
     toggleAllHistory(checkbox) {
+        // P2-0024: свёрнутые объекты рисуются при раскрытии — перед «выбрать все» дорисовать их.
+        if (checkbox && checkbox.checked && typeof window.rbiHistMaterializeAllProjects === 'function') {
+            window.rbiHistMaterializeAllProjects();
+        }
         var checkboxes = document.querySelectorAll('.hist-checkbox');
         checkboxes.forEach(function (cb) {
             cb.checked = checkbox.checked;

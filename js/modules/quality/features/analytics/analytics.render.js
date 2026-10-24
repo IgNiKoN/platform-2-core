@@ -90,6 +90,21 @@ function _contractorMetricsCached(groupKey, cData) {
     return getContractorMetrics(cData, _templates().getUserTemplates());
 }
 
+/**
+ * P2-0024: отрисовать содержимое свёрнутого <details> при первом раскрытии (уже открытый — сразу).
+ * Блок пересоздаётся при каждой перерисовке вкладки, поэтому «один раз» — на экземпляр блока.
+ */
+function _drawWhenOpen(detailsEl, draw) {
+    if (!detailsEl) return;
+    if (detailsEl.open) { draw(); return; }
+    const onToggle = () => {
+        if (!detailsEl.open) return;
+        detailsEl.removeEventListener('toggle', onToggle);
+        draw();
+    };
+    detailsEl.addEventListener('toggle', onToggle);
+}
+
 function _getSkRecords() {
     if (window.RBI && window.RBI.services && window.RBI.services.sk) {
         return window.RBI.services.sk.getRecordsSync();
@@ -506,6 +521,18 @@ function _ikoIdsSignature(arr) {
     return s;
 }
 
+// P2-0024: средний рейтинг подрядчиков по выборке — «Подрядчики» и «Сводка» считают его по одной и той же
+// выборке; в пределах одного фильтра/данных второй раз берётся из кэша (сброс — вместе с _ikoMemo).
+const _avgRatingsMemo = new Map();
+function _avgContractorRatingsCached(arr) {
+    const sig = _ikoIdsSignature(arr);
+    if (_avgRatingsMemo.has(sig)) return _avgRatingsMemo.get(sig);
+    const r = window.avgContractorRatingsFromChecks(arr);
+    _avgRatingsMemo.set(sig, r);
+    while (_avgRatingsMemo.size > IKO_MEMO_MAX) _avgRatingsMemo.delete(_avgRatingsMemo.keys().next().value);
+    return r;
+}
+
 function _getObjectIntegralMetricsCached(data) {
     if (typeof getObjectIntegralMetrics !== 'function') return null;
     if (!data || !data.length) return null;
@@ -538,6 +565,7 @@ function clearAnalyticsViewRuntimeCaches() {
     _photoThumbCache.clear();
     _clearGalleryHydrateQueue();
     _ikoMemo.clear();
+    _avgRatingsMemo.clear();
     _lazyContractorsGalleryData = null;
     _lazyContractorsGalleryFilled = false;
     _lazyDetailGalleryFilled = false;
@@ -1467,6 +1495,7 @@ export const AnalyticsRender = {
             _analyticsRenderGen += 1;
             _clearGalleryHydrateQueue();
             _ikoMemo.clear();
+            _avgRatingsMemo.clear();
             _lazyContractorsGalleryFilled = false;
             _lazyContractorsGalleryData = null;
             _lazyDetailGalleryFilled = false;
@@ -1750,7 +1779,7 @@ export const AnalyticsRender = {
 
         // KPI УрК/док/надёжность — среднее по подрядчикам (окно ≤15), как в печати One-Pager.
         const kpiRatings = (typeof window.avgContractorRatingsFromChecks === 'function')
-            ? window.avgContractorRatingsFromChecks(data)
+            ? _avgContractorRatingsCached(data)
             : { avgUrk: 0, avgDoc: null, avgReliability: null, relN: 0 };
         const avgUrkProd = kpiRatings.avgUrk;
         const avgDocProd = kpiRatings.avgDoc;
@@ -1860,7 +1889,7 @@ export const AnalyticsRender = {
                 </div>
             </details>
 
-            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">
+            <details id="analytics-dynamics-details" class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">
                 <summary class="p-3 font-bold text-rbi-label text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
                     <span class="flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
@@ -1884,7 +1913,7 @@ export const AnalyticsRender = {
                 </div>
             </details>
 
-            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">
+            <details id="analytics-causes-details" class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">
                 <summary class="p-3 font-bold text-rbi-label text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
                     <span class="flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
@@ -1937,8 +1966,10 @@ export const AnalyticsRender = {
         // Progressive: сначала список, графики — после paint с проверкой gen.
         AnalyticsRender.renderContractorsListOnly(data);
 
+        // P2-0024: графики свёрнутых блоков «Динамика» и «Причины и Сравнение» рисуются при раскрытии
+        // (раньше — всегда через 120 мс: ≈ 100 мс работы на каждую смену периода/фильтра на 3000 проверок).
         const chartGen = _analyticsRenderGen;
-        setTimeout(() => {
+        const drawTrendChart = () => {
             if (chartGen !== _analyticsRenderGen) return;
             const trendContrsData = window.buildTrendChartData(data, 'contractorName', window.selectedChartFilters.contrs, window.trendGroupings.contrs);
             const ctxTrendC = document.getElementById('chart_eng_trend_contrs')?.getContext('2d');
@@ -1946,7 +1977,8 @@ export const AnalyticsRender = {
                 if (_chartInstances()['chart_eng_trend_contrs']) _chartInstances()['chart_eng_trend_contrs'].destroy();
                 _chartInstances()['chart_eng_trend_contrs'] = new Chart(ctxTrendC, { type: 'line', data: trendContrsData, options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } } } } });
             }
-
+        };
+        const drawCausesCharts = () => {
             if (chartGen !== _analyticsRenderGen) return;
             let causesLabels = []; let causesData = [];
             Object.keys(causesCount).sort((a, b) => causesCount[b] - causesCount[a]).forEach(code => {
@@ -1970,7 +2002,9 @@ export const AnalyticsRender = {
                 if (_chartInstances()['chart_eng_compare']) _chartInstances()['chart_eng_compare'].destroy();
                 _chartInstances()['chart_eng_compare'] = new Chart(ctxComp, { type: 'bar', data: { labels: compLabels, datasets: [{ data: compData, backgroundColor: compColors, borderRadius: 4 }] }, options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } } });
             }
-        }, 120);
+        };
+        _drawWhenOpen(document.getElementById('analytics-dynamics-details'), drawTrendChart);
+        _drawWhenOpen(document.getElementById('analytics-causes-details'), drawCausesCharts);
     },
 
 
@@ -2120,7 +2154,7 @@ export const AnalyticsRender = {
         });
         // KPI УрК/док — среднее по подрядчикам (окно ≤15), как в печати One-Pager.
         const kpiRatings = (typeof window.avgContractorRatingsFromChecks === 'function')
-            ? window.avgContractorRatingsFromChecks(data)
+            ? _avgContractorRatingsCached(data)
             : { avgUrk: 0, avgDoc: null };
         const currAvgUrk = kpiRatings.avgUrk;
         const currAvgDoc = kpiRatings.avgDoc;
@@ -2176,7 +2210,8 @@ export const AnalyticsRender = {
             trendLabel = _t('quality.analytics.kpi.vs_prev', 'к пред. периоду');
         } else {
             const half = Math.floor(data.length / 2);
-            const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
+            // P2-0024: даты разбираются один раз (раньше — new Date в каждом сравнении сортировки); порядок тот же.
+            const sortedData = data.map(i => [new Date(i.date).getTime(), i]).sort((a, b) => a[0] - b[0]).map(p => p[1]);
             prevData = sortedData.slice(0, half);
             trendLabel = _t('quality.analytics.kpi.vs_first_half', 'к 1-й пол. базы');
         }
@@ -2203,7 +2238,7 @@ export const AnalyticsRender = {
         let prevAvgUrk = 0; let prevIko = "0.00"; let prevChecks = prevData.length; let prevContrsCount = 0;
         if (prevData.length > 0) {
             const prevKpi = (typeof window.avgContractorRatingsFromChecks === 'function')
-                ? window.avgContractorRatingsFromChecks(prevData)
+                ? _avgContractorRatingsCached(prevData)
                 : { avgUrk: 0 };
             prevAvgUrk = prevKpi.avgUrk;
             const pGrouped = {}; prevData.forEach(i => pGrouped[i.contractorName] = true);
@@ -2222,21 +2257,25 @@ export const AnalyticsRender = {
             return `<div class="text-right"><span class="${color} text-rbi-label font-black">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff) ? 0 : 2)}</span><div class="text-rbi-caption text-muted mt-0.5 uppercase tracking-wider">${label}</div></div>`;
         };
 
+        // P2-0024: мини-график «по неделям» (6 пересчётов рейтинга) — нужен только графику, считается
+        // в отложенном шаге отрисовки графиков, а не в основном кадре вкладки.
         const sparkLabels = []; const sparkData = [];
-        const sparkBase = (window.AnalyticsActions && typeof window.AnalyticsActions.applyAnalyticsEntityFilters === 'function')
-            ? window.AnalyticsActions.applyAnalyticsEntityFilters(
-                _allInspections.filter(i => i && i.inspection_type !== 'sk_acceptance')
-            )
-            : _allInspections.filter(i => i && i.inspection_type !== 'sk_acceptance');
-        for (let i = 5; i >= 0; i--) {
-            const dStart = new Date(); dStart.setDate(now.getDate() - (i * 7) - 7);
-            const dEnd = new Date(); dEnd.setDate(now.getDate() - (i * 7));
-            const weekChecks = sparkBase.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
-            sparkLabels.push(`-${i}${_t('quality.analytics.period.week_letter', 'н')}`);
-            sparkData.push(weekChecks.length > 0 && typeof window.avgContractorRatingsFromChecks === 'function'
-                ? window.avgContractorRatingsFromChecks(weekChecks).avgUrk
-                : null);
-        }
+        const computeSpark = () => {
+            const sparkBase = (window.AnalyticsActions && typeof window.AnalyticsActions.applyAnalyticsEntityFilters === 'function')
+                ? window.AnalyticsActions.applyAnalyticsEntityFilters(
+                    _allInspections.filter(i => i && i.inspection_type !== 'sk_acceptance')
+                )
+                : _allInspections.filter(i => i && i.inspection_type !== 'sk_acceptance');
+            for (let i = 5; i >= 0; i--) {
+                const dStart = new Date(); dStart.setDate(now.getDate() - (i * 7) - 7);
+                const dEnd = new Date(); dEnd.setDate(now.getDate() - (i * 7));
+                const weekChecks = sparkBase.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
+                sparkLabels.push(`-${i}${_t('quality.analytics.period.week_letter', 'н')}`);
+                sparkData.push(weekChecks.length > 0 && typeof window.avgContractorRatingsFromChecks === 'function'
+                    ? window.avgContractorRatingsFromChecks(weekChecks).avgUrk
+                    : null);
+            }
+        };
 
         let defaultChartContrs = [];
         let isTruncatedForChart = false;
@@ -2251,16 +2290,30 @@ export const AnalyticsRender = {
         const activeLineFilters = window.selectedChartFilters.onepager.length > 0 ? window.selectedChartFilters.onepager : defaultChartContrs;
 
         // Сбор всех фото (B3, B2, OK)
+        // P2-0024: только когда результат виден — блок «ТОП-5» включён в настройках или автотекст
+        // «Аналитики качества» (нет сохранённого вывода инженера) берёт из него проблемы;
+        // пункт чек-листа — из таблицы id → пункт на шаблон, а не getFlatList(...).find на каждый ответ.
         let b3Map = {}; let b2Map = {}; let okMap = {};
-        data.forEach(i => {
+        const _flatByTemplate = new Map();
+        const _findChecklistItem = (templateKey, id) => {
+            let byId = _flatByTemplate.get(templateKey);
+            if (!byId) {
+                const tType = templateKey.split('_')[0];
+                const tKey = templateKey.replace(tType + '_', '');
+                const cl = tType === 'sys' && _getSystemTemplates()[tKey] ? _getSystemTemplates()[tKey].groups : (_templates().getUserTemplates()[tKey] ? _templates().getUserTemplates()[tKey].groups : []);
+                byId = new Map();
+                getFlatList(cl).forEach(x => { const k = String(x.id); if (!byId.has(k)) byId.set(k, x); });
+                _flatByTemplate.set(templateKey, byId);
+            }
+            return byId.get(String(id));
+        };
+        const _needTopDefects = !!_getSetting('anaOpTopDefects') || !_reports().getExpertConclusion('global_onepager_pdca');
+        if (_needTopDefects) data.forEach(i => {
             if (i.state && i.details && i.templateKey) {
                 Object.keys(i.state).forEach(id => {
                     const s = i.state[id];
                     let defName = _t('quality.analytics.fallback.defect', 'Дефект');
-                    const tType = i.templateKey.split('_')[0];
-                    const tKey = i.templateKey.replace(tType + '_', '');
-                    const cl = tType === 'sys' && _getSystemTemplates()[tKey] ? _getSystemTemplates()[tKey].groups : (_templates().getUserTemplates()[tKey] ? _templates().getUserTemplates()[tKey].groups : []);
-                    const foundItem = getFlatList(cl).find(x => x.id == id);
+                    const foundItem = _findChecklistItem(i.templateKey, id);
                     if (foundItem) defName = foundItem.n;
 
                     const photo = (i.photos && i.photos[id])
@@ -2365,66 +2418,70 @@ export const AnalyticsRender = {
         let uiPdcaText = rawPdcaText.replace(/\n/g, '<br>').replace(/^\[(.*?)\]/gm, '<b class="text-ink dark:text-white text-rbi-label block mt-2 mb-1">$1</b>');
 
         // --- ТЕПЛОВАЯ КАРТА (МАТРИЦА РИСКОВ) ---
-        const heatmapStages = {};
-        const contrCheckCounts = {}; // Считаем проверки для вывода в топы матрицы
+        // P2-0024: блок свёрнут — таблица (этапы × подрядчики) строится при раскрытии.
+        const buildHeatmapHtml = () => {
+            const heatmapStages = {};
+            const contrCheckCounts = {}; // Считаем проверки для вывода в топы матрицы
 
-        data.forEach(check => {
-            if (!check.metrics) return;
+            data.forEach(check => {
+                if (!check.metrics) return;
 
-            // Бронебойная защита от отсутствия названия
-            const stage = check.templateTitle || check.templateKey || _t('quality.analytics.fallback.unknown_stage', 'Неизвестный этап');
-            const contr = check.contractorName || 'Неизвестно';
+                // Бронебойная защита от отсутствия названия
+                const stage = check.templateTitle || check.templateKey || _t('quality.analytics.fallback.unknown_stage', 'Неизвестный этап');
+                const contr = check.contractorName || 'Неизвестно';
 
-            contrCheckCounts[contr] = (contrCheckCounts[contr] || 0) + 1;
+                contrCheckCounts[contr] = (contrCheckCounts[contr] || 0) + 1;
 
-            if (!heatmapStages[stage]) heatmapStages[stage] = {};
-            if (!heatmapStages[stage][contr]) heatmapStages[stage][contr] = { checks: 0, defects: 0 };
+                if (!heatmapStages[stage]) heatmapStages[stage] = {};
+                if (!heatmapStages[stage][contr]) heatmapStages[stage][contr] = { checks: 0, defects: 0 };
 
-            heatmapStages[stage][contr].checks++;
-            heatmapStages[stage][contr].defects += ((Number(check.metrics.n_B2_fail) || 0) + (Number(check.metrics.n_B3_fail) || 0));
-        });
+                heatmapStages[stage][contr].checks++;
+                heatmapStages[stage][contr].defects += ((Number(check.metrics.n_B2_fail) || 0) + (Number(check.metrics.n_B3_fail) || 0));
+            });
 
-        let heatmapHtml = '';
-        const stageNames = Object.keys(heatmapStages).sort();
+            let heatmapHtml = '';
+            const stageNames = Object.keys(heatmapStages).sort();
 
-        // Все подрядчики текущей выборки; горизонтальный скролл, если не влезают.
-        const topMatrixContrs = Object.keys(contrCheckCounts)
-            .sort((a, b) => contrCheckCounts[b] - contrCheckCounts[a]);
+            // Все подрядчики текущей выборки; горизонтальный скролл, если не влезают.
+            const topMatrixContrs = Object.keys(contrCheckCounts)
+                .sort((a, b) => contrCheckCounts[b] - contrCheckCounts[a]);
 
-        if (stageNames.length > 0 && topMatrixContrs.length > 0) {
-            heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2 -mx-1 px-1"><table class="text-left border-collapse text-rbi-caption w-full" style="min-width: ${Math.max(400, 140 + 72 + topMatrixContrs.length * 96)}px;">
+            if (stageNames.length > 0 && topMatrixContrs.length > 0) {
+                heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2 -mx-1 px-1"><table class="text-left border-collapse text-rbi-caption w-full" style="min-width: ${Math.max(400, 140 + 72 + topMatrixContrs.length * 96)}px;">
                 <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] uppercase"><tr>
                     <th class="p-2 border border-[var(--card-border)] font-black sticky left-0 z-10 bg-[var(--hover-bg)] min-w-[120px]">Вид работ / Подрядчик</th>
                     <th class="p-2 border border-[var(--card-border)] text-center font-black sticky z-10 bg-[var(--hover-bg)] min-w-[72px] max-w-[88px] whitespace-normal leading-tight" style="left:120px" title="${_t('quality.analytics.heatmap.defects_sum_title', 'Сумма дефектов B2+B3 по этапу')}">${_t('quality.analytics.heatmap.total_defects', 'Всего дефектов')}</th>`;
 
-            topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold min-w-[96px] max-w-[140px] whitespace-normal leading-tight" title="${c}">${c}</th>`);
-            heatmapHtml += `</tr></thead><tbody>`;
+                topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold min-w-[96px] max-w-[140px] whitespace-normal leading-tight" title="${c}">${c}</th>`);
+                heatmapHtml += `</tr></thead><tbody>`;
 
-            stageNames.forEach(stage => {
-                const stageTotal = topMatrixContrs.reduce((sum, contr) => {
-                    const cell = heatmapStages[stage][contr];
-                    return sum + (cell ? (Number(cell.defects) || 0) : 0);
-                }, 0);
-                heatmapHtml += `<tr><td class="p-2 border border-[var(--card-border)] font-bold text-ink sticky left-0 z-10 bg-[var(--card-bg)] min-w-[120px] max-w-[160px] whitespace-normal leading-tight" title="${stage}">${stage}</td>`;
-                heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center font-black sticky z-10 bg-[var(--card-bg)] text-ink tabular-nums" style="left:120px">${stageTotal}</td>`;
-                topMatrixContrs.forEach(contr => {
-                    const cell = heatmapStages[stage][contr];
-                    if (!cell) {
-                        heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center bg-[var(--hover-bg)] text-muted">-</td>`;
-                    } else {
-                        const defectRate = cell.defects / cell.checks;
-                        let bgColor = 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-800';
-                        if (defectRate > 1.5) bgColor = 'bg-danger-soft text-danger border-danger font-black/40';
-                        else if (defectRate > 0.5) bgColor = 'bg-yellow-50 text-yellow-700 border-yellow-200 font-bold dark:bg-yellow-900/20 dark:border-yellow-800';
-                        heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center ${bgColor}">${cell.defects} ${_t('quality.analytics.heatmap.def_short', 'деф.')}</td>`;
-                    }
+                stageNames.forEach(stage => {
+                    const stageTotal = topMatrixContrs.reduce((sum, contr) => {
+                        const cell = heatmapStages[stage][contr];
+                        return sum + (cell ? (Number(cell.defects) || 0) : 0);
+                    }, 0);
+                    heatmapHtml += `<tr><td class="p-2 border border-[var(--card-border)] font-bold text-ink sticky left-0 z-10 bg-[var(--card-bg)] min-w-[120px] max-w-[160px] whitespace-normal leading-tight" title="${stage}">${stage}</td>`;
+                    heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center font-black sticky z-10 bg-[var(--card-bg)] text-ink tabular-nums" style="left:120px">${stageTotal}</td>`;
+                    topMatrixContrs.forEach(contr => {
+                        const cell = heatmapStages[stage][contr];
+                        if (!cell) {
+                            heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center bg-[var(--hover-bg)] text-muted">-</td>`;
+                        } else {
+                            const defectRate = cell.defects / cell.checks;
+                            let bgColor = 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-800';
+                            if (defectRate > 1.5) bgColor = 'bg-danger-soft text-danger border-danger font-black/40';
+                            else if (defectRate > 0.5) bgColor = 'bg-yellow-50 text-yellow-700 border-yellow-200 font-bold dark:bg-yellow-900/20 dark:border-yellow-800';
+                            heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center ${bgColor}">${cell.defects} ${_t('quality.analytics.heatmap.def_short', 'деф.')}</td>`;
+                        }
+                    });
+                    heatmapHtml += `</tr>`;
                 });
-                heatmapHtml += `</tr>`;
-            });
-            heatmapHtml += `</tbody></table></div>`;
-        } else {
-            heatmapHtml = `<div class="text-center text-muted py-6 text-rbi-caption font-bold uppercase bg-[var(--hover-bg)] rounded-lg border border-dashed border-[var(--card-border)]">${_t('quality.analytics.heatmap.insufficient', 'Недостаточно дефектов для карты')}</div>`;
-        }
+                heatmapHtml += `</tbody></table></div>`;
+            } else {
+                heatmapHtml = `<div class="text-center text-muted py-6 text-rbi-caption font-bold uppercase bg-[var(--hover-bg)] rounded-lg border border-dashed border-[var(--card-border)]">${_t('quality.analytics.heatmap.insufficient', 'Недостаточно дефектов для карты')}</div>`;
+            }
+            return heatmapHtml;
+        };
 
         // --- ИНДЕКС ЗДОРОВЬЯ (ПУЛЬС) ---
         const healthIndex = Math.max(0, Math.min(100, Math.round(100 - (parseFloat(mData.IKO) * 50) - ((redContrPerc || 0) * 0.5) - (sumB3 * 2))));
@@ -2586,7 +2643,7 @@ export const AnalyticsRender = {
                 </details>
 
                 <!-- АККОРДЕОН 3: ТЕПЛОВАЯ КАРТА -->
-                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                <details id="op-heatmap-details" class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
                     <summary class="p-3.5 font-bold text-rbi-label text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
                         <span class="flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
@@ -2595,7 +2652,7 @@ export const AnalyticsRender = {
                         <span class="transition-transform group-open:rotate-180">▼</span>
                     </summary>
                     <div class="p-4 border-t border-[var(--card-border)] bg-surface rounded-b-2xl overflow-visible">
-                        ${heatmapHtml}
+                        <div id="op-heatmap-host"></div>
                         <button onclick="window.RBI.services.ai.generateHeatmapAi()" class="mt-3 w-full bg-slate-50 text-muted py-3 rounded-xl font-bold text-rbi-caption uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5 border border-surface transition-transform">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Анализ Рисков (ИИ)
                         </button>
@@ -2656,9 +2713,15 @@ export const AnalyticsRender = {
             </div>
         `;
 
+        _drawWhenOpen(document.getElementById('op-heatmap-details'), () => {
+            const host = document.getElementById('op-heatmap-host');
+            if (host) host.outerHTML = buildHeatmapHtml();
+        });
+
         setTimeout(() => {
             const ctxSpark = document.getElementById('op-sparkline-chart');
             if (ctxSpark) {
+                computeSpark();
                 if (_chartInstances()['op-sparkline-chart']) _chartInstances()['op-sparkline-chart'].destroy();
                 _chartInstances()['op-sparkline-chart'] = new Chart(ctxSpark.getContext('2d'), {
                     type: 'line',

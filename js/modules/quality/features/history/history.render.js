@@ -785,7 +785,12 @@ function _renderContractorBlockHtml(safeGroupName, cName, cIndex, workTypesMap) 
     return html;
 }
 
-function _renderProjectGroupHtml(pName, contractorsMap) {
+/**
+ * P2-0024: lazy=true — тело свёрнутого объекта не рисуется (заголовок, счётчики и УрК — как обычно);
+ * подрядчики/виды работ/строки дорисовываются при первом раскрытии (_histMaterializeProject)
+ * из тех же отфильтрованных данных. На 3000 проверок это −90% узлов «Истории».
+ */
+function _renderProjectGroupHtml(pName, contractorsMap, lazy) {
     const safeGroupName = _nextHistGroupId();
     const collator = _histCollator();
     const contractorNames = Object.keys(contractorsMap).sort(collator.compare);
@@ -810,6 +815,7 @@ function _renderProjectGroupHtml(pName, contractorsMap) {
                 const body = document.getElementById('${safeGroupName}');
                 const icon = this.querySelector('.chevron-icon');
                 if (!body) return;
+                if (window.rbiHistMaterializeProject) window.rbiHistMaterializeProject(this.parentElement);
                 const open = body.classList.toggle('is-open');
                 if (icon) icon.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
             ">
@@ -829,15 +835,51 @@ function _renderProjectGroupHtml(pName, contractorsMap) {
                 </div>
             </div>
             
-            <div id="${safeGroupName}" class="rbi-acc min-w-0" data-hist-project-body>
+            <div id="${safeGroupName}" class="rbi-acc min-w-0" data-hist-project-body${lazy ? ' data-hist-lazy="1"' : ''}>
                 <div class="rbi-acc-inner">
                     <div class="hist-project-list border-t border-[var(--card-border)] bg-surface p-2 min-w-0 overflow-x-hidden">`;
 
-    contractorNames.forEach((cName, cIndex) => {
-        groupHtml += _renderContractorBlockHtml(safeGroupName, cName, cIndex, contractorsMap[cName]);
-    });
+    if (!lazy) {
+        contractorNames.forEach((cName, cIndex) => {
+            groupHtml += _renderContractorBlockHtml(safeGroupName, cName, cIndex, contractorsMap[cName]);
+        });
+    }
     groupHtml += `</div></div></div></div>`;
     return groupHtml;
+}
+
+/** P2-0024: дорисовать тело объекта, отложенное при render() (см. _renderProjectGroupHtml lazy). */
+function _histMaterializeProject(card) {
+    const pBody = card && card.querySelector('[data-hist-project-body]');
+    if (!pBody || pBody.getAttribute('data-hist-lazy') !== '1') return false;
+    pBody.removeAttribute('data-hist-lazy');
+    const pName = card.getAttribute('data-hist-project');
+    const contractorsMap = {};
+    _filterHistoryRecords(HistoryState.allRecords).forEach((item) => {
+        if (_projectNameOf(item) !== pName) return;
+        const cName = _contractorNameOf(item);
+        const tTitle = _workTypeNameOf(item);
+        if (!contractorsMap[cName]) contractorsMap[cName] = {};
+        if (!contractorsMap[cName][tTitle]) contractorsMap[cName][tTitle] = [];
+        contractorsMap[cName][tTitle].push(item);
+    });
+    const host = _histProjectListHost(pBody);
+    if (!host) return false;
+    const safeGroupName = pBody.id || _nextHistGroupId();
+    host.innerHTML = Object.keys(contractorsMap).sort(_histCollator().compare)
+        .map((cName, cIndex) => _renderContractorBlockHtml(safeGroupName, cName, cIndex, contractorsMap[cName]))
+        .join('');
+    HistoryRender._autoLoadPaused = false;
+    if (!HistoryRender._sentinelObserver) HistoryRender._observeLoadSentinel();
+    return true;
+}
+
+function _histMaterializeAllProjects() {
+    const listDiv = document.getElementById('history-list');
+    if (!listDiv) return 0;
+    let n = 0;
+    listDiv.querySelectorAll('[data-hist-project]').forEach((card) => { if (_histMaterializeProject(card)) n++; });
+    return n;
 }
 
 function _histAccIsOpen(el) {
@@ -1325,7 +1367,7 @@ export const HistoryRender = {
         });
 
         const groupKeys = Object.keys(grouped).sort(_histCollator().compare);
-        let html = groupKeys.map((pName) => _renderProjectGroupHtml(pName, grouped[pName])).join('');
+        let html = groupKeys.map((pName) => _renderProjectGroupHtml(pName, grouped[pName], !expanded.projects.has(pName))).join('');
 
         if (HistoryState.pageHasMore) {
             html += `<button id="load-more-history-page-btn" onclick="window.loadMoreHistoryPage()" class="w-full bg-brand-soft text-brand py-3 mt-1 mb-2 rounded-xl text-rbi-caption font-black uppercase tracking-widest active:scale-95 transition-colors border border-brand shadow-sm">
@@ -1336,6 +1378,7 @@ export const HistoryRender = {
 
         listDiv.innerHTML = html;
         _restoreExpandedHistory(listDiv, expanded);
+        HistoryRender._autoLoadPaused = false;
         HistoryRender._observeLoadSentinel();
     },
 
@@ -1405,7 +1448,13 @@ export const HistoryRender = {
         Object.keys(byProject).forEach((pName) => {
             let card = _findHistCard(listDiv, pName);
             if (!card) {
-                _insertProjectCardSorted(listDiv, _renderProjectGroupHtml(pName, byProject[pName]), pName);
+                _insertProjectCardSorted(listDiv, _renderProjectGroupHtml(pName, byProject[pName], true), pName);
+                touchedProjects.add(pName);
+                return;
+            }
+            // P2-0024: тело объекта ещё не нарисовано — строки появятся при раскрытии, здесь только счётчики.
+            const lazyBody = card.querySelector('[data-hist-project-body][data-hist-lazy="1"]');
+            if (lazyBody) {
                 touchedProjects.add(pName);
                 return;
             }
@@ -1446,11 +1495,25 @@ export const HistoryRender = {
 
         const sentinel = document.getElementById('history-load-sentinel');
         if (!sentinel || typeof IntersectionObserver !== 'function') return;
+        if (HistoryRender._autoLoadPaused) return;
 
         const observer = new IntersectionObserver((entries) => {
             const isVisible = entries.some(e => e.isIntersecting);
             if (isVisible && HistoryState.pageHasMore && !HistoryState.isLoadingPage) {
-                window.loadMoreHistoryPage();
+                // P2-0024: свёрнутые объекты не растут от догрузки (меняются только счётчики) — если список
+                // не стал длиннее, автодогрузку останавливаем, иначе она подтянула бы в память всю историю.
+                // Раскрытие объекта включает её снова (_histMaterializeProject); кнопка «Загрузить…» остаётся.
+                const listDiv = document.getElementById('history-list');
+                const before = listDiv ? listDiv.scrollHeight : 0;
+                Promise.resolve(window.loadMoreHistoryPage()).then(() => {
+                    if (listDiv && listDiv.scrollHeight <= before) {
+                        HistoryRender._autoLoadPaused = true;
+                        if (HistoryRender._sentinelObserver) {
+                            HistoryRender._sentinelObserver.disconnect();
+                            HistoryRender._sentinelObserver = null;
+                        }
+                    }
+                }).catch(() => { /* ignore */ });
             }
         }, { root: null, rootMargin: '600px 0px 0px 0px', threshold: 0 });
 
@@ -1637,6 +1700,8 @@ if (typeof window !== 'undefined') {
     // Прокси для обратной совместимости: inline-обработчики index.html
     // и внешние вызовы из game.js/export.js/sync.js используют глобальные имена.
     window.renderHistoryTab = HistoryRender.render;
+    window.rbiHistMaterializeProject = _histMaterializeProject;
+    window.rbiHistMaterializeAllProjects = _histMaterializeAllProjects;
     window.showHistoryDetail = HistoryRender.renderDetail;
     window.applyHistoryFilters = HistoryRender.applyFilters;
     window.updateAllDynamicFilters = HistoryRender.updateFilters;
