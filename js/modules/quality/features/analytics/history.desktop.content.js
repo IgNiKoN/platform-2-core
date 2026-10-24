@@ -364,6 +364,7 @@ function groupHtml(level, key, name, items, inner) {
     ? `<span class="ana-desk-hist-grp-urk status-tag ${avgUrkStatusCls(avg)}">${avg}%</span>`
     : `<span class="ana-desk-hist-grp-urk"></span>`;
   return `<div class="ana-desk-hist-grp" data-lvl="${level}" role="row">`
+    + `<input type="checkbox" class="ana-desk-hist-grp-cb" data-ana-desk-grp-cb="1" aria-label="${esc(_t('quality.history.group.select', 'Отметить все проверки группы'))}">`
     + `<button type="button" class="ana-desk-hist-grp-main" data-ana-desk-grp="${esc(key)}" aria-expanded="${open ? 'true' : 'false'}">`
     + `<span class="ana-desk-hist-grp-chev" aria-hidden="true">›</span>`
     + `<span class="ana-desk-hist-grp-name">${esc(name)}</span>`
@@ -1209,6 +1210,12 @@ export function bindHistoryDeskEvents() {
   document.addEventListener('change', (e) => {
     const t = e.target;
     if (!t) return;
+    // P2-0026: галочка группы — отметить/снять все проверки группы (и вложенные группы)
+    if (t.matches && t.matches('[data-ana-desk-grp-cb]')) {
+      const body = t.parentElement && t.parentElement.nextElementSibling;
+      if (body) body.querySelectorAll('.hist-checkbox, [data-ana-desk-grp-cb]').forEach((el) => { el.checked = !!t.checked; });
+      return;
+    }
     if (t.id === 'ana-desk-reports-select-all') {
       const on = !!t.checked;
       document.querySelectorAll('#ana-desk-hist-reports .report-checkbox').forEach((el) => {

@@ -72,3 +72,22 @@ describe('«История» после синхронизации (дорабо
     assert.equal(list().querySelectorAll('[data-hist-lazy="1"]').length, 0, 'ленивых объектов не осталось');
   });
 });
+
+describe('P2-0026: отмеченные проверки без повторов', () => {
+  it('галочка той же проверки в таблице ПК и в скрытом телефонном списке — id один раз', async () => {
+    const { Window: W } = await import('happy-dom');
+    const w = new W({ url: 'http://localhost/' });
+    const prev = { window: globalThis.window, document: globalThis.document };
+    globalThis.window = w; globalThis.document = w.document;
+    try {
+      w.document.body.innerHTML = '<div id="history-list"><input type="checkbox" class="hist-checkbox" value="a" checked>'
+        + '<input type="checkbox" class="hist-checkbox" value="b" checked></div>'
+        + '<div id="ana-desk-hist-checks"><input type="checkbox" class="hist-checkbox" value="a" checked>'
+        + '<input type="checkbox" class="hist-checkbox" value="b" checked><input type="checkbox" class="hist-checkbox" value="c"></div>';
+      const { HistoryActions } = await import('../../modules/quality/features/history/history.actions.js');
+      assert.deepEqual(HistoryActions.getSelectedHistoryIds(), ['a', 'b']);
+    } finally {
+      globalThis.window = prev.window; globalThis.document = prev.document;
+    }
+  });
+});

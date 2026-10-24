@@ -1865,6 +1865,7 @@
   "quality.history.btn.show_more": "Prikaži još provera ({n})",
   "quality.history.count.contractors": "{n} izv.",
   "quality.history.count.pcs": "{n} kom",
+  "quality.history.group.select": "Označi sve provere u grupi",
   "quality.history.detail.ai_prescription": "📄 Kreiraj nalog (AI)",
   "quality.history.detail.breakdown": "Inženjerski breakdown",
   "quality.history.detail.checked": "Provereno:",

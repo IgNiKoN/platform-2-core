@@ -1865,6 +1865,7 @@
   "quality.history.btn.show_more": "Show more inspections ({n})",
   "quality.history.count.contractors": "{n} contr.",
   "quality.history.count.pcs": "{n} pcs",
+  "quality.history.group.select": "Select all checks in the group",
   "quality.history.detail.ai_prescription": "📄 Create order (AI)",
   "quality.history.detail.breakdown": "Engineering breakdown",
   "quality.history.detail.checked": "Checked:",

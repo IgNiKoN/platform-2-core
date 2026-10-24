@@ -1865,6 +1865,7 @@
   "quality.history.btn.show_more": "Показать еще проверки ({n})",
   "quality.history.count.contractors": "{n} подрядч.",
   "quality.history.count.pcs": "{n} шт",
+  "quality.history.group.select": "Отметить все проверки группы",
   "quality.history.detail.ai_prescription": "📄 Создать предписание (ИИ)",
   "quality.history.detail.breakdown": "Инженерный breakdown",
   "quality.history.detail.checked": "Проверено:",

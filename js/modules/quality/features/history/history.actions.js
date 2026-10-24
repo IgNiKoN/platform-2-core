@@ -218,10 +218,17 @@ export const HistoryActions = {
      * Возвращает массив ID выбранных (отмеченных галочками) проверок.
      * Перенесено из history.legacy.js (бывший app.js, строка 2483).
      * ID — текстовые строки (UUID из облака).
+     * P2-0026: без повторов — на ПК галочки есть и в таблице, и в скрытом телефонном списке
+     * («Выбрать все» ставит обе): иначе печать и удаление шли по каждой проверке дважды.
      */
     getSelectedHistoryIds() {
+        var seen = {};
         return Array.from(document.querySelectorAll('.hist-checkbox:checked')).map(function (cb) {
             return cb.value;
+        }).filter(function (id) {
+            if (seen[id]) return false;
+            seen[id] = true;
+            return true;
         });
     },
 
@@ -342,7 +349,8 @@ export const HistoryActions = {
         var selectAllCb = document.getElementById('hist-select-all');
         if (selectAllCb) selectAllCb.checked = false;
 
-        HistoryRender.render();
+        // P2-0026: через window.renderHistoryTab — на ПК он перерисовывает и таблицу «Проверки» (обёртка analytics.desktop.render.js)
+        if (typeof window.renderHistoryTab === 'function') window.renderHistoryTab(); else HistoryRender.render();
 
         if (typeof renderCurrentAnalyticsTab === 'function') {
             renderCurrentAnalyticsTab();

@@ -3982,3 +3982,11 @@ body.rbi-analytics-desktop-wide #sub-history.ana-desk-hist .ana-desk-hist-grp-bo
 body.rbi-analytics-desktop-wide #sub-history.ana-desk-hist .ana-desk-hist-grp-body[hidden] {
   display: none;
 }
+
+body.rbi-analytics-desktop-wide #sub-history.ana-desk-hist .ana-desk-hist-grp-cb {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  margin-left: 0.25rem;
+  accent-color: var(--primary);
+}
