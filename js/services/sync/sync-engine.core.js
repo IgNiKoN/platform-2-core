@@ -2448,12 +2448,16 @@ window.triggerSync = async function (mode = 'silent') {
                     });
 
                     // P2-0023: ошибка фото одной проверки не роняет всю синхронизацию.
+                    // Доработка 3: allSettled — обрезаем строки фото только после завершения ВСЕХ загрузок,
+                    // иначе опоздавшие загрузки допишут строки «удержанной» проверки (Promise.all отклоняется на первой ошибке).
                     const photosBatchBefore = photosBatch.length;
-                    try {
-                        await Promise.all(photoPromises); // Дожидаемся фоток
-                    } catch (photoErr) {
+                    const photoResults = await Promise.allSettled(photoPromises); // Дожидаемся фоток
+                    const photoFails = photoResults.filter(r => r.status === 'rejected').map(r => r.reason);
+                    if (photoFails.length) {
                         photosBatch.length = photosBatchBefore; // строки фото этой проверки — не отправляем
                         const rp = window.RbiSyncRetryPolicy;
+                        // сеть/сервер важнее «нет файла»: такая ошибка — просто повтор позже
+                        const photoErr = photoFails.find(e => !(rp && rp.isMissingFileError(e))) || photoFails[0];
                         if (rp && rp.isMissingFileError(photoErr)) {
                             console.warn('[Sync] Проверка помечена «нужно внимание» (фото нет на устройстве):', inspectionId, photoErr.message);
                             rp.markAttention(c);
