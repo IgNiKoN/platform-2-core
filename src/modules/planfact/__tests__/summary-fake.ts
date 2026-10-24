@@ -32,20 +32,20 @@ export const ATTENTION: SummaryAttention = {
 
 export const WORK_TYPES: SummaryWorkType[] = [
   { work_type_id: 'wt1', work_name: 'Штукатурка стен', positions: 1, plan_money: 41250, done_money: 4125, pct_money: 10, unpriced_rows: 0,
-    units: [{ unit: 'м²', plan: 100, fact: 10, pct: 10, rest: 90, fact7: 3, fact14: 6, pending: 0 }] },
+    plan_pct_today: 35, units: [{ unit: 'м²', plan: 100, fact: 10, pct: 10, rest: 90, fact7: 3, fact14: 6, pending: 0, forecast_finish: '2027-05-21', delta_days: 141, dev_pp: 25 }] },
   { work_type_id: 'wt3', work_name: 'Установка дверей', positions: 1, plan_money: 12000, done_money: 3600, pct_money: 30, unpriced_rows: 0,
-    units: [{ unit: 'шт.', plan: 10, fact: 3, pct: 30, rest: 7, fact7: 3, fact14: 3, pending: 0 }] },
+    plan_pct_today: 35, units: [{ unit: 'шт.', plan: 10, fact: 3, pct: 30, rest: 7, fact7: 3, fact14: 3, pending: 0, forecast_finish: '2026-11-26', delta_days: -35, dev_pp: 5 }] },
   { work_type_id: 'wt4', work_name: 'Грунтовка', positions: 1, plan_money: 0, done_money: 0, pct_money: null, unpriced_rows: 1,
-    units: [{ unit: 'м²', plan: 50, fact: 0, pct: 0, rest: 50, fact7: 0, fact14: 0, pending: 0 }] },
+    plan_pct_today: 35, units: [{ unit: 'м²', plan: 50, fact: 0, pct: 0, rest: 50, fact7: 0, fact14: 0, pending: 0, forecast_finish: null, delta_days: null, dev_pp: 35 }] },
 ];
 
 export const POSITIONS: SummaryPosition[] = [
   { position_id: 'p12', location_id: 'f5', location_path: '5 этаж', work_type_id: 'wt1', work_name: 'Штукатурка стен', unit_code: 'м²',
-    plan_qty: 100, fact_qty: 10, pct: 10, rest_qty: 90, fact7: 3, fact14: 6, pending_qty: 0 },
+    plan_qty: 100, fact_qty: 10, pct: 10, rest_qty: 90, fact7: 3, fact14: 6, pending_qty: 0, forecast_finish: '2027-05-21', delta_days: 141, plan_pct_today: 35, dev_pp: 25 },
   { position_id: 'p14', location_id: 'kv', location_path: '5 этаж · Кв. 1', work_type_id: 'wt3', work_name: 'Установка дверей', unit_code: 'шт.',
-    plan_qty: 10, fact_qty: 3, pct: 30, rest_qty: 7, fact7: 3, fact14: 3, pending_qty: 0 },
+    plan_qty: 10, fact_qty: 3, pct: 30, rest_qty: 7, fact7: 3, fact14: 3, pending_qty: 0, forecast_finish: '2026-11-26', delta_days: -35, plan_pct_today: 35, dev_pp: 5 },
   { position_id: 'p16', location_id: 'f5', location_path: '5 этаж', work_type_id: 'wt4', work_name: 'Грунтовка', unit_code: 'м²',
-    plan_qty: 50, fact_qty: 0, pct: 0, rest_qty: 50, fact7: 0, fact14: 0, pending_qty: 0 },
+    plan_qty: 50, fact_qty: 0, pct: 0, rest_qty: 50, fact7: 0, fact14: 0, pending_qty: 0, forecast_finish: null, delta_days: null, plan_pct_today: 35, dev_pp: 35 },
 ];
 
 export const GAP: Ks2GapRow[] = [

@@ -5,7 +5,8 @@
  * Без права money.view колонок и строк в ₽ нет (сервер их и не присылает). Excel (exceljs) подгружается лениво.
  */
 import type { Ks2GapRow, SummaryAttention, SummaryPosition, SummaryProject, SummaryWorkType } from './summary.service.ts';
-import { LIGHT_LABEL, lightText, verdictText } from './model.ts';
+import { forecastView, LIGHT_LABEL, lightText, verdictText } from './model.ts';
+import type { ForecastNumbers } from './model.ts';
 import { ruDate } from '../ks2/form.ts';
 
 export interface SummaryExport {
@@ -22,6 +23,9 @@ async function loadExcel(): Promise<{ Workbook: new () => any }> {
 const MONEY = '#,##0.00';
 const QTY = '#,##0.###';
 const PCT = '0.0';
+/** P2-0022: прогноз (030) — те же три колонки, что на экране: дата / «нет темпа» / «выполнено», Δ к финишу (дн.), отклонение (план % − факт %, п.п.). */
+const FC_HEAD = ['Прогноз окончания по объёму', 'Δ к финишу, дн.', '% отклонения (план − факт, п.п.)'];
+const fcCells = (x: ForecastNumbers): (string | number | null)[] => [forecastView(x, { yellow: 0, red: 0 }).finish, x.delta_days, x.dev_pp];
 const bold = { bold: true };
 
 /** Имя файла: «Сводка <проект> <дата>.xlsx» без символов, запрещённых в именах файлов. */
@@ -36,7 +40,7 @@ export async function buildSummaryXlsx(x: SummaryExport): Promise<Uint8Array> {
 
   // Лист «Сводка»
   const s = wb.addWorksheet('Сводка');
-  s.columns = [{ width: 36 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 18 }, { width: 18 }, { width: 10 }];
+  s.columns = [{ width: 36 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 18 }, { width: 18 }, { width: 10 }, { width: 18 }, { width: 16 }, { width: 18 }];
   s.addRow([`Сводка: ${p.name}${p.code ? ` (${p.code})` : ''}`]).font = { bold: true, size: 14 };
   s.addRow([`Выгружено ${ruDate(x.today)}`]);
   s.addRow([]);
@@ -68,7 +72,7 @@ export async function buildSummaryXlsx(x: SummaryExport): Promise<Uint8Array> {
   kv('Позиций ВОР', p.positions);
   s.addRow([]);
   s.addRow(['Виды работ']).font = bold;
-  const wtHead = ['Вид работ', 'ЕИ', 'План', 'Факт', '%', 'Остаток', 'Факт за 7 дн.', 'Факт за 14 дн.'].concat(m ? ['План, ₽', 'Сделано, ₽', '% по ₽'] : []);
+  const wtHead = ['Вид работ', 'ЕИ', 'План', 'Факт', '%', 'Остаток', 'Факт за 7 дн.', 'Факт за 14 дн.'].concat(m ? ['План, ₽', 'Сделано, ₽', '% по ₽'] : [], FC_HEAD);
   s.addRow(wtHead).font = bold;
   for (const w of x.workTypes) {
     const units = w.units.length ? w.units : [null];
@@ -76,7 +80,8 @@ export async function buildSummaryXlsx(x: SummaryExport): Promise<Uint8Array> {
       const row = [w.work_name, u ? u.unit : '', u ? u.plan : null, u ? u.fact : null, u ? u.pct : null, u ? u.rest : null, u ? u.fact7 : null, u ? u.fact14 : null];
       // ₽ вида работ — один раз, в первой строке (разные ЕИ — отдельные строки, деньги не дублируются)
       const money = m ? (i === 0 ? [w.plan_money, w.done_money, w.pct_money] : [null, null, null]) : [];
-      const r = s.addRow([...row, ...money]);
+      const r = s.addRow([...row, ...money, ...(u ? fcCells(u) : [null, null, null])]);
+      r.getCell(row.length + money.length + 3).numFmt = PCT;
       [3, 4, 6, 7, 8].forEach((c) => { r.getCell(c).numFmt = QTY; });
       r.getCell(5).numFmt = PCT;
       if (m) { r.getCell(9).numFmt = MONEY; r.getCell(10).numFmt = MONEY; r.getCell(11).numFmt = PCT; }
@@ -85,10 +90,12 @@ export async function buildSummaryXlsx(x: SummaryExport): Promise<Uint8Array> {
 
   // Лист «Позиции»
   const ps = wb.addWorksheet('Позиции');
-  ps.columns = [{ width: 40 }, { width: 30 }, { width: 8 }, { width: 12 }, { width: 12 }, { width: 8 }, { width: 12 }, { width: 14 }, { width: 14 }, { width: 18 }];
-  ps.addRow(['Место', 'Вид работ', 'ЕИ', 'План', 'Факт', '%', 'Остаток', 'Факт за 7 дн.', 'Факт за 14 дн.', 'Ждёт подтверждения']).font = bold;
+  ps.columns = [{ width: 40 }, { width: 30 }, { width: 8 }, { width: 12 }, { width: 12 }, { width: 8 }, { width: 12 }, { width: 14 }, { width: 14 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 18 }];
+  ps.addRow(['Место', 'Вид работ', 'ЕИ', 'План', 'Факт', '%', 'Остаток', 'Факт за 7 дн.', 'Факт за 14 дн.', 'Ждёт подтверждения', ...FC_HEAD]).font = bold;
   for (const q of x.positions) {
-    const r = ps.addRow([q.location_path, q.work_name, q.unit_code, q.plan_qty, q.fact_qty, q.pct, q.rest_qty, q.fact7, q.fact14, q.pending_qty]);
+    const r = ps.addRow([q.location_path, q.work_name, q.unit_code, q.plan_qty, q.fact_qty, q.pct, q.rest_qty, q.fact7, q.fact14, q.pending_qty,
+      ...fcCells({ plan: q.plan_qty, fact: q.fact_qty, forecast_finish: q.forecast_finish, delta_days: q.delta_days, dev_pp: q.dev_pp })]);
+    r.getCell(13).numFmt = PCT;
     [4, 5, 7, 8, 9, 10].forEach((c) => { r.getCell(c).numFmt = QTY; });
     r.getCell(6).numFmt = PCT;
   }

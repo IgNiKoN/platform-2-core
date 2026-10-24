@@ -4,15 +4,16 @@
  * выбор колонок, личные виды и ссылка, «Выбрано: N», боковая карточка с историей факта и шагами.
  * Данные — те же функции, что «Сводка» и «Факт» (pf_summary_positions, pf_fact_positions, pf_fact_history, срок — pf_summary_portfolio);
  * статус и «просрочено» — одна функция positionStatus (summary/model.ts). Права проверяет сервер.
+ * P2-0022: в карточке — блок «Прогноз» (числа — с сервера, 030: прогноз окончания, план % на сегодня, отклонение; пороги — объекта).
  */
 import { createElement as h, useEffect, useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { HistoryFeed, RegistryTable, SideCard, StatusBadge, Steps, queryOf, queryToState, registryRows, syncRegistryAddress } from '../../../platform/ui/index.ts';
+import { HistoryFeed, KpiTile, RegistryTable, SideCard, StatusBadge, Steps, queryOf, queryToState, registryRows, syncRegistryAddress } from '../../../platform/ui/index.ts';
 import type { RegistryColumn, RegistryFilter, RegistryState, Status } from '../../../platform/ui/index.ts';
 import type { SummaryApi } from '../summary/summary.service.ts';
 import type { FactApi, FactHistoryRow } from '../fact/fact.service.ts';
 import { historyItem } from '../fact/factStatus.ts';
-import { POSITION_STATE_LABEL, positionStatus } from '../summary/model.ts';
+import { forecastView, POSITION_STATE_LABEL, positionStatus } from '../summary/model.ts';
 import type { PositionState, PositionStatus } from '../summary/model.ts';
 import { fmtPct, fmtQty, todayMoscow } from '../fact/fact.ts';
 import { ruDate } from '../ks2/form.ts';
@@ -21,6 +22,8 @@ export interface PositionRow {
   id: string; corp: string; place: string; placeType: string; work: string; unit: string;
   plan: number; fact: number; pct: number | null; rest: number; fact14: number; pendingQty: number; pendingCount: number;
   rejectedNote: string | null; st: PositionStatus;
+  /** Прогноз с сервера (030) и пороги светофора объекта. */
+  forecast: string | null; deltaDays: number | null; planPctToday: number | null; devPp: number | null; th: { yellow: number; red: number };
 }
 
 export const POSITIONS_LINK = '#/planfact/vor/positions';
@@ -34,7 +37,9 @@ export async function loadPositionRows(summary: SummaryApi, fact: FactApi, proje
   const [sp, fp, pf] = await Promise.all([summary.positions(projectId, null), fact.positions(projectId, null), summary.portfolio()]);
   if (!sp.ok) return { ok: false, message: sp.message };
   const fx = new Map((fp.ok ? fp.value : []).map((f) => [f.position_id, f]));
-  const finish = pf.ok ? pf.value.find((p) => p.project_id === projectId)?.planned_finish || null : null;
+  const pr = pf.ok ? pf.value.find((p) => p.project_id === projectId) : undefined;
+  const finish = pr?.planned_finish || null;
+  const th = { yellow: pr ? pr.light_yellow_pp : 3, red: pr ? pr.light_red_pp : 10 };
   const rows = sp.value.map((p): PositionRow => {
     const f = fx.get(p.position_id);
     const pendingCount = f ? f.pending_count : 0;
@@ -42,6 +47,7 @@ export async function loadPositionRows(summary: SummaryApi, fact: FactApi, proje
     return {
       id: p.position_id, corp: corpOf(p.location_path), place: p.location_path, placeType: f ? f.location_type : '', work: p.work_name, unit: p.unit_code,
       plan: p.plan_qty, fact: p.fact_qty, pct: p.pct, rest: p.rest_qty, fact14: p.fact14, pendingQty: p.pending_qty, pendingCount, rejectedNote,
+      forecast: p.forecast_finish, deltaDays: p.delta_days, planPctToday: p.plan_pct_today, devPp: p.dev_pp, th,
       st: positionStatus({ plan_qty: p.plan_qty, fact_qty: p.fact_qty, fact14: p.fact14, pending_qty: p.pending_qty, pending_count: pendingCount, last_rejected_note: rejectedNote }, { today, plannedFinish: finish }),
     };
   });
@@ -59,6 +65,7 @@ export const POSITION_COLUMNS: RegistryColumn<PositionRow>[] = [
   { id: 'rest', label: 'Остаток', value: (r) => r.rest, align: 'right', numFmt: QTY },
   { id: 'status', label: 'Статус', value: (r) => r.st.label + (r.st.overdue && r.st.state !== 'done' ? ', просрочено' : ''), render: (r) => statusCell(r.st) },
   { id: 'pace', label: 'Темп к сроку', value: (r) => r.st.paceText, hidden: true },
+  { id: 'forecast', label: 'Прогноз окончания', value: (r) => forecastView(fcOf(r), r.th).finish, hidden: true },
   { id: 'fact14', label: 'Факт за 14 дн.', value: (r) => r.fact14, align: 'right', hidden: true, numFmt: QTY },
   { id: 'pending', label: 'Ждёт РП', value: (r) => r.pendingQty, align: 'right', hidden: true, numFmt: QTY },
   { id: 'corp', label: 'Корпус', value: (r) => r.corp, hidden: true },
@@ -101,9 +108,29 @@ function PositionCard(props: { fact: FactApi; row: PositionRow; index: number; t
       h('dt', null, 'Темп к сроку'), h('dd', { 'data-testid': 'vr-card-pace' }, st.paceText),
       row.rejectedNote ? h('dt', null, 'Последний отказ РП') : null, row.rejectedNote ? h('dd', null, row.rejectedNote) : null),
     h('div', { className: 'vr-status' }, statusCell(st)),
+    h(ForecastBlock, { row }),
     h('h4', { className: 'vr-h' }, 'История'),
     error ? h('div', { className: 'pf-error', role: 'alert' }, error) : null,
     hist === null ? h('div', { className: 'pf-muted' }, 'Загрузка…') : h(HistoryFeed, { items: hist.map((e) => historyItem(e, row.unit)), empty: 'Факта по позиции ещё нет' }));
+}
+
+const fcOf = (r: PositionRow) => ({ plan: r.plan, fact: r.fact, forecast_finish: r.forecast, delta_days: r.deltaDays, dev_pp: r.devPp });
+
+/** Блок «Прогноз» карточки позиции (P2-0022): прогноз окончания (позже финиша объекта — красная рамка), план % на сегодня, факт %,
+ *  отклонение (заливка по порогам объекта), факт за 14 дней (темп прогноза). Числа — с сервера. */
+function ForecastBlock(props: { row: PositionRow }): ReactElement {
+  const { row } = props;
+  const v = forecastView(fcOf(row), row.th);
+  return h('div', { className: 'vr-fc', 'data-testid': 'vr-forecast' },
+    h('h4', { className: 'vr-h' }, 'Прогноз'),
+    h('div', { className: 'vr-fc-grid' },
+      h(KpiTile, { label: 'Прогноз окончания', value: v.finish, tone: v.late ? 'red' : undefined, metric: 'forecast',
+        hint: row.deltaDays === null ? (row.forecast && v.finish !== 'выполнено' ? 'нет срока объекта' : undefined)
+          : row.deltaDays > 0 ? `на ${row.deltaDays} дн. позже финиша объекта` : row.deltaDays < 0 ? `на ${-row.deltaDays} дн. раньше финиша объекта` : 'точно к финишу объекта' }),
+      h(KpiTile, { label: 'План на сегодня', value: row.planPctToday === null ? '—' : fmtPct(row.planPctToday), metric: 'plan_pct', hint: row.planPctToday === null ? 'нет дат объекта' : undefined }),
+      h(KpiTile, { label: 'Факт', value: row.pct === null ? '—' : fmtPct(row.pct), metric: 'fact_pct' }),
+      h(KpiTile, { label: 'Отклонение', value: v.dev, tone: v.devTone || undefined, metric: 'dev', hint: 'план % − факт %' }),
+      h(KpiTile, { label: 'Темп за 14 дней', value: `${fmtQty(row.fact14)} ${row.unit}`, metric: 'pace14', hint: v.noPace ? 'нет темпа — прогноз не считается' : 'факт за 14 дней' })));
 }
 
 export interface PositionsRegistryProps {
@@ -167,4 +194,6 @@ export const POSITIONS_REGISTRY_CSS = `
 .vr-nums dt{color:var(--text-muted)}
 .vr-nums dd{margin:0;overflow-wrap:anywhere}
 .vr-h{margin:4px 0 0;font-size:14px}
+.vr-fc{display:flex;flex-direction:column;gap:8px}
+.vr-fc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 `;
