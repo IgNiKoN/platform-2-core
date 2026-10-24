@@ -204,6 +204,33 @@ describe('pullPagedByIds — P2-0024 параллельно и крупными 
     assert.equal(throttled, 1);
   });
 
+  it('доработка 1: 503 сразу на двух одновременных запросах — оба повторяются, всё дошло, сообщение одно', async () => {
+    const { ids, items } = bigDataset();
+    const srv = slowServer(items, { delayMs: 5 });
+    let n = 0, throttled = 0, inAfter = 0, maxAfterParallel = 0;
+    const failOn = new Set([2, 3]);
+    const fetchPage = async (...a) => {
+      const k = ++n;
+      if (failOn.has(k)) { await new Promise(r => setTimeout(r, 5)); return { error: { message: 'Service Unavailable' }, status: 503 }; }
+      // запросы, начатые ПОСЛЕ сигнала перегрузки (уже отправленный раньше — в пути, его не отозвать)
+      if (throttled) { inAfter++; maxAfterParallel = Math.max(maxAfterParallel, inAfter); try { return await srv.fetchPage(...a); } finally { inAfter--; } }
+      return srv.fetchPage(...a);
+    };
+    const got = await pullPagedByIds(fetchPage, ids, { ...OPTS, onThrottle: () => throttled++ });
+    assert.equal(got.length, 53325);
+    assert.equal(new Set(got.map(r => r.id)).size, 53325);
+    assert.equal(throttled, 1);
+    assert.ok(maxAfterParallel === 1, 'после перегрузки — по одному: ' + maxAfterParallel);
+  });
+
+  it('доработка 1: сервер без count и лимит 1000 при pageSize 5000 — без потерь (до пустой страницы)', async () => {
+    const { ids, items } = bigDataset();
+    const si = slowServer(items, { maxRows: 1000, withCount: false });
+    const got = await pullPagedByIds(si.fetchPage, ids, OPTS);
+    assert.equal(got.length, 53325);
+    assert.equal(new Set(got.map(r => r.id)).size, 53325);
+  });
+
   it('повторная 429 той же пачки → отказ всей загрузки', async () => {
     const si = slowServer([{ id: 'a1', inspection_id: 'a' }], { failAt: () => ({ status: 429, message: '429' }) });
     await assert.rejects(pullPagedByIds(si.fetchPage, ['a', 'b', 'c'], { batchSize: 1, concurrency: 3 }));

@@ -43,7 +43,8 @@ export function isThrottleError(err) {
  * число строк; если сервер отдал общее число (`count`), лишний пустой запрос не делается, а
  * обрезка ответа по лимиту сервера (max-rows) не теряет хвост даже при pageSize больше лимита.
  * Ошибка любой пачки → отказ всей загрузки (частично «загруженных» проверок не бывает).
- * 429/502/503/504 при параллельной загрузке → одна повторная попытка этой пачки, дальше по одной.
+ * 429/502/503/504 у запроса, начатого параллельно, → одна повторная попытка этой пачки (повторы —
+ * по одному), дальше по одной.
  * @param {(ids: string[], from: number, to: number, first: boolean) => Promise<{data?: any[], error?: any, count?: number|null}>} fetchPage
  *        запрос одной страницы (обязательно с устойчивой сортировкой, например по id);
  *        first=true — первая страница пачки (можно запросить общее число строк)
@@ -64,6 +65,8 @@ export async function pullPagedByIds(fetchPage, ids, opts) {
     let next = 0;
     let done = 0;
     let failed = null;
+    let throttled = false;
+    let retryQueue = Promise.resolve(); // повторы после «перегрузки» — строго по одному
 
     async function loadBatch(batch) {
         const rows = [];
@@ -81,22 +84,36 @@ export async function pullPagedByIds(fetchPage, ids, opts) {
             if (data.length) rows.push(...data);
             from += data.length;
             if (!data.length) break;
-            if (total != null ? rows.length >= total : data.length < pageSize) break;
+            // без общего числа (count) — до пустой страницы: короткая страница может быть обрезкой по лимиту сервера
+            if (total != null && rows.length >= total) break;
         }
         return rows;
+    }
+
+    // после «перегрузки» все новые запросы загрузки — через одну очередь (строго по одному)
+    function runBatch(batch) {
+        if (!throttled) return loadBatch(batch);
+        const p = retryQueue.then(() => (failed ? null : loadBatch(batch)));
+        retryQueue = p.catch(() => {});
+        return p;
     }
 
     async function worker() {
         while (!failed && next < batches.length) {
             const idx = next++;
+            // доработка 1 (ревью №1): «перегрузка» повторяется для КАЖДОГО запроса, начатого параллельно,
+            // даже если параллельность уже снизил соседний «работник» (502/503 приходят на несколько разом)
+            const wasParallel = concurrency > 1;
             try {
-                results[idx] = await loadBatch(batches[idx]);
+                results[idx] = await runBatch(batches[idx]);
+                if (failed) return;
             } catch (err) {
                 if (failed) return;
-                if (concurrency > 1 && isThrottleError(err)) {
+                if (wasParallel && isThrottleError(err)) {
                     concurrency = 1;
-                    if (o.onThrottle) o.onThrottle(err);
-                    try { results[idx] = await loadBatch(batches[idx]); } catch (err2) { failed = failed || err2; return; }
+                    if (!throttled) { throttled = true; if (o.onThrottle) o.onThrottle(err); }
+                    try { results[idx] = await runBatch(batches[idx]); } catch (err2) { failed = failed || err2; return; }
+                    if (failed) return;
                 } else {
                     failed = err;
                     return;
