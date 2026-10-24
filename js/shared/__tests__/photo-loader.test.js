@@ -244,7 +244,7 @@ describe('PhotoManager', () => {
 
   before(async () => {
     globalThis.window = globalThis;
-    globalThis.STORES = { PHOTOS: 'app_photos' };
+    globalThis.STORES = { PHOTOS: 'app_photos', STATE: 'app_state' };
     globalThis.dbGet = async (_s, id) => db.get(id) || null;
     globalThis.dbPut = async (_s, rec) => { db.set(rec.id, rec); };
     globalThis.dbDelete = async (_s, id) => { db.delete(id); };
@@ -331,6 +331,15 @@ describe('PhotoManager', () => {
     // уход в фон: остаются только те, что на странице
     PM.sweepUnusedUrls({ force: true });
     assert.equal(PM.urlCount(), pageImgs.length);
+  });
+
+  it('этап 2: ссылки фото черновика (память + сохранённая сессия) не считаются мусором', async () => {
+    globalThis.AuditState = { photos: { item1: ['local://a1', 'local://a2'], def_9: 'local://d' } };
+    db.set('current_session', { id: 'current_session', key: 'current_session', photos: { item2: ['local://s1'], item3: 'https://s/x.jpg' } });
+    const refs = await PM.collectDraftPhotoRefs();
+    delete globalThis.AuditState;
+    for (const r of ['local://a1', 'local://a2', 'local://d', 'local://s1', 'https://s/x.jpg']) assert.ok(refs.has(r), r);
+    assert.ok(![...refs].some(r => r.startsWith('data:')));
   });
 
   it('демо-режим: адреса не отзываются (база на устройстве отключена, фото только в памяти)', async () => {

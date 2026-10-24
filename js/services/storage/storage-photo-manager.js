@@ -518,6 +518,28 @@ const PhotoManager = {
         this._touchedAt = {};
     },
 
+    /**
+     * P2-0023: ссылки на фото черновика проверки (память + сохранённая сессия).
+     * Их не должна удалять чистка «осиротевших» фото: черновик ещё не в истории.
+     * @returns {Promise<Set<string>>}
+     */
+    async collectDraftPhotoRefs() {
+        const out = new Set();
+        const add = (v) => {
+            if (!v) return;
+            if (Array.isArray(v)) { v.forEach(add); return; }
+            if (typeof v === 'object') { Object.values(v).forEach(add); return; }
+            const s = String(v);
+            if (s.startsWith('local://') || s.startsWith('http')) out.add(s);
+        };
+        try { add(window.AuditState ? window.AuditState.photos : window.photos); } catch (_e) { /* ignore */ }
+        try {
+            const sess = STORES.STATE ? await dbGet(STORES.STATE, 'current_session') : null;
+            if (sess) add(sess.photos);
+        } catch (_e) { /* ignore */ }
+        return out;
+    },
+
     /** Запись-псевдоним local:// → облачный адрес (без data, ~200 байт). */
     _aliasRecord(localId, cloudUrl, prev) {
         const now = new Date().toISOString();

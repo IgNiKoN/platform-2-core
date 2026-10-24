@@ -4005,6 +4005,10 @@ window.triggerSync = async function (mode = 'silent') {
                 if (typeof window.rbi_practicesData !== 'undefined') extractFiles(window.rbi_practicesData);
                 if (typeof window.rbi_meetingsData !== 'undefined') extractFiles(window.rbi_meetingsData);
                 if (typeof reportsArray !== 'undefined') extractFiles(reportsArray);
+                // P2-0023: фото черновика текущей проверки ещё не в истории — не мусор.
+                if (typeof PhotoManager !== 'undefined' && typeof PhotoManager.collectDraftPhotoRefs === 'function') {
+                    (await PhotoManager.collectDraftPhotoRefs()).forEach((r) => usedPhotos.add(r));
+                }
 
                 let orphanPhotosDeleted = 0;
                 // Лёгкие дескрипторы (только id) — dbDelete идёт после закрытия курсора,
