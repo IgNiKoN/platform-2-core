@@ -1063,8 +1063,20 @@ window.triggerSync = async function (mode = 'silent') {
 
             // RBI FIX: не грузим все inspection_items/photos одним огромным GET-запросом.
             // Иначе URL становится слишком длинным, API может вернуть 502 Bad Gateway.
-            const cloudItems = await rbiPullRowsByInspectionIds('rbi_inspection_items', ids, 40);
-            const cloudPhotos = await rbiPullRowsByInspectionIds('rbi_inspection_photos', ids, 40);
+            // P2-0024: пачки по 200, до 3 запросов одновременно, страница до 5000 строк (хвост при лимите
+            // сервера не теряется — см. pullPagedByIds); прогресс в процентах для большой загрузки.
+            const _pol = window.RbiSyncPullPolicy || {};
+            const _bs = _pol.PULL_BATCH_SIZE || 40;
+            let _conc = _pol.PULL_CONCURRENCY || 1;
+            const _onThrottle = () => { _conc = 1; }; // сервер перегружен — до конца загрузки по одному запросу
+            const _batchesPerTable = Math.ceil(ids.length / _bs);
+            const _pct = (offset) => (doneN, total) => {
+                if (!_syncProg() || _batchesPerTable < 3 || typeof _syncProg().setDetail !== 'function') return;
+                _syncProg().setDetail('Загрузка истории: ' + Math.min(99, Math.round(((offset + doneN) / (2 * total)) * 100)) + '%');
+            };
+            const cloudItems = await rbiPullRowsByInspectionIds('rbi_inspection_items', ids, _bs, 5000, { concurrency: _conc, onBatchDone: _pct(0), onThrottle: _onThrottle });
+            const cloudPhotos = await rbiPullRowsByInspectionIds('rbi_inspection_photos', ids, _bs, 5000, { concurrency: _conc, onBatchDone: _pct(_batchesPerTable), onThrottle: _onThrottle });
+            if (_syncProg() && typeof _syncProg().setDetail === 'function') _syncProg().setDetail(null);
 
             const itemsMap = {};
             const photosMap = {};
@@ -1109,23 +1121,36 @@ window.triggerSync = async function (mode = 'silent') {
                 }
             }
 
+            // P2-0024: при большой загрузке локальные записи читаются одной выборкой, а не dbGet на каждую.
+            const _localLookup = (cloudInspections.length > 50 && typeof dbGetAll === 'function' && _pol.indexLocalHistory)
+                ? _pol.indexLocalHistory(await dbGetAll('app_history') || [])
+                : null;
+
             for (const h of cloudInspections) {
                 // --- ЗАЩИТА ОТ ПЕРЕЗАПИСИ УДАЛЕННЫХ ИЛИ ОФЛАЙН ИЗМЕНЕНИЙ ---
-                let existingLocal = typeof dbGet === 'function' ? await dbGet('app_history', String(h.id)) : null;
+                let existingLocal = null;
+                if (_localLookup) {
+                    const hit = _localLookup(h.id);
+                    if (hit) {
+                        existingLocal = hit.record;
+                        // Авто-лечение дубликатов (старый ID в виде числа)
+                        if (hit.numericDup) await dbDelete('app_history', Number(h.id));
+                    }
+                } else {
+                    existingLocal = typeof dbGet === 'function' ? await dbGet('app_history', String(h.id)) : null;
 
-                // Авто-лечение дубликатов (если в базе телефона остался старый ID в виде числа)
-                if (!existingLocal && !isNaN(Number(h.id))) {
-                    const numExisting = await dbGet('app_history', Number(h.id));
-                    if (numExisting) {
-                        existingLocal = numExisting;
-                        await dbDelete('app_history', Number(h.id)); // Стираем числовой дубль
+                    // Авто-лечение дубликатов (если в базе телефона остался старый ID в виде числа)
+                    if (!existingLocal && !isNaN(Number(h.id))) {
+                        const numExisting = await dbGet('app_history', Number(h.id));
+                        if (numExisting) {
+                            existingLocal = numExisting;
+                            await dbDelete('app_history', Number(h.id)); // Стираем числовой дубль
+                        }
                     }
                 }
 
-                const localTime = existingLocal ? new Date(existingLocal.updatedAt || existingLocal._deletedAt || 0).getTime() : 0;
-                const cloudTime = new Date(h.updated_at || 0).getTime();
-
-                if (existingLocal && localTime >= cloudTime) {
+                if (_pol.keepLocalOverCloud ? _pol.keepLocalOverCloud(existingLocal, h)
+                    : (existingLocal && new Date(existingLocal.updatedAt || existingLocal._deletedAt || 0).getTime() >= new Date(h.updated_at || 0).getTime())) {
                     // Наша локальная версия новее (например, мы её только что удалили). Пропускаем облачную!
                     continue;
                 }

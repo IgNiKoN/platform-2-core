@@ -7,7 +7,12 @@ import {
   PULL_OVERLAP_MS,
   pullSinceWithOverlap,
   pullPagedByIds,
-  clientScopeMode
+  clientScopeMode,
+  PULL_BATCH_SIZE,
+  PULL_CONCURRENCY,
+  isThrottleError,
+  indexLocalHistory,
+  keepLocalOverCloud
 } from '../../services/sync/sync-pull.policy.js';
 
 // Подставной сервер: строки отсортированы по id, ответ обрезается по лимиту строк (как PostgREST max-rows).
@@ -71,6 +76,162 @@ describe('pullPagedByIds', () => {
     const srv = fakeServer(rows, 1000);
     const got = await pullPagedByIds(srv.fetchPage, ['insp0000', 'insp0000', 'insp0001'], {});
     assert.equal(got.length, 6);
+  });
+});
+
+// P2-0024: подставной сервер с задержкой, общим числом строк (count) и учётом одновременных запросов.
+function slowServer(rows, { maxRows = Infinity, delayMs = 0, withCount = true, failAt = null } = {}) {
+  const byInsp = new Map();
+  for (const r of rows) {
+    if (!byInsp.has(r.inspection_id)) byInsp.set(r.inspection_id, []);
+    byInsp.get(r.inspection_id).push(r);
+  }
+  for (const list of byInsp.values()) list.sort((a, b) => (a.id < b.id ? -1 : 1));
+  const st = { calls: 0, inFlight: 0, maxInFlight: 0 };
+  const fetchPage = async (ids, from, to, first) => {
+    st.calls++;
+    const n = st.calls;
+    st.inFlight++;
+    st.maxInFlight = Math.max(st.maxInFlight, st.inFlight);
+    try {
+      if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+      if (typeof failAt === 'function') { const e = failAt(n); if (e) return { error: e }; }
+      const matched = [];
+      for (const id of [...ids].sort()) matched.push(...(byInsp.get(id) || []));
+      matched.sort((a, b) => (a.id < b.id ? -1 : 1));
+      const end = Math.min(to + 1, from + maxRows);
+      return { data: matched.slice(from, end), count: withCount && first ? matched.length : null };
+    } finally {
+      st.inFlight--;
+    }
+  };
+  return { fetchPage, st };
+}
+
+// 3000 проверок / 53 325 пунктов / 3864 фото — как в замерах (specs/2026-10-24-quality-perf-findings.md).
+function bigDataset() {
+  const ids = Array.from({ length: 3000 }, (_, i) => String(1729000000000 + i * 7));
+  const items = [];
+  for (let k = 0; k < 53325; k++) {
+    const insp = ids[(k * 7919) % 3000];
+    items.push({ id: `${insp}_i${String(k).padStart(6, '0')}`, inspection_id: insp });
+  }
+  const photos = [];
+  for (let k = 0; k < 3864; k++) {
+    const insp = ids[(k * 104729) % 1200];
+    photos.push({ id: `${insp}_p${String(k).padStart(5, '0')}`, inspection_id: insp });
+  }
+  return { ids, items, photos };
+}
+
+describe('pullPagedByIds — P2-0024 параллельно и крупными пачками', () => {
+  const OPTS = { batchSize: PULL_BATCH_SIZE, pageSize: 5000, concurrency: PULL_CONCURRENCY };
+
+  it('настройки: пачка 150–200, до 3 одновременно', () => {
+    assert.ok(PULL_BATCH_SIZE >= 150 && PULL_BATCH_SIZE <= 200);
+    assert.equal(PULL_CONCURRENCY, 3);
+  });
+
+  it('3000 / 53 325 / 3864 при 200 мс на запрос: всё дошло, ≤ 40 запросов, ≤ 15 с, не больше 3 одновременно', async () => {
+    const { ids, items, photos } = bigDataset();
+    const insPages = Math.ceil(3000 / 500) + 1; // проверки: rbiPullAllRows по 500 (+ последняя короткая/пустая)
+    const t0 = Date.now();
+    const si = slowServer(items, { delayMs: 200 });
+    const gotItems = await pullPagedByIds(si.fetchPage, ids, OPTS);
+    const sp = slowServer(photos, { delayMs: 200 });
+    const gotPhotos = await pullPagedByIds(sp.fetchPage, ids, OPTS);
+    const netMs = Date.now() - t0 + insPages * 200; // проверки идут последовательно до пунктов
+    assert.equal(gotItems.length, 53325);
+    assert.equal(new Set(gotItems.map(r => r.id)).size, 53325, 'без дублей');
+    assert.equal(gotPhotos.length, 3864);
+    assert.equal(new Set(gotPhotos.map(r => r.id)).size, 3864);
+    const requests = insPages + si.st.calls + sp.st.calls;
+    assert.ok(requests <= 40, `запросов ${requests}`);
+    assert.ok(netMs <= 15000, `время ${netMs} мс`);
+    assert.ok(si.st.maxInFlight <= 3 && sp.st.maxInFlight <= 3);
+    assert.equal(si.st.maxInFlight, 3, 'действительно параллельно');
+    console.log(`  [замер] без лимита сервера: запросов ${requests}, сеть ≈ ${netMs} мс`);
+  });
+
+  it('лимит сервера 1000 строк при pageSize 5000 — хвост не теряется (по count)', async () => {
+    const { ids, items } = bigDataset();
+    const si = slowServer(items, { maxRows: 1000 });
+    const got = await pullPagedByIds(si.fetchPage, ids, OPTS);
+    assert.equal(got.length, 53325);
+    assert.equal(new Set(got.map(r => r.id)).size, 53325);
+    console.log(`  [замер] лимит 1000: запросов на пункты ${si.st.calls}`);
+  });
+
+  it('сервер без count и с лимитом меньше страницы — догружает до пустой страницы, без потерь', async () => {
+    const { ids, items } = bigDataset();
+    const si = slowServer(items, { maxRows: 1000, withCount: false });
+    const got = await pullPagedByIds(si.fetchPage, ids.slice(0, 400), { ...OPTS, pageSize: 1000 });
+    const expected = items.filter(r => ids.slice(0, 400).includes(r.inspection_id)).length;
+    assert.equal(got.length, expected);
+  });
+
+  it('порядок результата = порядок пачек, как при последовательной загрузке', async () => {
+    const { ids, items } = bigDataset();
+    const par = await pullPagedByIds(slowServer(items, { delayMs: 3 }).fetchPage, ids, OPTS);
+    const seq = await pullPagedByIds(slowServer(items).fetchPage, ids, { ...OPTS, concurrency: 1 });
+    assert.deepEqual(par.map(r => r.id), seq.map(r => r.id));
+  });
+
+  it('ошибка одной пачки → отказ всей загрузки (без частичного результата)', async () => {
+    const { ids, items } = bigDataset();
+    const si = slowServer(items, { delayMs: 5, failAt: (n) => (n === 4 ? new Error('connection reset') : null) });
+    await assert.rejects(pullPagedByIds(si.fetchPage, ids, OPTS), /connection reset/);
+    assert.ok(si.st.calls < 15 + 5, 'после ошибки новые пачки не запрашиваются');
+  });
+
+  it('429/502 → одна повторная попытка, дальше по одному запросу; всё дошло', async () => {
+    const { ids, items } = bigDataset();
+    let throttled = 0;
+    const si = slowServer(items, { delayMs: 5, failAt: (n) => (n === 2 ? Object.assign(new Error('Too Many'), { status: 429 }) : null) });
+    const got = await pullPagedByIds(si.fetchPage, ids, { ...OPTS, onThrottle: () => throttled++ });
+    assert.equal(got.length, 53325);
+    assert.equal(throttled, 1);
+    assert.ok(isThrottleError({ status: 502 }) && isThrottleError(new Error('HTTP 503')) && !isThrottleError(new Error('boom')));
+  });
+
+  it('429 как у supabase-js (код в ответе, не в ошибке) тоже распознаётся', async () => {
+    const { ids, items } = bigDataset();
+    const srv = slowServer(items);
+    let n = 0, throttled = 0;
+    const fetchPage = async (...a) => (++n === 3 ? { error: { message: 'stand fail', code: '' }, status: 429 } : srv.fetchPage(...a));
+    const got = await pullPagedByIds(fetchPage, ids, { ...OPTS, onThrottle: () => throttled++ });
+    assert.equal(got.length, 53325);
+    assert.equal(throttled, 1);
+  });
+
+  it('повторная 429 той же пачки → отказ всей загрузки', async () => {
+    const si = slowServer([{ id: 'a1', inspection_id: 'a' }], { failAt: () => ({ status: 429, message: '429' }) });
+    await assert.rejects(pullPagedByIds(si.fetchPage, ['a', 'b', 'c'], { batchSize: 1, concurrency: 3 }));
+  });
+
+  it('прогресс: onBatchDone от 1 до числа пачек', async () => {
+    const { ids, items } = bigDataset();
+    const seen = [];
+    await pullPagedByIds(slowServer(items).fetchPage, ids, { ...OPTS, onBatchDone: (d, t) => seen.push([d, t]) });
+    assert.equal(seen.length, 15);
+    assert.deepEqual(seen[seen.length - 1], [15, 15]);
+  });
+});
+
+describe('indexLocalHistory / keepLocalOverCloud — одна выборка вместо dbGet на каждую', () => {
+  it('строковый id главнее, числовой — дубль на удаление, нет — null', () => {
+    const look = indexLocalHistory([{ id: '5', v: 's' }, { id: 5, v: 'n' }, { id: 7, v: 'n7' }, null]);
+    assert.deepEqual(look('5'), { record: { id: '5', v: 's' }, numericDup: false });
+    assert.deepEqual(look(7), { record: { id: 7, v: 'n7' }, numericDup: true });
+    assert.equal(look('9'), null);
+  });
+  it('неотправленная локальная правка (новее облака) не затирается; облако новее — берём облако', () => {
+    const local = { id: '1', updatedAt: '2026-10-24T12:00:00Z', syncStatus: 'pending' };
+    assert.equal(keepLocalOverCloud(local, { updated_at: '2026-10-24T11:00:00Z' }), true);
+    assert.equal(keepLocalOverCloud(local, { updated_at: '2026-10-24T12:00:00Z' }), true);
+    assert.equal(keepLocalOverCloud(local, { updated_at: '2026-10-24T13:00:00Z' }), false);
+    assert.equal(keepLocalOverCloud({ id: '1', _deletedAt: '2026-10-24T12:00:00Z' }, { updated_at: '2026-10-24T11:00:00Z' }), true);
+    assert.equal(keepLocalOverCloud(null, { updated_at: 'x' }), false);
   });
 });
 

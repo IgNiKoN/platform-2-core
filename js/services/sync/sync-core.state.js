@@ -358,17 +358,29 @@ async function rbiPullAllRows(queryBuilderFn, pageSize = 500) {
 // === RBI FIX: безопасные батчи для pull/push и кэширования файлов ===
 // P2-0023: внутри пачки — постранично (order by id + range). Раньше один запрос на 40 проверок:
 // сервер обрезал ответ по лимиту строк (~1000), и пункты/фото хвоста молча терялись.
-async function rbiPullRowsByInspectionIds(tableName, ids, batchSize = 40, pageSize = 500) {
+// P2-0024: пачки по 200 проверок, до 3 запросов одновременно; первая страница пачки просит общее
+// число строк (count) — хвост не теряется при любом лимите сервера и без лишнего пустого запроса.
+async function rbiPullRowsByInspectionIds(tableName, ids, batchSize = 40, pageSize = 500, opts = {}) {
     try {
         return await pullPagedByIds(
-            (batchIds, from, to) => window.supabaseClient
+            (batchIds, from, to, first) => window.supabaseClient
                 .from(tableName)
-                .select('*')
+                .select('*', first ? { count: 'exact' } : undefined)
                 .in('inspection_id', batchIds)
                 .order('id', { ascending: true })
                 .range(from, to),
             ids,
-            { batchSize, pageSize, pause: () => new Promise(r => setTimeout(r, 20)) }
+            {
+                batchSize,
+                pageSize,
+                concurrency: opts.concurrency || 1,
+                onBatchDone: opts.onBatchDone,
+                onThrottle: (err) => {
+                    console.warn(`[Sync] Сервер перегружен (${tableName}), загрузка по одному запросу:`, err && (err.status || err.message));
+                    if (opts.onThrottle) opts.onThrottle(err);
+                },
+                pause: opts.concurrency > 1 ? null : () => new Promise(r => setTimeout(r, 20))
+            }
         );
     } catch (error) {
         console.error(`[Sync] Ошибка pull ${tableName}:`, error);
