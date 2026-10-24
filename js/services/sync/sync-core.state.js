@@ -1,4 +1,7 @@
-/* Файл: js/services/sync/sync-core.state.js — перенесено из js/sync.js без изменения логики */
+/* Файл: js/services/sync/sync-core.state.js — перенесено из js/sync.js; P2-0023: постраничная загрузка пунктов/фото */
+import { pullPagedByIds } from './sync-pull.policy.js';
+import './sync-retry.policy.js';
+import './sync-merge.policy.js'; // window.RbiSyncMergePolicy (P2-0023 этап 5) // window.RbiSyncRetryPolicy для sync-engine/sync-auth (P2-0023 этап 4)
 /* Файл: js/sync.js (Исправленная версия сборки объектов) */
 console.log("✅ SYNC.JS загружен браузером!");
 
@@ -353,29 +356,24 @@ async function rbiPullAllRows(queryBuilderFn, pageSize = 500) {
 }
 
 // === RBI FIX: безопасные батчи для pull/push и кэширования файлов ===
-async function rbiPullRowsByInspectionIds(tableName, ids, batchSize = 40) {
-    const result = [];
-    const cleanIds = Array.from(new Set((ids || []).map(x => String(x)).filter(Boolean)));
-
-    for (let i = 0; i < cleanIds.length; i += batchSize) {
-        const batchIds = cleanIds.slice(i, i + batchSize);
-
-        const { data, error } = await window.supabaseClient
-            .from(tableName)
-            .select('*')
-            .in('inspection_id', batchIds);
-
-        if (error) {
-            console.error(`[Sync] Ошибка pull ${tableName}, batch ${i}-${i + batchIds.length}:`, error);
-            throw error;
-        }
-
-        if (Array.isArray(data)) result.push(...data);
-
-        await new Promise(r => setTimeout(r, 20));
+// P2-0023: внутри пачки — постранично (order by id + range). Раньше один запрос на 40 проверок:
+// сервер обрезал ответ по лимиту строк (~1000), и пункты/фото хвоста молча терялись.
+async function rbiPullRowsByInspectionIds(tableName, ids, batchSize = 40, pageSize = 500) {
+    try {
+        return await pullPagedByIds(
+            (batchIds, from, to) => window.supabaseClient
+                .from(tableName)
+                .select('*')
+                .in('inspection_id', batchIds)
+                .order('id', { ascending: true })
+                .range(from, to),
+            ids,
+            { batchSize, pageSize, pause: () => new Promise(r => setTimeout(r, 20)) }
+        );
+    } catch (error) {
+        console.error(`[Sync] Ошибка pull ${tableName}:`, error);
+        throw error;
     }
-
-    return result;
 }
 
 async function rbiUpsertBatches(tableName, rows, batchSize = 500, options = { onConflict: 'id' }) {

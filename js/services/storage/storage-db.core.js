@@ -282,6 +282,22 @@ function normalizeSystemKeys(obj) {
     return obj;
 }
 /**
+ * Ошибка прерванной транзакции: QuotaExceededError, если браузер так сказал
+ * (или так выглядит), иначе AbortError. Вызывающий код уже умеет чистить место по Quota.
+ */
+function rbiTxAbortError(tx) {
+    const err = tx && tx.error;
+    if (err) return err;
+    try {
+        return new DOMException('Транзакция IndexedDB прервана (возможно, нет места)', 'AbortError');
+    } catch (_e) {
+        const e = new Error('Транзакция IndexedDB прервана');
+        e.name = 'AbortError';
+        return e;
+    }
+}
+
+/**
  * Базовые операции CRUD
  */
 async function dbPut(storeName, data, retryAfterCleanup = true) {
@@ -296,7 +312,11 @@ async function dbPut(storeName, data, retryAfterCleanup = true) {
             store.put(normalizedData);
 
             tx.oncomplete = () => resolve(true);
-            tx.onerror = () => reject(tx.error);
+            // tx.error бывает null (abort запроса всплывает в onerror раньше, чем tx.error заполнен).
+            tx.onerror = () => reject(rbiTxAbortError(tx));
+            // P2-0023: при нехватке места транзакция прерывается (abort) без onerror —
+            // раньше promise висел вечно и сохранение «молча» не заканчивалось.
+            tx.onabort = () => reject(rbiTxAbortError(tx));
         });
     } catch (e) {
         if (e && e.name === 'QuotaExceededError' && retryAfterCleanup) {
@@ -335,7 +355,8 @@ async function dbPutBatch(storeName, itemsArray, retryAfterCleanup = true) {
             });
 
             tx.oncomplete = () => resolve(true);
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = () => reject(rbiTxAbortError(tx));
+            tx.onabort = () => reject(rbiTxAbortError(tx));
         });
     } catch (e) {
         if (e && e.name === 'QuotaExceededError' && retryAfterCleanup) {

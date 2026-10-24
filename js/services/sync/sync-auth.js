@@ -182,6 +182,9 @@ window.initSync = async function () {
                 return;
             }
 
+            // P2-0023: после ошибки — пауза (2/5/10/30 мин), а не повтор каждую минуту.
+            if (!rbiAutoSyncAllowedNow()) return;
+
             if (needPush || needFullPull || needRemotePoll) {
                 window.triggerSync('silent');
             }
@@ -207,6 +210,7 @@ window.initSync = async function () {
                     console.log('[Sync] Пропуск resume-sync: идёт фоновый кэш файлов');
                     return;
                 }
+                if (!rbiAutoSyncAllowedNow()) return;
                 if (needPush || needFullPull || needRemotePoll) {
                     console.log('[Sync] Приложение активно. Проверяем обновления в облаке...');
                     window.triggerSync('silent');
@@ -218,3 +222,10 @@ window.initSync = async function () {
 
 window.isSyncEnabled = function () { return window.syncConfig.enabled; };
 
+// P2-0023: автосинхронизация (таймер/возврат) ждёт паузу после ошибки; ручная — нет.
+function rbiAutoSyncAllowedNow() {
+    const retryAfter = parseInt(localStorage.getItem('rbi_sync_retry_after') || '0', 10) || 0;
+    return window.RbiSyncRetryPolicy
+        ? window.RbiSyncRetryPolicy.autoSyncAllowed({ now: Date.now(), retryAfter })
+        : true;
+}
