@@ -1228,7 +1228,9 @@ window.triggerSync = async function (mode = 'silent') {
 
             if (typeof dbForEachCursor === 'function') {
                 const historyList = [];
-                await dbForEachCursor('app_history', (x) => { if (x && !x._deleted) historyList.push(x); });
+                // P2-0024: история в памяти — облегчённая (повторяющиеся строки общим экземпляром, содержимое то же)
+                const _lightH = window.RbiHistoryMemory ? window.RbiHistoryMemory.lighten : (x) => x;
+                await dbForEachCursor('app_history', (x) => { if (x && !x._deleted) historyList.push(_lightH(x)); });
                 window.contractorArray = historyList;
 
                 // <-- ОЧЕНЬ ВАЖНО: обновляем и эталоны
@@ -1236,7 +1238,8 @@ window.triggerSync = async function (mode = 'silent') {
                 await dbForEachCursor('rbi_etalon_acts', (x) => { if (x && !x._deleted) etalonsList.push(x); });
                 window.etalonActsArray = etalonsList;
             } else if (typeof dbGetAll === 'function') {
-                window.contractorArray = (await dbGetAll('app_history') || []).filter(x => !x._deleted);
+                window.contractorArray = (await dbGetAll('app_history') || []).filter(x => !x._deleted)
+                    .map(window.RbiHistoryMemory ? window.RbiHistoryMemory.lighten : (x) => x);
                 window.etalonActsArray = (await dbGetAll('rbi_etalon_acts') || []).filter(x => !x._deleted);
             }
 
@@ -2615,7 +2618,7 @@ window.triggerSync = async function (mode = 'silent') {
                     if (Array.isArray(contractorArray)) {
                         localHistoryToUpdate.forEach(updatedC => {
                             const idx = contractorArray.findIndex(x => String(x.id) === String(updatedC.id));
-                            if (idx >= 0) contractorArray[idx] = updatedC;
+                            if (idx >= 0) contractorArray[idx] = window.RbiHistoryMemory ? window.RbiHistoryMemory.lighten(updatedC) : updatedC;
                         });
                     }
                 }

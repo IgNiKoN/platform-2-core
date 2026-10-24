@@ -111,7 +111,8 @@
             etalonIdsToRemoveFromHistory.push(item.id);
             return;
           }
-          if (!item._deleted) historyList.push(item);
+          // P2-0024: повторяющиеся строки — общим экземпляром (содержимое то же, −16% памяти истории)
+          if (!item._deleted) historyList.push(window.RbiHistoryMemory ? window.RbiHistoryMemory.lighten(item) : item);
         });
         window.contractorArray = historyList;
 

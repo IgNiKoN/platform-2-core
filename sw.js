@@ -163,6 +163,7 @@ const urlsToCache = [
   './js/services/sync/sync-post-actions.js',
   './js/services/storage/storage-db.core.js',
   './js/services/storage/checklist-snapshot.utils.js',
+  './js/services/storage/history-memory.utils.js',
   './js/services/storage/storage-converters.utils.js',
   './js/services/storage/storage-cache-manager.js',
   './js/services/storage/storage-offline-cache.utils.js',

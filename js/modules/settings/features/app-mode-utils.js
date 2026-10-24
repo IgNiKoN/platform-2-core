@@ -388,7 +388,8 @@ async function applyContractorAliasToInspectionHistory(rawName, canonicalKey, di
     }
 
     if (updated > 0) {
-        window.contractorArray = (await _storage().getAll(_storage().stores().HISTORY) || []).filter(x => !x._deleted && !x.is_deleted);
+        window.contractorArray = (await _storage().getAll(_storage().stores().HISTORY) || []).filter(x => !x._deleted && !x.is_deleted)
+            .map(window.RbiHistoryMemory ? window.RbiHistoryMemory.lighten : (x) => x); // P2-0024
 
         localStorage.setItem('rbi_cloud_dirty', '1');
 
