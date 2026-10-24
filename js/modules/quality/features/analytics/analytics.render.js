@@ -2002,9 +2002,13 @@ export const AnalyticsRender = {
 
         // P2-0024: графики свёрнутых блоков «Динамика» и «Причины и Сравнение» рисуются при раскрытии
         // (раньше — всегда через 120 мс: ≈ 100 мс работы на каждую смену периода/фильтра на 3000 проверок).
-        const chartGen = _analyticsRenderGen;
+        // P2-0025 (ТД №165): блок уже не на экране (перерисован) — не рисуем; смена поколения без
+        // перерисовки больше не оставляет раскрытый блок пустым.
+        const dynamicsEl = document.getElementById('analytics-dynamics-details');
+        const causesEl = document.getElementById('analytics-causes-details');
+        const blockGone = (el) => !!el && !el.isConnected;
         const drawTrendChart = () => {
-            if (chartGen !== _analyticsRenderGen) return;
+            if (blockGone(dynamicsEl)) return;
             const trendContrsData = window.buildTrendChartData(data, 'contractorName', window.selectedChartFilters.contrs, window.trendGroupings.contrs);
             const ctxTrendC = document.getElementById('chart_eng_trend_contrs')?.getContext('2d');
             if (ctxTrendC) {
@@ -2013,7 +2017,7 @@ export const AnalyticsRender = {
             }
         };
         const drawCausesCharts = () => {
-            if (chartGen !== _analyticsRenderGen) return;
+            if (blockGone(causesEl)) return;
             let causesLabels = []; let causesData = [];
             Object.keys(causesCount).sort((a, b) => causesCount[b] - causesCount[a]).forEach(code => {
                 const name = _defectCauses().find(c => c.code === code)?.name || _t('quality.analytics.fallback.other_cause', 'Иное');
@@ -2025,7 +2029,7 @@ export const AnalyticsRender = {
                 _chartInstances()['chart_eng_causes'] = new Chart(ctxCauses, { type: 'bar', indexAxis: 'y', data: { labels: causesLabels, datasets: [{ data: causesData, backgroundColor: '#f59e0b', borderRadius: 4 }] }, options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
             }
 
-            if (chartGen !== _analyticsRenderGen) return;
+            if (blockGone(causesEl)) return;
             cList.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
             const compLabels = cList.map(c => c.name.length > 10 ? c.name.substring(0, 10) + '...' : c.name);
             const compData = cList.map(c => c.metrics.finalC);
@@ -2037,8 +2041,8 @@ export const AnalyticsRender = {
                 _chartInstances()['chart_eng_compare'] = new Chart(ctxComp, { type: 'bar', data: { labels: compLabels, datasets: [{ data: compData, backgroundColor: compColors, borderRadius: 4 }] }, options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } } });
             }
         };
-        _drawWhenOpen(document.getElementById('analytics-dynamics-details'), drawTrendChart);
-        _drawWhenOpen(document.getElementById('analytics-causes-details'), drawCausesCharts);
+        _drawWhenOpen(dynamicsEl, drawTrendChart);
+        _drawWhenOpen(causesEl, drawCausesCharts);
     },
 
 

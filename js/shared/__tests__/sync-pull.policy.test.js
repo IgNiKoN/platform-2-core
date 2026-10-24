@@ -7,6 +7,7 @@ import {
   PULL_OVERLAP_MS,
   pullSinceWithOverlap,
   pullPagedByIds,
+  useBulkLocalLookup,
   clientScopeMode,
   PULL_BATCH_SIZE,
   PULL_CONCURRENCY,
@@ -313,5 +314,71 @@ describe('P2-0025 этап 2: число запросов нового теле�
     assert.ok(table[4000] <= 40 && table[5000] <= 40);
     // меньше запросов при лимите 1000 нельзя: одних пунктов 53 325 → не меньше 54 страниц
     assert.ok(table[1000] >= Math.ceil(53325 / 1000));
+  });
+});
+
+describe('P2-0025 этап 3: выдача пунктов по ключу (id > последнего), ТД №167', () => {
+  // подставной сервер: in(inspection_id) + id > afterId + order id + limit, лимит строк сервера; mutate(n) — изменить строки перед n-м запросом
+  function keysetServer(rows, { maxRows = Infinity, mutate = null } = {}) {
+    const st = { calls: 0 };
+    const fetchPage = async (ids, from, to, first, afterId) => {
+      st.calls++;
+      if (mutate) mutate(st.calls, rows);
+      const set = new Set(ids);
+      let m = rows.filter(r => set.has(r.inspection_id)).sort((a, b) => (a.id < b.id ? -1 : 1));
+      const count = m.length;
+      if (afterId != null) m = m.filter(r => r.id > afterId);
+      return { data: m.slice(0, Math.min(to - from + 1, maxRows)), count: first ? count : null };
+    };
+    return { fetchPage, st };
+  }
+  const ids = Array.from({ length: 10 }, (_, i) => 'i' + i);
+  const mkRows = () => { const r = []; for (let k = 0; k < 600; k++) r.push({ id: 'r' + String(k * 10).padStart(5, '0'), inspection_id: ids[k % 10] }); return r; };
+
+  it('вставка строки в начало пачки между страницами — без повторов и без пропусков старых строк', async () => {
+    const rows = mkRows();
+    const srv = keysetServer(rows, { maxRows: 100, mutate: (n, rs) => { if (n === 2) rs.push({ id: 'r00001', inspection_id: 'i0' }); } });
+    const got = await pullPagedByIds(srv.fetchPage, ids, { batchSize: 10, pageSize: 5000, keyset: true });
+    const gotIds = got.map(r => r.id);
+    assert.equal(new Set(gotIds).size, gotIds.length, 'без повторов');
+    for (const r of mkRows()) assert.ok(gotIds.includes(r.id), 'старая строка не пропущена: ' + r.id);
+  });
+
+  it('модель смещения (как было): та же вставка даёт повтор строки', async () => {
+    const rows = mkRows();
+    const srv = keysetServer(rows, { maxRows: 100, mutate: (n, rs) => { if (n === 2) rs.push({ id: 'r00001', inspection_id: 'i0' }); } });
+    const offsetFetch = async (ids_, from, to, first) => {
+      const all = await srv.fetchPage(ids_, 0, 1e9, first, null);
+      return { data: all.data.length ? (await (async () => { const set = new Set(ids_); return rows.filter(r => set.has(r.inspection_id)).sort((a, b) => (a.id < b.id ? -1 : 1)).slice(from, Math.min(to + 1, from + 100)); })()) : [], count: first ? all.count : null };
+    };
+    const got = await pullPagedByIds(offsetFetch, ids, { batchSize: 10, pageSize: 5000 });
+    const gotIds = got.map(r => r.id);
+    assert.notEqual(new Set(gotIds).size, gotIds.length, 'по смещению — повтор');
+  });
+
+  it('удаление строки между страницами — без пропуска остальных; 53 325 пунктов при лимите 1000 — все', async () => {
+    const rows = mkRows();
+    const srv = keysetServer(rows, { maxRows: 100, mutate: (n, rs) => { if (n === 3) { const i = rs.findIndex(r => r.id === 'r00000'); if (i >= 0) rs.splice(i, 1); } } });
+    const got = await pullPagedByIds(srv.fetchPage, ids, { batchSize: 10, pageSize: 5000, keyset: true });
+    assert.equal(new Set(got.map(r => r.id)).size, 600, 'удалённая уже получена до удаления, остальные все');
+    const { ids: bigIds, items } = bigDataset();
+    const big = keysetServer(items, { maxRows: 1000 });
+    const all = await pullPagedByIds(big.fetchPage, bigIds, { batchSize: PULL_BATCH_SIZE, pageSize: 5000, concurrency: PULL_CONCURRENCY, keyset: true });
+    assert.equal(new Set(all.map(r => r.id)).size, 53325);
+  });
+
+  it('страница не продвинулась (сервер игнорирует ключ) — ошибка, а не бесконечный цикл', async () => {
+    const rows = mkRows();
+    const bad = async (ids_, from, to, first) => { const set = new Set(ids_); return { data: rows.filter(r => set.has(r.inspection_id)).sort((a, b) => (a.id < b.id ? -1 : 1)).slice(0, 100) }; };
+    await assert.rejects(pullPagedByIds(bad, ids, { batchSize: 10, pageSize: 5000, keyset: true }), /не продвинулась/);
+  });
+});
+
+describe('P2-0025: одна выборка локальных записей — только при полной загрузке (ТД №166)', () => {
+  it('полная загрузка > 50 — одной выборкой; обычная синхронизация (любое число) — по id', () => {
+    assert.equal(useBulkLocalLookup(true, 3000), true);
+    assert.equal(useBulkLocalLookup(true, 10), false);
+    assert.equal(useBulkLocalLookup(false, 60), false);
+    assert.equal(useBulkLocalLookup(false, 10000), false);
   });
 });

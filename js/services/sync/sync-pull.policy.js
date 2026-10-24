@@ -45,12 +45,15 @@ export function isThrottleError(err) {
  * Ошибка любой пачки → отказ всей загрузки (частично «загруженных» проверок не бывает).
  * 429/502/503/504 у запроса, начатого параллельно, → одна повторная попытка этой пачки (повторы —
  * по одному), дальше по одной.
- * @param {(ids: string[], from: number, to: number, first: boolean) => Promise<{data?: any[], error?: any, count?: number|null}>} fetchPage
- *        запрос одной страницы (обязательно с устойчивой сортировкой, например по id);
- *        first=true — первая страница пачки (можно запросить общее число строк)
+ * P2-0025 (ТД №167): `keyset: true` — следующая страница «после последнего полученного id» (afterId),
+ * а не по смещению: вставка/удаление строк пачки между страницами не даёт пропусков и повторов.
+ * @param {(ids: string[], from: number, to: number, first: boolean, afterId: string|null) => Promise<{data?: any[], error?: any, count?: number|null}>} fetchPage
+ *        запрос одной страницы (обязательно с устойчивой сортировкой по id по возрастанию);
+ *        first=true — первая страница пачки (можно запросить общее число строк);
+ *        afterId — id последней полученной строки (null на первой странице), при keyset
  * @param {string[]} ids
  * @param {{ batchSize?: number, pageSize?: number, concurrency?: number, pause?: () => Promise<void>,
- *           onBatchDone?: (done: number, total: number) => void, onThrottle?: (err: any) => void }} [opts]
+ *           onBatchDone?: (done: number, total: number) => void, onThrottle?: (err: any) => void, keyset?: boolean }} [opts]
  */
 export async function pullPagedByIds(fetchPage, ids, opts) {
     const o = opts || {};
@@ -71,8 +74,9 @@ export async function pullPagedByIds(fetchPage, ids, opts) {
     async function loadBatch(batch) {
         const rows = [];
         let total = null;
+        let afterId = null;
         for (let from = 0, first = true; ; first = false) {
-            const res = await fetchPage(batch, from, from + pageSize - 1, first);
+            const res = await fetchPage(batch, from, from + pageSize - 1, first, afterId);
             if (res && res.error) {
                 // supabase-js: код HTTP — в самом ответе (res.status), а не в ошибке
                 const e = res.error;
@@ -84,6 +88,13 @@ export async function pullPagedByIds(fetchPage, ids, opts) {
             if (data.length) rows.push(...data);
             from += data.length;
             if (!data.length) break;
+            if (o.keyset) {
+                const last = data[data.length - 1];
+                if (!last || last.id == null || (afterId !== null && String(last.id) === String(afterId))) {
+                    throw new Error('Загрузка по ключу: у строк нет id или страница не продвинулась');
+                }
+                afterId = String(last.id);
+            }
             // без общего числа (count) — до пустой страницы: короткая страница может быть обрезкой по лимиту сервера
             if (total != null && rows.length >= total) break;
         }
@@ -135,6 +146,14 @@ export async function pullPagedByIds(fetchPage, ids, opts) {
 }
 
 /**
+ * P2-0025 (ТД №166): локальные записи одной выборкой — только при полной загрузке (новое устройство,
+ * сброс); при обычной синхронизации — по нужным id, без второй копии всей истории в памяти.
+ */
+export function useBulkLocalLookup(isFullPull, pulledCount) {
+    return !!isFullPull && Number(pulledCount) > 50;
+}
+
+/**
  * Локальные записи истории одной выборкой (вместо dbGet на каждую пришедшую проверку).
  * Строковый id главнее; запись со старым числовым id отдаётся как дубль на удаление.
  * @param {any[]} records все записи app_history
@@ -182,5 +201,5 @@ export function clientScopeMode(p) {
 }
 
 if (typeof window !== 'undefined') {
-    window.RbiSyncPullPolicy = { PULL_OVERLAP_MS, PULL_BATCH_SIZE, PULL_CONCURRENCY, pullSinceWithOverlap, pullPagedByIds, isThrottleError, indexLocalHistory, keepLocalOverCloud, clientScopeMode };
+    window.RbiSyncPullPolicy = { PULL_OVERLAP_MS, PULL_BATCH_SIZE, PULL_CONCURRENCY, pullSinceWithOverlap, pullPagedByIds, isThrottleError, indexLocalHistory, keepLocalOverCloud, clientScopeMode, useBulkLocalLookup };
 }

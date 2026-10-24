@@ -123,6 +123,7 @@ function _openDbCurrent() {
         request.onsuccess = () => {
             const db = request.result;
             db.onversionchange = () => {
+                db.__rbiClosed = true; // P2-0025: закрыта из-за смены версии (другая вкладка)
                 db.close();
                 _dbPromise = null;
                 if (typeof showToast === 'function') {
@@ -175,6 +176,7 @@ function _openDbAtVersion(version) {
         request.onsuccess = () => {
             const db = request.result;
             db.onversionchange = () => {
+                db.__rbiClosed = true; // P2-0025: закрыта из-за смены версии (другая вкладка)
                 db.close();
                 _dbPromise = null;
                 if (typeof showToast === 'function') {
@@ -226,6 +228,18 @@ function openAppDb() {
             } catch (e) {
                 console.warn('[DB] Перевод снимков чек-листа не выполнен (данные не тронуты):', e);
             }
+            // P2-0025 (ТД №164): во время перевода другая вкладка сменила версию — база закрыта;
+            // не отдаём закрытую, а открываем заново (не больше двух раз подряд).
+            if (db.__rbiClosed) {
+                if ((openAppDb._reopens = (openAppDb._reopens || 0) + 1) > 2) {
+                    openAppDb._reopens = 0;
+                    throw new Error('База закрыта другой вкладкой во время открытия');
+                }
+                console.warn('[DB] База закрыта сменой версии во время перевода — открываем заново');
+                _dbPromise = null;
+                return openAppDb();
+            }
+            openAppDb._reopens = 0;
             return db;
         })().catch((err) => {
             _dbPromise = null;

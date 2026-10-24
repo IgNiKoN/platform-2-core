@@ -363,16 +363,20 @@ async function rbiPullAllRows(queryBuilderFn, pageSize = 500) {
 async function rbiPullRowsByInspectionIds(tableName, ids, batchSize = 40, pageSize = 500, opts = {}) {
     try {
         return await pullPagedByIds(
-            (batchIds, from, to, first) => window.supabaseClient
-                .from(tableName)
-                .select('*', first ? { count: 'exact' } : undefined)
-                .in('inspection_id', batchIds)
-                .order('id', { ascending: true })
-                .range(from, to),
+            // P2-0025 (ТД №167): страница — «после последнего полученного id», а не по смещению
+            (batchIds, from, to, first, afterId) => {
+                let q = window.supabaseClient
+                    .from(tableName)
+                    .select('*', first ? { count: 'exact' } : undefined)
+                    .in('inspection_id', batchIds);
+                if (afterId !== null && afterId !== undefined) q = q.gt('id', afterId);
+                return q.order('id', { ascending: true }).limit(to - from + 1);
+            },
             ids,
             {
                 batchSize,
                 pageSize,
+                keyset: true,
                 concurrency: opts.concurrency || 1,
                 onBatchDone: opts.onBatchDone,
                 onThrottle: (err) => {

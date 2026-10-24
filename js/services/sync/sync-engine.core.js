@@ -1123,7 +1123,9 @@ window.triggerSync = async function (mode = 'silent') {
             }
 
             // P2-0024: при большой загрузке локальные записи читаются одной выборкой, а не dbGet на каждую.
-            const _localLookup = (cloudInspections.length > 50 && typeof dbGetAll === 'function' && _pol.indexLocalHistory)
+            // P2-0025: одна выборка — только при полной загрузке; обычная синхронизация — по нужным id.
+            const _bulk = _pol.useBulkLocalLookup ? _pol.useBulkLocalLookup(!lastPullAt, cloudInspections.length) : cloudInspections.length > 50;
+            const _localLookup = (_bulk && typeof dbGetAll === 'function' && _pol.indexLocalHistory)
                 ? _pol.indexLocalHistory(await dbGetAll('app_history') || [])
                 : null;
 
