@@ -1,6 +1,7 @@
 /* Файл: js/services/sync/sync-core.state.js — перенесено из js/sync.js; P2-0023: постраничная загрузка пунктов/фото */
 import { pullPagedByIds } from './sync-pull.policy.js';
-import './sync-retry.policy.js'; // window.RbiSyncRetryPolicy для sync-engine/sync-auth (P2-0023 этап 4)
+import './sync-retry.policy.js';
+import './sync-merge.policy.js'; // window.RbiSyncMergePolicy (P2-0023 этап 5) // window.RbiSyncRetryPolicy для sync-engine/sync-auth (P2-0023 этап 4)
 /* Файл: js/sync.js (Исправленная версия сборки объектов) */
 console.log("✅ SYNC.JS загружен браузером!");
 

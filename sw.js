@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.67.0';
+const SW_VERSION = '18.68.0';
 // P2-0013: «разработка / выпуск» — из единственного переключателя js/services/config.service.js (выпуск: rbi-quality-* вместо старой версии).
 importScripts('./js/services/config.service.js');
 const CACHE_PREFIX = (self.APP_CONFIG && self.APP_CONFIG.SW_CACHE_PREFIX) || 'platform2-';
@@ -151,6 +151,7 @@ const urlsToCache = [
   './libs/supabase-js.min.js',
   './js/services/sync/sync-pull.policy.js',
   './js/services/sync/sync-retry.policy.js',
+  './js/services/sync/sync-merge.policy.js',
   './js/services/sync/sync-core.state.js',
   './js/services/sync/sync-cloud-prepare.utils.js',
   './js/services/sync/sync-auth.js',

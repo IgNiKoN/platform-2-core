@@ -1468,7 +1468,15 @@ window.triggerSync = async function (mode = 'silent') {
 
                         const cloudTime = new Date(obj.updatedAt || obj.updated_at || 0).getTime();
 
-                        if (!localExisting || cloudTime >= localTime || needFullReferencePull) {
+                        // P2-0023: неотправленная местная правка (или удаление) главнее облака — уйдёт следующей
+                        // отправкой. Раньше облако затирало её при cloudTime >= localTime.
+                        const mayOverwrite = window.RbiSyncMergePolicy
+                            ? window.RbiSyncMergePolicy.cloudMayOverwrite({ local: localExisting, cloudTime, localTime, forceReference: needFullReferencePull })
+                            : (!localExisting || cloudTime >= localTime || needFullReferencePull);
+                        if (!mayOverwrite && localExisting && (cloudTime >= localTime || needFullReferencePull)) {
+                            console.log(`[Sync] ${cType.type} ${obj.id}: есть неотправленная правка на устройстве — облако не затирает`);
+                        }
+                        if (mayOverwrite) {
                             if (obj._deleted || obj.is_deleted) {
                                 await dbDelete(cType.store, obj.id);
                                 window[cType.memory] = window[cType.memory].filter(x => String(x.id) !== String(obj.id));
@@ -2960,7 +2968,19 @@ window.triggerSync = async function (mode = 'silent') {
                         // ИСКЛЮЧЕНИЕ: Бэклог (feedback), так как инженеры могут лайкать чужие идеи!
                         const isAdminPush = window.RBI.services.permissions ? window.RBI.services.permissions.isAdmin() : false;
                         if (!isAdminPush && objectType !== 'feedback') {
+                            const mp = window.RbiSyncMergePolicy;
+                            const permsP = window.RBI.services.permissions;
+                            const assignedP = permsP ? permsP.getAssignedProjects() : [];
                             items = items.filter(obj => {
+                                // P2-0023: совещание — по назначенным объектам (автор в протоколе = поле «Инспектор»,
+                                // не обязан совпадать с ФИО профиля буква в букву). Права окончательно — сервер.
+                                if (objectType === 'meeting' && mp) {
+                                    return mp.meetingPushAllowed(obj, {
+                                        iName,
+                                        inAssigned: (rec) => !!(permsP && typeof permsP.isRecordInAssignedProjects === 'function'
+                                            && permsP.isRecordInAssignedProjects(rec, assignedP))
+                                    });
+                                }
                                 const objOwner = obj.owner || obj.author || obj.inspectorName || obj.engineerName || '';
                                 return !objOwner || objOwner === iName;
                             });

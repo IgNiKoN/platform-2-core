@@ -961,19 +961,28 @@ async function purgeDataOutsideAssignedProjects(assignedKeysArray) {
             const items = await _storage().getAll(store);
             if (!items) continue;
 
+            const permSvcMatch = (_ctx && _ctx.permissions) || window.RBI.services.permissions;
+            const inAssigned = (rec, names) => {
+                if (permSvcMatch && typeof permSvcMatch.isRecordInAssignedProjects === 'function') {
+                    return permSvcMatch.isRecordInAssignedProjects(rec, keysToKeep);
+                }
+                return names.some((n) => keysToKeep.includes(n));
+            };
+            const mergePolicy = window.RbiSyncMergePolicy;
+
             for (let item of items) {
-                if (item.syncStatus === 'not_synced' || item.sync_status === 'not_synced' || item.source === 'local') {
+                // P2-0023: не трогаем «Все объекты», записи по нескольким объектам (если назначен хоть один)
+                // и неотправленные записи (любой статус ожидания, не только not_synced).
+                if (mergePolicy) {
+                    if (mergePolicy.keepOnPurge(item, inAssigned)) continue;
+                } else if (item.syncStatus === 'not_synced' || item.sync_status === 'not_synced' || item.source === 'local') {
                     continue;
                 }
 
                 const pKey = item.project_canonical_key || item.projectName || item.project || item.project_display_name || '';
-                const keep = (() => {
+                const keep = mergePolicy ? false : (() => {
                     if (!pKey || pKey === 'Все' || pKey === 'Системная') return false;
-                    const permSvcMatch = (_ctx && _ctx.permissions) || window.RBI.services.permissions;
-                    if (permSvcMatch && typeof permSvcMatch.isRecordInAssignedProjects === 'function') {
-                        return permSvcMatch.isRecordInAssignedProjects(item, keysToKeep);
-                    }
-                    return keysToKeep.includes(pKey);
+                    return inAssigned(item, [pKey]);
                 })();
 
                 if (pKey && pKey !== 'Все' && pKey !== 'Системная' && !keep) {
