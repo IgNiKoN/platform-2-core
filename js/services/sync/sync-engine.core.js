@@ -92,6 +92,14 @@ window.triggerSync = async function (mode = 'silent') {
     let pullErrors = 0;
     let syncAttentionCount = 0; // P2-0023: объекты «нужно внимание» за этот проход
     let referencePullErrors = 0;
+    // Доработка 5: пауза автосинхронизации — только при сетевых/серверных ошибках отправки;
+    // запись, которую сервер отклонил (права, данные), не останавливает синхронизацию остальных.
+    let transientPushErrors = 0;
+    const rbiNoteErr = (err) => {
+        if (!window.RbiSyncRetryPolicy || window.RbiSyncRetryPolicy.isTransientSyncError(err)) transientPushErrors++;
+    };
+    let retryScheduled = false; // пауза ставится не больше одного раза за проход
+    const rbiScheduleSyncRetryOnce = () => { if (!retryScheduled) { retryScheduled = true; rbiScheduleSyncRetry(); } };
 
     window.isSyncing = true;
     // §5: единый defer full-render активного экрана (js/shared/sync-ui-defer.utils.js).
@@ -2214,7 +2222,7 @@ window.triggerSync = async function (mode = 'silent') {
                         }, { onConflict: 'company_id' });
                     if (cPushErr) {
                         console.warn('[Sync] company role-matrix push:', cPushErr.message || cPushErr);
-                        pushErrors++;
+                        pushErrors++; rbiNoteErr(cPushErr);
                         localStorage.setItem('rbi_cloud_dirty', '1');
                     } else if (typeof companySvcPush.markRoleMatrixSynced === 'function') {
                         companySvcPush.markRoleMatrixSynced(updatedAtPush);
@@ -2223,7 +2231,7 @@ window.triggerSync = async function (mode = 'silent') {
                 }
             } catch (e) {
                 console.warn('[Sync] company role-matrix push failed:', e && e.message ? e.message : e);
-                pushErrors++;
+                pushErrors++; rbiNoteErr(e);
             }
 
             // =====================================================
@@ -2258,7 +2266,7 @@ window.triggerSync = async function (mode = 'silent') {
                         }, { onConflict: 'company_id' });
                     if (cPushErr2) {
                         console.warn('[Sync] official templates push:', cPushErr2.message || cPushErr2);
-                        pushErrors++;
+                        pushErrors++; rbiNoteErr(cPushErr2);
                         localStorage.setItem('rbi_cloud_dirty', '1');
                     } else if (typeof companySvcPush2.markOfficialTemplatesSynced === 'function') {
                         companySvcPush2.markOfficialTemplatesSynced(updatedAtPush2);
@@ -2267,7 +2275,7 @@ window.triggerSync = async function (mode = 'silent') {
                 }
             } catch (e) {
                 console.warn('[Sync] official templates push failed:', e && e.message ? e.message : e);
-                pushErrors++;
+                pushErrors++; rbiNoteErr(e);
             }
 
             if (typeof dbForEachCursor === 'function') {
@@ -2465,7 +2473,7 @@ window.triggerSync = async function (mode = 'silent') {
                             syncAttentionCount++;
                         } else {
                             console.warn('[Sync] Фото проверки не отправлены, повторим позже:', inspectionId, photoErr && photoErr.message);
-                            pushErrors++;
+                            pushErrors++; rbiNoteErr(photoErr);
                         }
                         continue;
                     }
@@ -2855,7 +2863,7 @@ window.triggerSync = async function (mode = 'silent') {
                 }
             } catch (e) {
                 console.warn("[Sync] Задачи не отправлены:", e.message);
-                pushErrors++;
+                pushErrors++; rbiNoteErr(e);
                 // P2-0023: одно и то же сообщение — один раз, с понятной причиной (а не на каждый круг).
                 const rp = window.RbiSyncRetryPolicy;
                 const reason = rp ? rp.humanSyncReason(e) : e.message.substring(0, 60);
@@ -3076,7 +3084,7 @@ window.triggerSync = async function (mode = 'silent') {
                                 // Проблемный объект остаётся not_synced/local и будет отправлен повторно
                                 // на следующем цикле синхронизации, когда файл уже точно будет на месте.
                                 console.warn(`[Sync] Не удалось отправить объект ${objectType}/${obj.id}, повтор на следующей синхронизации:`, objErr.message || objErr);
-                                pushErrors++;
+                                pushErrors++; rbiNoteErr(objErr);
                             }
                         }
                     };
@@ -3396,7 +3404,7 @@ window.triggerSync = async function (mode = 'silent') {
                                         blockedSkCount++;
                                     }
 
-                                    pushErrors++;
+                                    pushErrors++; rbiNoteErr(e);
                                     localStorage.setItem('rbi_cloud_dirty', '1');
                                 }
                             }
@@ -3494,7 +3502,7 @@ window.triggerSync = async function (mode = 'silent') {
                                 }
                             } catch (e) {
                                 console.warn('[Sync][Подрядчики] Ошибка отправки contractor_directory:', e);
-                                pushErrors++;
+                                pushErrors++; rbiNoteErr(e);
                                 localStorage.setItem('rbi_cloud_dirty', '1');
                             }
 
@@ -3530,7 +3538,7 @@ window.triggerSync = async function (mode = 'silent') {
                                     }
                                 } catch (e) {
                                     console.warn('[Sync][Подрядчики] Ошибка отправки contracts:', e);
-                                    pushErrors++;
+                                    pushErrors++; rbiNoteErr(e);
                                     localStorage.setItem('rbi_cloud_dirty', '1');
                                 }
                             }
@@ -3567,7 +3575,7 @@ window.triggerSync = async function (mode = 'silent') {
                                 }
                             } catch (e) {
                                 console.warn('[Sync][Подрядчики] Ошибка отправки contractor_aliases:', e);
-                                pushErrors++;
+                                pushErrors++; rbiNoteErr(e);
                                 localStorage.setItem('rbi_cloud_dirty', '1');
                             }
 
@@ -3622,7 +3630,7 @@ window.triggerSync = async function (mode = 'silent') {
                                     }
                                 } catch (e) {
                                     console.warn('[Sync][Локации] Ошибка отправки location_nodes/floors_v2:', e);
-                                    pushErrors++;
+                                    pushErrors++; rbiNoteErr(e);
                                     localStorage.setItem('rbi_cloud_dirty', '1');
                                 }
                             }
@@ -3687,7 +3695,7 @@ window.triggerSync = async function (mode = 'silent') {
                                 }
                             } catch (e) {
                                 console.warn('[Sync][Подрядчики] Ошибка отправки contractor_normalization_queue:', e);
-                                pushErrors++;
+                                pushErrors++; rbiNoteErr(e);
                                 localStorage.setItem('rbi_cloud_dirty', '1');
                             }
                         }
@@ -3778,7 +3786,7 @@ window.triggerSync = async function (mode = 'silent') {
                                 }
                             } catch (e) {
                                 console.warn('[Sync][Стройконтроль v2] Ошибка отправки construction_defects_v2:', e);
-                                pushErrors++;
+                                pushErrors++; rbiNoteErr(e);
                                 localStorage.setItem('rbi_cloud_dirty', '1');
                             }
                         }
@@ -3887,7 +3895,7 @@ window.triggerSync = async function (mode = 'silent') {
                                 }
                             } catch (e) {
                                 console.warn('[Sync][Стройконтроль v2] Ошибка отправки construction_acceptance_v2:', e);
-                                pushErrors++;
+                                pushErrors++; rbiNoteErr(e);
                                 localStorage.setItem('rbi_cloud_dirty', '1');
                             }
                         }
@@ -3930,7 +3938,7 @@ window.triggerSync = async function (mode = 'silent') {
                                 }
                             } catch (e) {
                                 console.warn('[Sync][Стройконтроль v2] Ошибка отправки construction_units_v2:', e);
-                                pushErrors++;
+                                pushErrors++; rbiNoteErr(e);
                                 localStorage.setItem('rbi_cloud_dirty', '1');
                             }
                         }
@@ -4018,8 +4026,8 @@ window.triggerSync = async function (mode = 'silent') {
         // P2-0023: загрузка и отправка — раздельно. Раньше любая ошибка ставила полную загрузку
         // и не ставила метку последней загрузки → полный круг каждую минуту и «первый запуск» навсегда.
         const flags = window.RbiSyncRetryPolicy
-            ? window.RbiSyncRetryPolicy.completionFlags({ pushErrors, pullErrors, referencePullErrors, referenceOk })
-            : { pullOk: false, pushOk: false, setLastPull: false, clearForceFullPull: false, dirty: true };
+            ? window.RbiSyncRetryPolicy.completionFlags({ pushErrors, transientPushErrors, pullErrors, referencePullErrors, referenceOk })
+            : { pullOk: false, pushOk: false, setLastPull: false, clearForceFullPull: false, dirty: true, pause: true };
         if (flags.setLastPull) {
             localStorage.setItem('rbi_sync_last_pull_at', doneAt);
             localStorage.setItem('rbi_sync_last_remote_check_at', String(Date.now()));
@@ -4031,15 +4039,23 @@ window.triggerSync = async function (mode = 'silent') {
             localStorage.removeItem('rbi_sync_fail_count');
             localStorage.removeItem('rbi_sync_retry_after');
             localStorage.removeItem('rbi_sync_error_shown');
-        } else {
+        } else if (flags.pause) {
             if (flags.dirty) localStorage.setItem('rbi_cloud_dirty', '1');
-            rbiScheduleSyncRetry();
+            rbiScheduleSyncRetryOnce();
             console.log('[Sync] Есть ошибки — повтор с паузой, без полной загрузки.', {
                 pushErrors,
+                transientPushErrors,
                 pullErrors,
                 referencePullErrors,
                 referenceOk
             });
+        } else {
+            // Сервер отклонил отдельные записи (права/данные): они остаются неотправленными/«нет прав»
+            // и уйдут со следующей обычной синхронизацией; паузы и круга каждую минуту нет.
+            localStorage.setItem('rbi_cloud_dirty', '0');
+            localStorage.removeItem('rbi_sync_fail_count');
+            localStorage.removeItem('rbi_sync_retry_after');
+            console.log('[Sync] Сервер отклонил отдельные записи — без паузы для остальных.', { pushErrors });
         }
         if (syncAttentionCount > 0) console.warn('[Sync] Записей «нужно внимание»:', syncAttentionCount);
         // =====================================================
@@ -4466,7 +4482,7 @@ window.triggerSync = async function (mode = 'silent') {
     } catch (e) {
         console.error("[Sync] Ошибка:", e);
         pushErrors++;
-        rbiScheduleSyncRetry(); // P2-0023: не повторять каждую минуту
+        rbiScheduleSyncRetryOnce(); // P2-0023: не повторять каждую минуту (доработка 5: не дважды за проход)
         const errMsg = e.message ? e.message.substring(0, 80) : 'Сбой сети';
         if (_syncProg()) {
             _syncProg().fail({ summary: 'Ошибка синхронизации', detail: errMsg, hideAfterMs: 3500 });

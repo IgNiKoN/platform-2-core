@@ -7,6 +7,7 @@ import {
   makeMissingFileError,
   isMissingFileError,
   completionFlags,
+  isTransientSyncError,
   retryDelayMs,
   autoSyncAllowed,
   isAttention,
@@ -30,7 +31,36 @@ describe('completionFlags', () => {
   });
   it('всё хорошо — чисто', () => {
     assert.deepEqual(completionFlags({ pushErrors: 0, pullErrors: 0, referencePullErrors: 0, referenceOk: true }),
-      { pullOk: true, pushOk: true, setLastPull: true, clearForceFullPull: true, dirty: false });
+      { pullOk: true, pushOk: true, setLastPull: true, clearForceFullPull: true, pause: false, dirty: false });
+  });
+  it('доработка 5: сервер отклонил запись (права/данные) — без паузы и без круга каждую минуту', () => {
+    const f = completionFlags({ pushErrors: 2, transientPushErrors: 0, pullErrors: 0, referencePullErrors: 0, referenceOk: true });
+    assert.equal(f.pushOk, false);
+    assert.equal(f.pause, false);
+    assert.equal(f.dirty, false);
+    assert.equal(f.setLastPull, true);
+  });
+  it('доработка 5: сеть/сервер при отправке или ошибка загрузки — пауза', () => {
+    assert.equal(completionFlags({ pushErrors: 2, transientPushErrors: 1, pullErrors: 0, referencePullErrors: 0, referenceOk: true }).pause, true);
+    assert.equal(completionFlags({ pushErrors: 0, transientPushErrors: 0, pullErrors: 1, referencePullErrors: 0, referenceOk: true }).pause, true);
+  });
+});
+
+describe('isTransientSyncError (доработка 5)', () => {
+  it('сеть, 5xx, 429, таймаут, неизвестное — временные', () => {
+    assert.equal(isTransientSyncError(new TypeError('Failed to fetch')), true);
+    assert.equal(isTransientSyncError({ status: 502, message: 'Bad gateway' }), true);
+    assert.equal(isTransientSyncError({ status: 429 }), true);
+    assert.equal(isTransientSyncError({ code: '57014', message: 'canceling statement due to statement timeout' }), true);
+    assert.equal(isTransientSyncError(new Error('что-то странное')), true);
+  });
+  it('права RLS, неверные данные, «нет файла» — не временные', () => {
+    assert.equal(isTransientSyncError({ code: '42501', message: 'new row violates row-level security policy' }), false);
+    assert.equal(isTransientSyncError({ code: '23505', message: 'duplicate key value' }), false);
+    assert.equal(isTransientSyncError({ code: '22P02', message: 'invalid input syntax for type uuid' }), false);
+    assert.equal(isTransientSyncError({ code: 'PGRST204', message: 'column not found' }), false);
+    assert.equal(isTransientSyncError({ status: 403, message: 'forbidden' }), false);
+    assert.equal(isTransientSyncError(makeMissingFileError('local://x')), false);
   });
 });
 

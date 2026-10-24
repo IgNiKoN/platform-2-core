@@ -26,11 +26,14 @@ export function isMissingFileError(e) {
  * Флаги после синхронизации. Раньше любая ошибка ставила rbi_force_full_pull, а метка
  * последней загрузки не ставилась → полная загрузка каждую минуту и «первый запуск» навсегда.
  * @param {{ pushErrors: number, pullErrors: number, referencePullErrors: number, referenceOk: boolean }} r
- * @returns {{ pullOk: boolean, pushOk: boolean, setLastPull: boolean, clearForceFullPull: boolean, dirty: boolean }}
+ * @param {{ transientPushErrors?: number }} r  из них — сеть/сервер (доработка 5)
+ * @returns {{ pullOk: boolean, pushOk: boolean, setLastPull: boolean, clearForceFullPull: boolean, pause: boolean, dirty: boolean }}
  */
 export function completionFlags(r) {
     const pullOk = !(r && (r.pullErrors > 0 || r.referencePullErrors > 0)) && !!(r && r.referenceOk !== false);
     const pushOk = !(r && r.pushErrors > 0);
+    // Доработка 5: transientPushErrors не передан (старый вызов) — считаем все ошибки отправки сетевыми.
+    const transient = r && r.transientPushErrors !== undefined ? Number(r.transientPushErrors) || 0 : (r && r.pushErrors) || 0;
     return {
         pullOk,
         pushOk,
@@ -38,8 +41,30 @@ export function completionFlags(r) {
         // догрузка начнётся с прошлой метки (полная загрузка для этого не нужна)
         setLastPull: pullOk,
         clearForceFullPull: pullOk,
-        dirty: !pushOk
+        // пауза автоповтора — только если не удалась загрузка или отправка упала по сети/серверу;
+        // отклонённые сервером записи (права, данные) паузу не ставят
+        pause: !pullOk || transient > 0,
+        dirty: !pushOk && transient > 0
     };
+}
+
+/**
+ * Доработка 5: временная ли ошибка (сеть/сервер → повтор с паузой) или сервер отклонил запись
+ * (права RLS, неверные данные → пауза не нужна, запись остаётся неотправленной).
+ * Неизвестная ошибка считается временной — безопаснее подождать, чем крутить круг.
+ */
+export function isTransientSyncError(e) {
+    if (!e) return true;
+    if (isMissingFileError(e)) return false;
+    const status = Number(e.status || e.statusCode || 0);
+    if (status) return status >= 500 || status === 408 || status === 429;
+    const code = String(e.code || '');
+    if (/^PGRST/.test(code)) return false;
+    // код Postgres (SQLSTATE): 08 связь, 40 откат/взаимоблокировка, 53 ресурсы, 57 сервер — временные
+    if (/^[0-9A-Z]{5}$/.test(code)) return /^(08|40|53|57)/.test(code);
+    const m = String(e.message || e || '');
+    if (/row-level security|permission denied|violates|invalid input|duplicate key/i.test(m)) return false;
+    return true;
 }
 
 /** Пауза перед автоповтором после n-й подряд неудачной синхронизации (мс): 2, 5, 10, 30 мин. */
@@ -96,7 +121,7 @@ export function humanSyncReason(e) {
 if (typeof window !== 'undefined') {
     window.RbiSyncRetryPolicy = {
         MISSING_LOCAL_FILE, ATTENTION_STATUS, ATTENTION_REASON_MISSING_PHOTO,
-        makeMissingFileError, isMissingFileError, completionFlags, retryDelayMs,
+        makeMissingFileError, isMissingFileError, isTransientSyncError, completionFlags, retryDelayMs,
         autoSyncAllowed, isAttention, markAttention, shouldShowErrorOnce, humanSyncReason
     };
 }
