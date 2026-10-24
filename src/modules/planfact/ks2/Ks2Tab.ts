@@ -16,7 +16,7 @@ import { Ks2Registry, KS2_REGISTRY_CSS } from './Ks2Registry.ts';
 import { todayMoscow } from '../fact/fact.ts';
 import { Ks2Act } from './Ks2Act.ts';
 import { Ks2Template } from './Ks2Template.ts';
-import { firstProjectId, ProjectPicker } from '../ProjectPicker.ts';
+import { initialProjectId, ProjectPicker } from '../ProjectPicker.ts';
 
 /** me — почта вошедшего (личные виды реестра актов). */
 export function Ks2Tab(props: { api: Ks2Api; vor: VorApi; me?: string }): ReactElement {
@@ -37,7 +37,7 @@ export function Ks2Tab(props: { api: Ks2Api; vor: VorApi; me?: string }): ReactE
       const ok: VorProject[] = []; const map: Record<string, string[]> = {};
       for (const p of all) { const pr = await vor.permissions(p.id); if (pr.includes(KS2_VIEW) || pr.includes(KS2_EDIT)) { ok.push(p); map[p.id] = pr; } }
       setPerms(map); setList(ok);
-      if (ok.length) setProjectId(firstProjectId(ok));
+      if (ok.length) setProjectId(initialProjectId(ok, window.location.hash));   // P2-0021: объект из перехода
     })();
   }, []);
 

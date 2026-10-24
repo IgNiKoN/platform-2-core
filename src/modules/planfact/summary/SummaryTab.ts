@@ -14,6 +14,7 @@ import { Dashboard, PERIODS } from './Dashboard.ts';
 import type { Period } from './Dashboard.ts';
 import { StatusBadge } from '../../../platform/ui/index.ts';
 import type { SummaryLinks } from './Attention.ts';
+import { hashParam } from '../ProjectPicker.ts';
 
 /** Порядок объектов: сначала самые отстающие (дни отставания с сервера), без данных — в конце. */
 export function byLag(a: SummaryProject, b: SummaryProject): number {
@@ -28,7 +29,9 @@ export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: s
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [thresholds, setThresholds] = useState(false);
-  const [sel, setSel] = useState('all');
+  // P2-0021: переход «Требует моего участия» → объект (p=…) и блок «Требует внимания» (focus=attention)
+  const [sel, setSel] = useState(() => hashParam(window.location.hash, 'p') || 'all');
+  const [focus] = useState(() => hashParam(window.location.hash, 'focus'));
   const [period, setPeriod] = useState<Period>(8);
 
   async function load(): Promise<void> {
@@ -36,8 +39,24 @@ export function SummaryTab(props: { api: SummaryApi; save?: (b: Uint8Array, n: s
     const r = await api.portfolio();
     if (!r.ok) { setError(r.message); setList([]); return; }
     setList(r.value);
+    setSel((x) => (x === 'all' || r.value.some((p) => p.project_id === x) ? x : 'all'));   // объект из перехода, которого нет, — «Все объекты»
   }
   useEffect(() => { void load(); }, []);
+  // Блок «Требует внимания» появляется после загрузки панели объекта — ждём его до ~2 с, прокручиваем, пока он не окажется вверху.
+  useEffect(() => {
+    if (focus !== 'attention' || list === null) return undefined;
+    let n = 0; let t: ReturnType<typeof setTimeout> | undefined;
+    const attempt = (): void => {
+      const el = document.querySelector('[data-testid="sm-attention"]') as (HTMLElement & { scrollIntoView?: (o?: object) => void }) | null;
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'start' });
+        if (Math.abs(el.getBoundingClientRect().top) < 40) return;
+      }
+      if (++n < 8) t = setTimeout(attempt, 250);
+    };
+    attempt();
+    return () => { if (t) clearTimeout(t); };
+  }, [focus, list]);
 
   if (list === null) return h('div', { className: 'pf-muted' }, 'Загрузка…');
   const sorted = [...list].sort(byLag);

@@ -20,6 +20,9 @@ export const PlanfactManifest = {
     nav: [
         { id: 'summary', label: 'Сводка', path: '#/planfact', requiresAccess: true,
           icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+        // P2-0021: «Требует моего участия» по всем объектам; красная точка с числом — сумма дел (обёртка index.js)
+        { id: 'inbox', label: 'Входящие', path: '#/planfact/inbox', requiresAccess: true,
+          icon: 'M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4' },
         { id: 'vor', label: 'ВОР', path: '#/planfact/vor', requiresAccess: true,
           icon: 'M9 17v-2m3 2v-4m3 4v-6M5 21h14a2 2 0 002-2V7.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0015.586 2H5a2 2 0 00-2 2v15a2 2 0 002 2z' },
         { id: 'fact', label: 'Факт', path: '#/planfact/fact', requiresAccess: true,

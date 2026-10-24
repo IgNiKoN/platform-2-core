@@ -58,7 +58,7 @@ export interface Ks2GapRow {
 /** Строка «Требует моего участия» по объекту (pf_my_inbox, 029). null — у вошедшего нет права на этот вид в объекте. */
 export interface InboxRow {
   project_id: string; name: string; code: string | null;
-  pending: number | null; my_rejected: number | null; ks2_drafts: number | null;
+  pending: number | null; my_rejected: number | null; my_rejected_from: string | null; ks2_drafts: number | null;
   ks2_gap: number | null; ks2_gap_money: number | null; stale: number | null; stale_days: number | null;
 }
 
@@ -101,7 +101,7 @@ export const normGap = (r: Ks2GapRow): Ks2GapRow => ({
   price: nn(r.price), done_money: nn(r.done_money), issued_money: nn(r.issued_money), gap_money: nn(r.gap_money) });
 
 export const normInbox = (r: InboxRow): InboxRow => ({
-  ...r, code: r.code ?? null, pending: nn(r.pending), my_rejected: nn(r.my_rejected), ks2_drafts: nn(r.ks2_drafts), ks2_gap: nn(r.ks2_gap),
+  ...r, code: r.code ?? null, pending: nn(r.pending), my_rejected: nn(r.my_rejected), my_rejected_from: r.my_rejected_from ?? null, ks2_drafts: nn(r.ks2_drafts), ks2_gap: nn(r.ks2_gap),
   ks2_gap_money: nn(r.ks2_gap_money), stale: nn(r.stale), stale_days: nn(r.stale_days) });
 
 export function createSummaryService(): SummaryApi | null {

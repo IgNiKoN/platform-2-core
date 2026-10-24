@@ -18,7 +18,7 @@ import { FactJournal, FACT_JOURNAL_CSS } from './FactJournal.ts';
 import { FloorClose } from './FloorClose.ts';
 import { ChessboardTab } from './ChessboardTab.ts';
 import { FactEntryForm } from './FactEntryForm.ts';
-import { firstProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';
+import { initialProjectId, isArchived, ProjectPicker } from '../ProjectPicker.ts';
 
 const PAGE = 100;
 const NODE_LABEL: Record<string, string> = { building: 'Корпус', section: 'Секция', floor: 'Этаж', apartment: 'Квартира', other: 'Место' };
@@ -61,7 +61,7 @@ export function FactTab(props: { api: FactApi; vor: VorApi; projects: ProjectsAp
       const ok: VorProject[] = []; const map: Record<string, string[]> = {};
       for (const p of all) { const pr = await vor.permissions(p.id); if (pr.includes(FACT_VIEW)) { ok.push(p); map[p.id] = pr; } }
       setPerms(map); setList(ok);
-      if (ok.length) setProjectId(firstProjectId(ok));
+      if (ok.length) setProjectId(initialProjectId(ok, window.location.hash));   // P2-0021: объект из перехода
     })();
   }, []);
 

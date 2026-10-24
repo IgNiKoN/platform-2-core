@@ -123,7 +123,7 @@ begin
                           'РП: сумма «не выставлено» = gap_money (1 000 ₽)');
   res := res || pg_temp.t((j ->> 'stale')::int = (att #>> '{counts,stale_positions}')::int and (j ->> 'stale')::int = 3 and (j ->> 'stale_days')::int = 14,
                           'РП: «стоят > 14 дней» = stale_positions (3: pos10 — 20 дн., pos20 / pos30 — без принятого факта 30 дн.)');
-  res := res || pg_temp.t(j ? 'my_rejected' and j -> 'my_rejected' = 'null'::jsonb, 'РП без fact.create: «мои отклонённые» — нет (null)');
+  res := res || pg_temp.t(j ? 'my_rejected' and j -> 'my_rejected' = 'null'::jsonb and j -> 'my_rejected_from' = 'null'::jsonb, 'РП без fact.create: «мои отклонённые» — нет (null)');
   res := res || pg_temp.t(pg_temp.inbox(parch) is null, 'РП: архивный объект не показан');
   res := res || pg_temp.t(pg_temp.inbox(pb) is null, 'РП Альфы: объект Беты не показан');
   res := res || pg_temp.t((select count(*) from public.pf_my_inbox()) = 1, 'РП: в списке один объект');
@@ -131,7 +131,8 @@ begin
   -- 2. Прораб: только «мои отклонённые»; второй прораб — свои; новая запись на позиции убирает отклонённую
   reset role; perform pg_temp.as_user(ufor);
   j := pg_temp.inbox(pa);
-  res := res || pg_temp.t((j ->> 'my_rejected')::int = 1, 'прораб: мои отклонённые = 1 (' || coalesce(j::text, 'нет строки') || ')');
+  res := res || pg_temp.t((j ->> 'my_rejected')::int = 1 and (j ->> 'my_rejected_from')::date = td - 3,
+                          'прораб: мои отклонённые = 1, самая ранняя дата работ — 3 дня назад (' || coalesce(j::text, 'нет строки') || ')');
   res := res || pg_temp.t(j -> 'pending' = 'null'::jsonb and j -> 'ks2_drafts' = 'null'::jsonb and j -> 'ks2_gap' = 'null'::jsonb
                           and j -> 'ks2_gap_money' = 'null'::jsonb and j -> 'stale' = 'null'::jsonb, 'прораб: прочих видов нет (null)');
   res := res || pg_temp.t(pg_temp.inbox(parch) is null and pg_temp.inbox(pb) is null, 'прораб: архив и Бета не показаны');
@@ -139,7 +140,8 @@ begin
   res := res || pg_temp.t((pg_temp.inbox(pa) ->> 'my_rejected')::int = 1, 'второй прораб: свои отклонённые = 1 (не чужие)');
   reset role; perform pg_temp.as_user(ufor);
   perform public.pf_fact_add(pos30, br, td, 5);
-  res := res || pg_temp.t((pg_temp.inbox(pa) ->> 'my_rejected')::int = 0, 'прораб: после новой записи на позиции отклонённая не считается (0)');
+  j := pg_temp.inbox(pa);
+  res := res || pg_temp.t((j ->> 'my_rejected')::int = 0 and j -> 'my_rejected_from' = 'null'::jsonb, 'прораб: после новой записи на позиции отклонённая не считается (0, без даты)');
   reset role; perform pg_temp.as_user(ufor2);
   res := res || pg_temp.t((pg_temp.inbox(pa) ->> 'my_rejected')::int = 1, 'второй прораб: чужая новая запись на другой позиции не влияет (1)');
 

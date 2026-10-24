@@ -11,7 +11,7 @@ import type { InboxRow } from '../summary/summary.service.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
-const row = (o: Partial<InboxRow>): InboxRow => ({ project_id: 'p', name: 'ЖК', code: null, pending: null, my_rejected: null, ks2_drafts: null,
+const row = (o: Partial<InboxRow>): InboxRow => ({ project_id: 'p', name: 'ЖК', code: null, pending: null, my_rejected: null, my_rejected_from: null, ks2_drafts: null,
   ks2_gap: null, ks2_gap_money: null, stale: null, stale_days: null, ...o });
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 

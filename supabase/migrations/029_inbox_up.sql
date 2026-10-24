@@ -2,6 +2,7 @@
 -- pf_my_inbox — только чтение: по всем неархивным объектам, где у вошедшего есть право, — что ждёт именно его:
 --   pending      — факт ждёт подтверждения (право fact.approve; = число строк pf_fact_pending);
 --   my_rejected  — мои отклонённые записи, пока на той же позиции нет моей записи, внесённой после отказа (право fact.create);
+--   my_rejected_from — самая ранняя дата работ среди них (период «Журнала» при переходе);
 --   ks2_drafts   — невыданные черновики КС-2 (право ks2.edit; = акты pf_ks2_acts со статусом draft);
 --   ks2_gap      — строк «сделано, не выставлено» (право ks2.view / ks2.edit; = pf_summary_attention.counts.gap_rows),
 --   ks2_gap_money — их сумма (только при money.view; = counts.gap_money);
@@ -26,8 +27,8 @@ begin
 end $$;
 
 create function public.pf_my_inbox()
-returns table(project_id uuid, name text, code text, pending int, my_rejected int, ks2_drafts int, ks2_gap int,
-              ks2_gap_money numeric, stale int, stale_days int)
+returns table(project_id uuid, name text, code text, pending int, my_rejected int, my_rejected_from date, ks2_drafts int,
+              ks2_gap int, ks2_gap_money numeric, stale int, stale_days int)
 language plpgsql stable security definer set search_path = pg_catalog, planfact, core as $$
 declare r record; v_uid uuid := auth.uid(); v_ap boolean; v_cr boolean; v_ke boolean; v_kv boolean; v_mv boolean; v_att jsonb;
 begin
@@ -45,11 +46,13 @@ begin
     project_id := r.id; name := r.name; code := r.code;
     pending := case when v_ap then (select count(*)::int from planfact.fact_entries e
                                     where e.project_id = r.id and e.status = 'pending_approval') end;
-    my_rejected := case when v_cr then (select count(*)::int from planfact.fact_entries e
-                                        where e.project_id = r.id and e.status = 'rejected' and e.created_by = v_uid
-                                          and not exists (select 1 from planfact.fact_entries n
-                                                          where n.position_id = e.position_id and n.created_by = v_uid
-                                                            and n.id <> e.id and n.created_at >= e.decided_at)) end;
+    my_rejected := null; my_rejected_from := null;
+    if v_cr then
+      select count(*)::int, min(e.work_date) into my_rejected, my_rejected_from from planfact.fact_entries e
+      where e.project_id = r.id and e.status = 'rejected' and e.created_by = v_uid
+        and not exists (select 1 from planfact.fact_entries n
+                        where n.position_id = e.position_id and n.created_by = v_uid and n.id <> e.id and n.created_at >= e.decided_at);
+    end if;
     ks2_drafts := case when v_ke then (select count(*)::int from planfact.ks2_acts a
                                        where a.project_id = r.id and a.status = 'draft') end;
     ks2_gap := case when v_kv then (v_att -> 'counts' ->> 'gap_rows')::int end;
