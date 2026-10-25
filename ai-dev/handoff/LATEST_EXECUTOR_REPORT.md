@@ -20,4 +20,6 @@
 
 **Нужно от владельца:** `Архитектор. принято P2-0033` или `Вернуть P2-0033: …`. Push — по «push разрешён».
 
-STATUS: READY_FOR_ACCEPTANCE
+**Архитектор 25.10.2026:** принято (DONE), акт `reports/P2-0033/acceptance-record.md`.
+
+STATUS: ACCEPTED
