@@ -97,7 +97,8 @@ begin
 
   -- 3. Обычные роли — как раньше
   perform pg_temp.as_user(uq, ca);
-  res := res || pg_temp.t(pg_temp.rows('update quality.contractor_directory set updated_at = now() where canonical_key = ''m20da'' and project_code = ' || quote_literal(pa) || '') = 1, 'инженер правит справочник');
+  res := res || pg_temp.t(pg_temp.rows('update quality.contractor_directory set updated_at = now() where canonical_key = ''m20da'' and project_code = ' || quote_literal(pa) || '')
+                          = case when to_regprocedure('quality.queue_guard()') is null then 1 else 0 end, 'инженер правит справочник (до 037) / нет (037)');
   perform pg_temp.as_user(ua, ca);
   res := res || pg_temp.t(pg_temp.rows('update quality.contractors set "displayName" = ''Бета Монтаж'' where id = ''m20k2-id''') = 1, 'админ правит справочник подрядчиков');
 

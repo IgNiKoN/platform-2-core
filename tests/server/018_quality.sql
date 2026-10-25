@@ -74,7 +74,8 @@ begin
    join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname = 'quality' and not tg.tgisinternal and tg.tgname not like '%_bind_company'
      and tg.tgname <> 'contractor_directory_to_core'    -- 018e: подрядчик из Качества → «Контрагенты»
      and tg.tgname not like '%_set_author'              -- 020: автор записи
-     and tg.tgname not like '%_refresh_object_keys';    -- 033: пересчёт признаков закреплённых объектов
+     and tg.tgname not like '%_refresh_object_keys'     -- 033: пересчёт признаков закреплённых объектов
+     and tg.tgname not like '%_queue_guard';            -- 037: решение по заявке — только администратор
   res := res || pg_temp.t(n = 0, 'в quality только триггер привязки к компании (лишние: ' || coalesce(s, '—') || ')');
   select count(*), string_agg(p.proname, ', ') into n, s from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
    where ns.nspname = 'quality' and has_function_privilege('anon', p.oid, 'execute');

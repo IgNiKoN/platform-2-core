@@ -106,7 +106,9 @@ begin
   res := res || pg_temp.t(s <> 'OK', 'подрядчик не добавляет в справочник (' || s || ')');
   -- 2. Инженер — как раньше
   perform pg_temp.as_user(uq1, ca);
-  res := res || pg_temp.t(pg_temp.rows('update quality.contractors set "displayName" = ''Бета Монтаж'' where id = ''m20k2-id''') = 1, 'инженер правит справочник подрядчиков');
+  -- 037 (решение владельца 25.10.2026): править справочник подрядчиков — только администратор
+  res := res || pg_temp.t(pg_temp.rows('update quality.contractors set "displayName" = ''Бета Монтаж'' where id = ''m20k2-id''')
+                          = case when to_regprocedure('quality.queue_guard()') is null then 1 else 0 end, 'инженер правит справочник подрядчиков (до 037) / нет (037)');
   -- 3. Функции 023 — только с правами Качества
   perform pg_temp.as_user(ueco, ca);
   res := res || pg_temp.t(quality.member_by_email(ca, 'eng024@test.invalid') is null, 'экономист (без Качества): member_by_email — пусто');

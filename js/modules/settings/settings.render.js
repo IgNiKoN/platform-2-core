@@ -1712,7 +1712,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
     function _subsectionAllowed(key) {
         if (key === 'company') return _companyAllowed();
         if (key === 'platform-admin') return _platformAdminAllowed();
-        if (key === 'admin') return _legacyAllowed();
+        if (key === 'admin') return _legacyAllowed() || _isAdminGateOk();   // P2-0037: почта — по праву сервера (quality.manage)
         if (key === 'quality' || key === 'construction') {   // P2-0016: почта — если модуль включён у компании
             var sh = window.RBI && window.RBI.services && window.RBI.services.shell;
             return sh && typeof sh.legacyModuleAllowed === 'function' ? sh.legacyModuleAllowed(key) : _legacyAllowed();
@@ -1729,12 +1729,17 @@ console.log('[SettingsRender] settings.render.js markup mounted');
             if (b) b.hidden = !_legacyAllowed();
         });
         var adm = document.getElementById('settings-subnav-admin');
-        if (adm && !_legacyAllowed()) adm.hidden = true;
+        if (adm && !_legacyAllowed()) {
+            adm.hidden = !_isAdminGateOk();
+            adm.classList.toggle('hidden', adm.hidden);
+            _syncAdminSectionsForEmail();
+        }
         var cur = _getSettingsSubsection();
         var curPanel = document.getElementById('settings-panel-' + cur);
         if (curPanel && !curPanel.hidden && !_subsectionAllowed(cur)) _setSettingsSubsection('platform', { skipGate: true, fromRouter: true });
     }
     window.addEventListener('rbi:platform-access', _syncCompanyTab);
+    window.addEventListener('rbi:quality-access', _syncCompanyTab);   // P2-0037: права компании в Качестве пришли / сменились
 
     /**
      * P2-0013: «Настройки → Платформа» — как вы вошли (до переноса «Качества» в Platform 2.0 это два разных входа и две админки):
@@ -1827,7 +1832,29 @@ console.log('[SettingsRender] settings.render.js markup mounted');
             : false;
     }
 
+    /**
+     * P2-0037: «Админ Качества» при входе по почте — разделы по правам сервера (quality.my_access):
+     * справочник объектов и заявки на объекты — quality.objects.manage / construction.objects.manage (033c: Админ, не Зам.);
+     * «Команда» (→ «Компания → Сотрудники»), «Роли и права» (→ «Компания → Роли»), «Миграция данных» (разовые инструменты
+     * старой базы) — при почте скрыты (решение владельца 25.10.2026, карточка P2-0037).
+     */
+    var ADMIN_EMAIL_OBJECTS_SECTIONS = ['location-directory-section', 'admin-object-requests-section'];
+    var ADMIN_EMAIL_HIDDEN_SECTIONS = ['admin-team-section', 'settings-role-matrix-section', 'contractor-id-backfill-section'];
+    function _syncAdminSectionsForEmail() {
+        var has = typeof window.hasQualityServerAction === 'function' ? window.hasQualityServerAction : function () { return false; };
+        var objects = has('quality.objects.manage') || has('construction.objects.manage');
+        ADMIN_EMAIL_OBJECTS_SECTIONS.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.hidden = !objects;
+        });
+        ADMIN_EMAIL_HIDDEN_SECTIONS.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.hidden = true;
+        });
+    }
+
     function _canSeeAdminTab() {
+        if (!_legacyAllowed()) return _isAdminGateOk();
         try {
             var p = (window.RBI && window.RBI.services && window.RBI.services.permissions) || null;
             if (!p) return true;
@@ -1841,11 +1868,13 @@ console.log('[SettingsRender] settings.render.js markup mounted');
     }
 
     function _mountAdminOpsContent() {
+        var email = !_legacyAllowed();   // P2-0037: при почте — без «Команды», «Ролей и прав», «Миграции данных»
+        if (email) _syncAdminSectionsForEmail();
         var od = _objects();
         if (od && typeof od.loadRequests === 'function') {
             od.loadRequests();
         }
-        if (typeof window.gameLoadRoles === 'function') {
+        if (!email && typeof window.gameLoadRoles === 'function') {
             window.gameLoadRoles();
         }
         if (typeof window.gameLoadContractorRequests === 'function') {
@@ -1857,10 +1886,10 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (typeof mountContractorDirectoryUI === 'function') {
             mountContractorDirectoryUI().catch(function () {});
         }
-        if (typeof mountContractorIdBackfillUI === 'function') {
+        if (!email && typeof mountContractorIdBackfillUI === 'function') {
             mountContractorIdBackfillUI().catch(function () {});
         }
-        if (typeof mountProjectIdBackfillUI === 'function') {
+        if (!email && typeof mountProjectIdBackfillUI === 'function') {
             try { mountProjectIdBackfillUI(); } catch (_e) { /* ignore */ }
         }
         if (typeof mountCloudDeletedPurgeUI === 'function') {
@@ -1869,7 +1898,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (typeof mountCloudOrphanUrlsUI === 'function') {
             try { mountCloudOrphanUrlsUI(); } catch (_e) { /* ignore */ }
         }
-        if (typeof mountRoleMatrixUI === 'function') {
+        if (!email && typeof mountRoleMatrixUI === 'function') {
             mountRoleMatrixUI().catch(function () {});
         }
         if (typeof mountEnabledModulesUI === 'function') {

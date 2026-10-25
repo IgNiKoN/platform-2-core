@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyQualityBridge, companyConflict, deviceUserKey, parseAccess, pinAccess, qualityCompanyFor, roleFor, switchDeviceCompany,
-  QUALITY_COMPANY_KEY, QUALITY_DROP_DB_KEY, QUALITY_LEGACY_OWNER_KEY, QUALITY_USER_KEY } from '../quality-bridge.ts';
+  QUALITY_ACCESS_EVENT, QUALITY_COMPANY_KEY, QUALITY_DROP_DB_KEY, QUALITY_LEGACY_OWNER_KEY, QUALITY_USER_KEY } from '../quality-bridge.ts';
 import type { PlatformState } from '../platform.service.ts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -317,4 +317,30 @@ test('P2-0028: имя инженера в Качестве — ФИО учётк
   assert.equal(win.syncConfig.engineerName, 'Иванов Алексей Игоревич');
   assert.equal(JSON.parse(store.getItem('rbi_sync_config')!).engineerName, 'Иванов Алексей Игоревич');
   assert.equal(win.appSettings.engineerName, 'Иванов Алексей Игоревич');
+});
+
+test('P2-0037: права компании пришли — событие для Настроек («Админ Качества» без PIN); права — с сервера, как есть', async () => {
+  const { d, win } = deps({ access: { actions: ['quality.view', 'quality.edit', 'quality.manage', 'quality.objects.manage'], templates: [] } });
+  const events: string[] = [];
+  win.dispatchEvent = function (this: N, e: Event) { assert.equal(this, win); events.push(e.type); return true; };
+  const sync = await applyQualityBridge(st(), d);
+  assert.deepEqual(events, [QUALITY_ACCESS_EVENT]);
+  assert.equal(QUALITY_ACCESS_EVENT, 'rbi:quality-access');
+  assert.deepEqual(sync!.actions, ['quality.view', 'quality.edit', 'quality.manage', 'quality.objects.manage']);
+  // окно без dispatchEvent (тесты, старые окружения) — без ошибки
+  const other = deps();
+  assert.ok(await applyQualityBridge(st(), other.d));
+});
+
+test('P2-0037: уборка облака администратором — файлы удаляются только в папке своей компании (чужой путь не выходит из неё)', () => {
+  const calls: N[] = [];
+  const raw = { from: (b: string) => ({ bucket: b, remove(this: N, paths: string[]) { calls.push([this.bucket, paths]); return 'remove'; } }) };
+  const s = companyStorage(raw as N, A);
+  s.from('inspection-photos').remove([B + '/P/x.jpg', 'rbi/P/y.jpg']);
+  s.from('custom-assets').remove([A + '/branding/logo.png']);
+  assert.deepEqual(calls, [
+    ['quality-inspection-photos', [A + '/' + B + '/P/x.jpg', A + '/rbi/P/y.jpg']],
+    ['quality-custom-assets', [A + '/branding/logo.png']]
+  ]);
+  for (const [, paths] of calls) for (const p of paths as string[]) assert.ok(p.startsWith(A + '/'), p);
 });

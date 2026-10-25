@@ -1792,6 +1792,7 @@
   "quality.game.toast.audit_mode": "⚖️ Режим Аудита: Вы проверяете работу инспектора {name}",
   "quality.game.toast.audit_ready": "✅ План аудита сформирован! Найдены аномалии.",
   "quality.game.toast.bad_pin": "❌ Неверный ПИН-код",
+  "quality.game.toast.admin_by_role": "🔒 Доступно администратору компании (роль в «Компания → Сотрудники»)",
   "quality.game.toast.block_fail": "❌ Не удалось заблокировать пользователя",
   "quality.game.toast.cloud_off": "❌ Облако не подключено",
   "quality.game.toast.cloud_off_plain": "Облако не подключено",

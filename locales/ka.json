@@ -1792,6 +1792,7 @@
   "quality.game.toast.audit_mode": "⚖️ აუდიტის რეჟიმი: თქვენ ამოწმებთ ინსპექტორ {name}-ის მუშაობას",
   "quality.game.toast.audit_ready": "✅ აუდიტის გეგმა შექმნილია! ანომალიები ნაპოვნია.",
   "quality.game.toast.bad_pin": "❌ არასწორი PIN-კოდი",
+  "quality.game.toast.admin_by_role": "🔒 ხელმისაწვდომია კომპანიის ადმინისტრატორისთვის (როლი „კომპანია → თანამშრომლები“)",
   "quality.game.toast.block_fail": "❌ მომხმარებლის დაბლოკვა ვერ მოხერხდა",
   "quality.game.toast.cloud_off": "❌ ღრუბელი დაკავშირებული არ არის",
   "quality.game.toast.cloud_off_plain": "ღრუბელი დაკავშირებული არ არის",

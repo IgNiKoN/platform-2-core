@@ -854,10 +854,13 @@ window.triggerSync = async function (mode = 'silent') {
         // 1.5. PULL: КОРПОРАТИВНЫЙ СТИЛЬ (Логотип и Цвет)
         // =====================================================
         try {
+            // P2-0037: при входе по почте оформление — одно на компанию (ключ — id компании входа, как при публикации)
+            const qsBrand = window.RBI && window.RBI.qualitySync;
+            const brandCode = (qsBrand && qsBrand.active && qsBrand.companyId) ? qsBrand.companyId : pCode;
             const { data: pSet, error: pSetErr } = await window.supabaseClient
                 .from('project_settings')
                 .select('*')
-                .eq('project_code', pCode)
+                .eq('project_code', brandCode)
                 .maybeSingle();
 
             if (!pSetErr && pSet) {
@@ -897,10 +900,13 @@ window.triggerSync = async function (mode = 'silent') {
             const companyId = (companySvc && typeof companySvc.getCompanyId === 'function')
                 ? companySvc.getCompanyId()
                 : 'rbi';
+            // P2-0037: при входе по почте строка настроек — компании входа (сервер пишет company_id = id компании, 018 bind_company)
+            const qs = window.RBI && window.RBI.qualitySync;
+            const settingsCompanyId = (qs && qs.active && qs.companyId) ? qs.companyId : companyId;
             const { data: cSet, error: cSetErr } = await window.supabaseClient
                 .from('rbi_company_settings')
                 .select('company_id, role_matrix_overrides, official_templates, updated_at')
-                .eq('company_id', companyId)
+                .eq('company_id', settingsCompanyId)
                 .maybeSingle();
 
             if (cSetErr) {
@@ -3652,7 +3658,13 @@ window.triggerSync = async function (mode = 'silent') {
                             }
 
                             // Push справочника локаций v2 + планов этажей — только admin (как contractor_directory).
-                            if (STORES.LOCATION_NODES && typeof window.prepareLocationNodeForCloud === 'function') {
+                            // P2-0037 (ТД №194): при входе по почте — только роль со справочником объектов (033c); иначе сервер
+                            // отклоняет узел, ошибка повторяется каждый обмен и останавливает отправку следующих узлов.
+                            const qsLoc = window.RBI && window.RBI.qualitySync;
+                            const locActions = qsLoc && qsLoc.active && Array.isArray(qsLoc.actions) ? qsLoc.actions : null;
+                            const canPushLocations = !locActions || locActions.indexOf('quality.objects.manage') !== -1
+                                || locActions.indexOf('construction.objects.manage') !== -1;
+                            if (canPushLocations && STORES.LOCATION_NODES && typeof window.prepareLocationNodeForCloud === 'function') {
                                 try {
                                     const nodeItems = await dbGetAll(STORES.LOCATION_NODES) || [];
                                     const nodesToPush = nodeItems.filter(n => {
