@@ -4,17 +4,23 @@
 --     посчитанному здесь независимо от правила сервера: Админ / Зам. / Директор — все; Инженер СК — записи закреплённых объектов
 --     (ObjectDirectory.isRecordInAssignedProjects: "projectId" = id узла-объекта, ключ или название записи = ключ / название /
 --     синоним объекта старого справочника public.location_nodes / public.project_objects после cleanString) + свои записи без объекта
---     (пусто / unknown; «свои» — по имени инженера, как старое приложение); пункты и фото — проверок, видимых по этому правилу;
+--     (пусто / unknown; «свои» — по имени инженера, как старое приложение; «Все» — чужой объект: старое приложение такие записи
+--     инженеру не скачивало и не показывало); пункты и фото — проверок, видимых по этому правилу;
 --   «новое» — что сервер отдаёт под учёткой человека (роль authenticated, компания RBI в заголовке, правила RLS) из quality.<таблица>.
--- Расхождения: число строк только в старом / только в новом и до 3 примеров id. Параметр: v_only — почта одного человека (null — все).
+-- Расхождения: число строк только в старом / только в новом и до 3 примеров id; объяснённые — отдельно:
+--   «свои Все» — своя запись (автор — этот человек) с объектом «Все»: по карточке P2-0033 §8 — как «свои без объекта», видна;
+--   «сироты» — пункты и фото без проверки (проверка удалена): в старом не видны, в новом — свои автору (правило 023, не менялось);
+--   «новые» — записи, созданные уже в новом приложении после переноса (в public их нет).
+-- DIFF — только необъяснённые. Параметр: v_only — почты людей этого запуска
+-- (null — все; на сервере по 3 человека: иначе SQL Editor обрывает долгий запрос).
 do $$
 declare
   c uuid := (select id from core.companies where name = 'RBI');
-  v_only text := null;
+  v_only text[] := null;
   v_tables text[] := array['rbi_inspections', 'rbi_tasks', 'sk_records', 'project_meetings', 'project_fmea', 'project_interventions',
                            'project_schedule_stages', 'rbi_inspection_items', 'rbi_inspection_photos'];
   v_codes text[];
-  m record; t text; v_refs text[]; v_ids text[]; v_names text[];
+  m record; t text; v_refs text[]; v_ids text[]; v_names text[]; n_ex int;
   v_old text; v_new text; n_old int; n_new int; n_oo int; n_on int; s_oo text; s_on text;
   out text := ''; v_bad int := 0;
 begin
@@ -33,7 +39,7 @@ begin
            case when jsonb_typeof(p.settings -> 'assignedProjects') = 'array' and jsonb_array_length(p.settings -> 'assignedProjects') > 0
                 then array(select jsonb_array_elements_text(p.settings -> 'assignedProjects')) else coalesce(p.assigned_projects, '{}') end refs
       from quality.rbi_transfer_people t join public.rbi_engineer_profiles p on p.id = t.old_profile_id
-     where t.core_company_id = c and t.user_id is not null and (v_only is null or t.email = v_only)
+     where t.core_company_id = c and t.user_id is not null and (v_only is null or t.email = any (v_only))
      order by t.email
   loop
     -- старый справочник: узлы-объекты public.location_nodes (id, ключ, название, синонимы) + public.project_objects
@@ -81,12 +87,24 @@ begin
       select count(*) into n_new from _new;
       select count(*), string_agg(id, ', ') filter (where rn <= 3) into n_oo, s_oo
         from (select id, row_number() over (order by id) rn from (select id from _old except select id from _new) d) z;
-      select count(*), string_agg(id, ', ') filter (where rn <= 3) into n_on, s_on
-        from (select id, row_number() over (order by id) rn from (select id from _new except select id from _old) d) z;
+      -- «только в новом»: объяснённые (свои «Все», сироты) — отдельно
+      execute format($q$select count(*) filter (where why = ''), string_agg(id, ', ') filter (where why = '' and rn <= 3),
+             count(*) filter (where why <> '') from (
+        select d.id, row_number() over (partition by (x.why = '') order by d.id) rn, x.why from (select id from _new except select id from _old) d
+          join quality.%I q on q.id = d.id and q.core_company_id = $1, lateral (select to_jsonb(q) j) jj,
+          lateral (select case
+            when not exists (select 1 from public.%I p where p.id = d.id) then 'новые'
+            when $2 in ('rbi_inspection_items', 'rbi_inspection_photos')
+                 and not exists (select 1 from quality.rbi_inspections i where i.core_company_id = $1 and i.id = jj.j ->> 'inspection_id') then 'сироты'
+            when (pg_temp.cs(jj.j ->> 'project_canonical_key') in ('все', 'all') or pg_temp.cs(jj.j ->> 'project_canonical_key') like 'все %%')
+                 and jj.j ->> 'core_created_by' = $3::text then 'свои Все'
+            else '' end why) x) z$q$, t, t)
+        into n_on, s_on, n_ex using c, t, m.user_id;
       if n_oo + n_on > 0 then v_bad := v_bad + 1; end if;
       out := out || format('%s %s | %s | старое %s, новое %s%s%s', case when n_oo + n_on = 0 then 'OK  ' else 'DIFF' end, m.email, t, n_old, n_new,
                case when n_oo > 0 then format(' | только в старом %s: %s', n_oo, s_oo) else '' end,
-               case when n_on > 0 then format(' | только в новом %s: %s', n_on, s_on) else '' end) || E'\n';
+               case when n_on > 0 then format(' | только в новом %s: %s', n_on, s_on) else '' end)
+             || case when n_ex > 0 then format(' | объяснено (свои «Все», сироты, новые): %s', n_ex) else '' end || E'\n';
     end loop;
   end loop;
   raise exception E'СВЕРКА (откат), расхождений: %\n%', v_bad, out using errcode = 'P0001';
