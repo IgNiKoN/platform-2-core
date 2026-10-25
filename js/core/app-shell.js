@@ -771,21 +771,21 @@
   ShellService.renderMobileModuleMenu();
 
   // P2-0030: строка «☰» следит за шапкой — её прячут/показывают экраны (switchViewNode, План/Факт, Аналитика…)
-  // и смена маршрута/ширины; одна проверка на кадр.
+  // и смена маршрута/ширины; несколько изменений подряд — одна проверка.
   (function wireMobileModuleStrip() {
     var queued = false;
     var sync = function () {
       if (queued) return;
       queued = true;
       var run = function () { queued = false; ShellService.syncMobileModuleStrip(); };
-      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run); else setTimeout(run, 0);
+      window.setTimeout(run, 0);   // не requestAnimationFrame: в фоновой вкладке он не вызывается, строка «застревала»
     };
     var header = document.getElementById('main-header');
-    if (header && typeof MutationObserver === 'function') {
-      new MutationObserver(sync).observe(header, { attributes: true, attributeFilter: ['style', 'class'] });
+    if (header && typeof window.MutationObserver === 'function') {
+      new window.MutationObserver(sync).observe(header, { attributes: true, attributeFilter: ['style', 'class'] });
     }
-    if (typeof MutationObserver === 'function') {
-      new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    if (typeof window.MutationObserver === 'function') {
+      new window.MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     }
     window.addEventListener('hashchange', sync);
     window.addEventListener('rbi:route', sync);
