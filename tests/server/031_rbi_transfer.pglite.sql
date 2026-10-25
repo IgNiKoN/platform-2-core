@@ -85,7 +85,9 @@ begin
   insert into public.rbi_inspection_items(id, project_code, inspection_id, item_id) values ('i1_1', 'rbi-test', 'i1', '1'), ('i2_1', 'rbi-test', 'i2', '1'), ('i3_1', 'rbi-test', 'i3', '1');
   insert into public.rbi_inspection_photos(id, project_code, inspection_id, bucket_name, storage_path, public_url)
     values ('i1_1_0', 'rbi-test', 'i1', 'inspection-photos', 'rbi-test/inspections/i1/1_0/photo_a', url || 'inspection-photos/rbi-test/inspections/i1/1_0/photo_a'),
-           ('i3_1_0', 'rbi-test', 'i3', 'inspection-photos', 'rbi-test/inspections/i3/1_0/photo_b', url || 'inspection-photos/rbi-test/inspections/i3/1_0/photo_b');
+           ('i3_1_0', 'rbi-test', 'i3', 'inspection-photos', 'rbi-test/inspections/i3/1_0/photo_b', url || 'inspection-photos/rbi-test/inspections/i3/1_0/photo_b'),
+           -- 031a: ссылка только в строке фото (не в JSON проверки) — в тексте записи за ней идёт запятая
+           ('i2_1_0', 'rbi-test', 'i2', 'inspection-photos', 'rbi-test/inspections/i2/1_0/photo_c.jpg', url || 'inspection-photos/rbi-test/inspections/i2/1_0/photo_c.jpg');
   insert into public.rbi_tasks(id, project_code, engineer_name, project_canonical_key, task_data, title)
     values ('t1', 'rbi-test', 'Кондратьев И. Н.', 'OBJ-A', '{"project_code": "rbi-test", "project": "OBJ-A", "note": "rbi-test"}', '{"projectCode":"rbi-test"}'),
            ('t3', 'rbi-test', 'Иванов А.И.', 'obj-b', '{}', null);
@@ -93,6 +95,7 @@ begin
     values ('rep1', 'rbi-test', 'pdf', 'Отчёт', now(), url || 'reports/rbi-test/r1.pdf', 'Кондратьев И. Н.');
   insert into storage.objects(bucket_id, name, metadata) values
     ('inspection-photos', 'rbi-test/inspections/i1/1_0/photo_a', '{"size": 100}'), ('inspection-photos', 'rbi-test/inspections/i3/1_0/photo_b', '{"size": 200}'),
+    ('inspection-photos', 'rbi-test/inspections/i2/1_0/photo_c.jpg', '{"size": 50}'),
     ('library-docs', 'docs/d1.pdf', '{"size": 300}'), ('reports', 'rbi-test/r1.pdf', '{"size": 400}');
   res := res || pg_temp.t(ntab >= 50, 'переносимых таблиц ≥ 50 (есть ' || ntab || ')');
   res := res || pg_temp.t(not exists (select 1 from quality.rbi_transfer_tables() t where t in ('shared_reports', 'shared_report_snapshots')), 'отчёты не в списке');
@@ -109,10 +112,11 @@ begin
   perform * from quality.rbi_transfer_run(c, 'obj-a');
   res := res || pg_temp.t((select count(*) from quality.rbi_inspections where core_company_id = c) = 2, 'объект: 2 проверки');
   res := res || pg_temp.t((select count(*) from quality.rbi_inspection_items where core_company_id = c) = 2, 'объект: 2 пункта');
-  res := res || pg_temp.t((select count(*) from quality.rbi_inspection_photos where core_company_id = c) = 1, 'объект: 1 фото');
+  res := res || pg_temp.t((select count(*) from quality.rbi_inspection_photos where core_company_id = c) = 2, 'объект: 2 фото');
   res := res || pg_temp.t((select count(*) from quality.rbi_tasks where core_company_id = c) = 1, 'объект: 1 задача');
   res := res || pg_temp.t((select count(*) from quality.sk_records where core_company_id = c) = 0, 'объект: прочие таблицы не тронуты');
-  res := res || pg_temp.t((select array_agg(old_name) from quality.rbi_transfer_files where core_company_id = c) = array['rbi-test/inspections/i1/1_0/photo_a'], 'объект: в списке только его фото');
+  res := res || pg_temp.t((select array_agg(old_name order by old_name) from quality.rbi_transfer_files where core_company_id = c)
+    = array['rbi-test/inspections/i1/1_0/photo_a', 'rbi-test/inspections/i2/1_0/photo_c.jpg'], 'объект: в списке только его фото (и из строки фото)');
   res := res || pg_temp.t(not exists (select 1 from quality.rbi_transfer_verify(c, 'obj-a') where not ok and t not like 'файлы%'), 'объект: сверка старое = новое');
   res := res || pg_temp.t((select not ok from quality.rbi_transfer_verify(c, 'obj-a') where t like 'файлы%'), 'объект: файлы не скопированы — сверка не ok');
   perform * from quality.rbi_transfer_run(c, 'obj-a');
@@ -163,7 +167,7 @@ begin
   res := res || pg_temp.t(not exists (select 1 from quality.shared_reports where core_company_id = c), 'отчёты не перенесены');
   res := res || pg_temp.t((select pin_hash from quality.rbi_engineer_profiles where core_company_id = c and id = prof_o) is null
     and (select auth_user_id from quality.rbi_engineer_profiles where core_company_id = c and id = prof_o) = uo, 'профиль: PIN не перенесён, учётка — новая');
-  res := res || pg_temp.t((select count(*) from quality.rbi_transfer_files where core_company_id = c) = 3, 'файлы: все кроме reports (3)');
+  res := res || pg_temp.t((select count(*) from quality.rbi_transfer_files where core_company_id = c) = 4, 'файлы: все кроме reports (4)');
   res := res || pg_temp.t((select count(*) from quality.contracts where core_company_id = c) = 1, 'договор перенесён (после подрядчика)');
   select sum(inserted) into n from quality.rbi_transfer_run(c);
   res := res || pg_temp.t(n = 0, 'повтор полного: 0 новых строк (есть ' || n || ')');
