@@ -39149,7 +39149,8 @@ const tj = `
 .sm-dates{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end}
 .sm-th{display:flex;flex-direction:column;gap:10px;padding:14px 16px}
 @media (max-width:760px){
-.sm-filters{flex-direction:column;align-items:stretch}
+/* P2-0030: nowrap — колонка с переносом растягивала ряд кнопок по самому длинному, правые обрезались; теперь ряд = ширине экрана и листается */
+.sm-filters{flex-direction:column;flex-wrap:nowrap;align-items:stretch}
 .sm-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
 .sm-chip{flex-shrink:0}
 .sm-dates .pf-field{flex:1 1 140px}
