@@ -811,5 +811,57 @@ else {
   check('P2-0025: лимит строк сервера — чтение planfact', n >= 0 && Number.isFinite(total),
     n < total ? `лимит = ${n} (выдача обрезана, всего ${total})` : `лимит не достигнут: не меньше ${n} (наибольшая тестовая выдача)`);
 }
+// --- P2-0028 (032): сотрудник — учётка функцией сервера; вход, смена, сброс, отключение через настоящий GoTrue.
+// Каждый запуск — новая учётка p2-0028-<время>@test.invalid в «Альфе»; в конце она отключена (вход закрыт). Пароли не печатаются.
+{
+  const probe = await rpc('pf_my_profile', {}, tok.alfaAdmin);
+  if (probe.status === 404) { console.log('NOT RUN: миграция 032 не применена — проверки сотрудников пропущены'); fails++; }
+  else {
+    const auth = (path, method, body, token) => fetch(`${URL_}/auth/v1/${path}`, { method, headers: { apikey: ANON, Authorization: `Bearer ${token || ANON}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const cA = (await j(await rpc('pf_my_admin_companies', {}, tok.alfaAdmin)))?.[0]?.company_id;
+    const roleFor = (await j(await rpc('pf_list_company_roles', { p_company: cA }, tok.alfaAdmin))).find((x) => x.template_code === 'foreman')?.id;
+    const email = `p2-0028-${Date.now()}@test.invalid`;
+    const addArgs = { p_company: cA, p_email: email, p_full_name: 'Тестов Т.Т.', p_role: roleFor, p_project: pA };
+    check('032: прораб не добавляет сотрудника', !(await rpc('pf_company_add_member', addArgs, tok.alfaForeman)).ok);
+    check('032: ПТО Беты не добавляет в Альфу', !(await rpc('pf_company_add_member', addArgs, tok.betaPto)).ok);
+    check('032: anon не добавляет', !(await rpc('pf_company_add_member', addArgs)).ok);
+    const add = await j(await rpc('pf_company_add_member', addArgs, tok.alfaAdmin));
+    const nu = Array.isArray(add) ? add[0] : null, temp = nu?.temp_password;
+    check('032: админ добавил — новая учётка и временный пароль', !!nu?.created && typeof temp === 'string' && temp.length === 14);
+    const l1 = await login(email, temp);
+    check('032: вход временным паролем (GoTrue 200)', l1.status === 200 && !!l1.json.access_token, `статус ${l1.status}`);
+    const t1 = l1.json.access_token, rt1 = l1.json.refresh_token;
+    const me1 = await j(await rpc('pf_my_profile', {}, t1));
+    check('032: флаг «сменить пароль» стоит, ФИО', me1?.must_change_password === true && me1?.full_name === 'Тестов Т.Т.' && me1?.email === email);
+    check('032: без смены пароля флаг не снять', !(await rpc('pf_password_changed', {}, t1)).ok);
+    const myp = await j(await rpc('pf_my_projects', {}, t1));
+    check('032: роль на объект работает (видит объект)', Array.isArray(myp) && myp.some((p) => p.id === pA));
+    const own = `Own-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+    const ch = await auth('user', 'PUT', { password: own }, t1);
+    check('032: смена пароля через Auth (PUT /user 200)', ch.status === 200, `статус ${ch.status}`);
+    check('032: pf_password_changed после смены', (await rpc('pf_password_changed', {}, t1)).ok);
+    check('032: флаг снят', (await j(await rpc('pf_my_profile', {}, t1)))?.must_change_password === false);
+    check('032: вход своим паролем 200, временным — 400', (await login(email, own)).status === 200 && (await login(email, temp)).status === 400);
+    const uid = nu?.user_id;
+    check('032: прораб не сбрасывает пароль', !(await rpc('pf_company_reset_password', { p_company: cA, p_user: uid }, tok.alfaForeman)).ok);
+    const temp2 = await j(await rpc('pf_company_reset_password', { p_company: cA, p_user: uid }, tok.alfaAdmin));
+    check('032: сброс — новый временный пароль', typeof temp2 === 'string' && temp2.length === 14 && temp2 !== temp);
+    check('032: после сброса старый пароль 400, новый 200', (await login(email, own)).status === 400 && (await login(email, temp2)).status === 200);
+    const rf = await fetch(`${URL_}/auth/v1/token?grant_type=refresh_token`, { method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: rt1 }) });
+    check('032: после сброса прежний сеанс не продлевается', rf.status >= 400, `статус ${rf.status}`);
+    const t2 = (await login(email, temp2)).json.access_token;
+    check('032: после сброса флаг снова стоит', (await j(await rpc('pf_my_profile', {}, t2)))?.must_change_password === true);
+    check('032: прораб не отключает', !(await rpc('pf_company_disable_member', { p_company: cA, p_user: uid }, tok.alfaForeman)).ok);
+    check('032: админ отключил доступ', (await rpc('pf_company_disable_member', { p_company: cA, p_user: uid }, tok.alfaAdmin)).ok);
+    const l3 = await login(email, temp2);
+    check('032: отключённый не входит (400)', l3.status === 400 && !l3.json.access_token, `статус ${l3.status}`);
+    const myp3 = await j(await rpc('pf_my_projects', {}, t2));
+    check('032: отключённый с ещё живым токеном объектов не видит', Array.isArray(myp3) && myp3.length === 0);
+    const mem = await j(await rpc('pf_list_company_members', { p_company: cA }, tok.alfaAdmin));
+    check('032: в списке — отключён, ФИО, без ролей', Array.isArray(mem) && mem.some((m) => m.user_id === uid && m.disabled_at && !m.assignment_id && m.full_name === 'Тестов Т.Т.'));
+    const meAdm = await j(await rpc('pf_my_profile', {}, tok.alfaAdmin));
+    check('032: админ себе пароль не сбрасывает', !(await rpc('pf_company_reset_password', { p_company: cA, p_user: meAdm?.user_id }, tok.alfaAdmin)).ok);
+  }
+}
 console.log(fails ? `ИТОГ: FAIL (${fails})` : 'ИТОГ: PASS');
 process.exit(fails ? 1 : 0);
