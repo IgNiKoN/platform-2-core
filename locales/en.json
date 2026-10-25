@@ -1931,6 +1931,7 @@
   "quality.history.report.empty_project": "No reports for this project.",
   "quality.history.report.empty_project_hint": "Choose another project.",
   "quality.history.report.generic": "Report",
+  "quality.history.report.group_select": "Select all reports in group",
   "quality.history.report.kind_day": "Quality day",
   "quality.history.report.kind_other": "Other",
   "quality.history.report.kind_poster": "Quality poster",

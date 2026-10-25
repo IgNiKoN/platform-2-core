@@ -1931,6 +1931,7 @@
   "quality.history.report.empty_project": "В этом объекте нет отчётов.",
   "quality.history.report.empty_project_hint": "Выберите другой объект.",
   "quality.history.report.generic": "Отчёт",
+  "quality.history.report.group_select": "Отметить все отчёты группы",
   "quality.history.report.kind_day": "День качества",
   "quality.history.report.kind_other": "Прочее",
   "quality.history.report.kind_poster": "Плакат качества",

@@ -1931,6 +1931,7 @@
   "quality.history.report.empty_project": "ამ ობიექტზე ანგარიშები არ არის.",
   "quality.history.report.empty_project_hint": "აირჩიეთ სხვა ობიექტი.",
   "quality.history.report.generic": "ანგარიში",
+  "quality.history.report.group_select": "ჯგუფის ყველა ანგარიშის მონიშვნა",
   "quality.history.report.kind_day": "ხარისხის დღე",
   "quality.history.report.kind_other": "სხვა",
   "quality.history.report.kind_poster": "ხარისხის პლაკატი",

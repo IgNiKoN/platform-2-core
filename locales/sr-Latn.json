@@ -1931,6 +1931,7 @@
   "quality.history.report.empty_project": "U ovom objektu nema izveštaja.",
   "quality.history.report.empty_project_hint": "Izaberite drugi objekat.",
   "quality.history.report.generic": "Izveštaj",
+  "quality.history.report.group_select": "Označi sve izveštaje u grupi",
   "quality.history.report.kind_day": "Dan kvaliteta",
   "quality.history.report.kind_other": "Ostalo",
   "quality.history.report.kind_poster": "Plakat kvaliteta",

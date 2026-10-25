@@ -7,6 +7,7 @@
 import { openHistoryPlanViewer } from '../audit/features/quality-plan-pin.js';
 import { planPinOf } from '../shared/plan-pin-label.js';
 import { groupByContractorWork, avgFinalUrk, avgUrkStatusCls } from '../history/history.group.js';
+import { reportKindOf, reportKindLabel, orderKindGroups, REPORT_KIND_OTHER } from '../reports/report-kind.js';
 
 const DESK_IDS = {
   checks: 'ana-desk-hist-checks',
@@ -14,13 +15,14 @@ const DESK_IDS = {
   plans: 'ana-desk-hist-plans'
 };
 
-let _deskReportsDocKind = 'ALL';
 let _deskChecksProject = 'ALL';
 let _deskReportsProject = 'ALL';
 let _deskPlansProject = 'ALL';
 let _deskChecksSort = { key: 'date', dir: 'desc' };
 /** P2-0026: раскрытые группы таблицы «Проверки» (ключи объект / подрядчик / вид работ) — сохраняются между перерисовками. */
 let _deskChecksOpen = new Set();
+/** P2-0039: раскрытые группы типов «Отчеты» (`r:{тип}`; `!r:{тип}` — свёрнута вручную единственная группа). */
+let _deskReportsOpen = new Set();
 let _deskPlansFloorItems = new Map();
 let _deskPlansFloorLabels = new Map();
 let _deskPlansSelectedFloor = null;
@@ -60,14 +62,6 @@ function _bindHistoryDeskI18n() {
   });
 }
 
-function reportDocKindLabel(kind) {
-  if (kind === 'Плакат качества') return _t('quality.history.report.kind_poster', 'Плакат качества');
-  if (kind === 'День качества') return _t('quality.history.report.kind_day', 'День качества');
-  if (kind === 'Сводный отчёт') return _t('quality.history.report.kind_summary', 'Сводный отчёт');
-  if (kind === 'Прочее') return _t('quality.history.report.kind_other', 'Прочее');
-  return kind;
-}
-
 const CHECK_SORT_KEYS = ['place', 'date', 'tmpl', 'insp', 'urk'];
 const RU_COLLATOR = new Intl.Collator('ru', { sensitivity: 'base', numeric: true });
 
@@ -97,16 +91,6 @@ function locationsSvc() {
   } catch (_) {
     return null;
   }
-}
-
-function reportDocKind(r) {
-  if (r && r.doc_kind) return String(r.doc_kind);
-  const t = String((r && r.title) || '');
-  if (/плакат/i.test(t)) return 'Плакат качества';
-  if (/one.?pager|сводк/i.test(t)) return 'One-Pager';
-  if (/день качества|quality day/i.test(t)) return 'День качества';
-  if (/сводн|полный отчет|база проверок/i.test(t)) return 'Сводный отчёт';
-  return 'Прочее';
 }
 
 function reportAuthor(r) {
@@ -357,14 +341,17 @@ function checkRowHtml(item) {
 }
 
 /** P2-0026: строка-группа (объект / подрядчик / вид работ): раскрыть-свернуть, число проверок, средний УрК — как на телефоне. */
-function groupHtml(level, key, name, items, inner) {
-  const open = _deskChecksOpen.has(key);
-  const avg = avgFinalUrk(items);
-  const urk = avg !== null
-    ? `<span class="ana-desk-hist-grp-urk status-tag ${avgUrkStatusCls(avg)}">${avg}%</span>`
-    : `<span class="ana-desk-hist-grp-urk"></span>`;
+function groupHtml(level, key, name, items, inner, opts) {
+  const o = opts || {};
+  const open = o.open != null ? !!o.open : _deskChecksOpen.has(key);
+  const avg = o.noUrk ? null : avgFinalUrk(items);
+  const urk = o.noUrk ? ''
+    : avg !== null
+      ? `<span class="ana-desk-hist-grp-urk status-tag ${avgUrkStatusCls(avg)}">${avg}%</span>`
+      : `<span class="ana-desk-hist-grp-urk"></span>`;
+  const cbLabel = o.cbLabel || _t('quality.history.group.select', 'Отметить все проверки группы');
   return `<div class="ana-desk-hist-grp" data-lvl="${level}" role="row">`
-    + `<input type="checkbox" class="ana-desk-hist-grp-cb" data-ana-desk-grp-cb="1" aria-label="${esc(_t('quality.history.group.select', 'Отметить все проверки группы'))}">`
+    + `<input type="checkbox" class="ana-desk-hist-grp-cb" data-ana-desk-grp-cb="1" aria-label="${esc(cbLabel)}">`
     + `<button type="button" class="ana-desk-hist-grp-main" data-ana-desk-grp="${esc(key)}" aria-expanded="${open ? 'true' : 'false'}">`
     + `<span class="ana-desk-hist-grp-chev" aria-hidden="true">›</span>`
     + `<span class="ana-desk-hist-grp-name">${esc(name)}</span>`
@@ -420,7 +407,7 @@ function reportFileCard(r) {
     || /\.pptx$/i.test(String(r.title || ''));
   const type = isPptx ? 'PPTX' : 'PDF';
   const typeCls = isPptx ? 'is-pptx' : 'is-pdf';
-  const kind = reportDocKind(r);
+  const kind = reportKindOf(r);
   const author = reportAuthor(r);
   const period = reportPeriod(r);
   const dateStr = new Date(r.generated_at).toLocaleDateString('ru-RU');
@@ -433,7 +420,7 @@ function reportFileCard(r) {
     + `<span class="ana-desk-hist-file-type ${typeCls}">${type}</span>`
     + `<div class="ana-desk-hist-file-body">`
     + `<div class="ana-desk-hist-file-title">${esc(r.title || _t('quality.history.report.untitled', 'Без названия'))}</div>`
-    + `<div class="ana-desk-hist-file-meta">${esc(kind !== 'Прочее' ? reportDocKindLabel(kind) : _t('quality.history.report.generic', 'Отчёт'))}`
+    + `<div class="ana-desk-hist-file-meta">${esc(kind !== REPORT_KIND_OTHER ? reportKindLabel(kind, _t) : _t('quality.history.report.generic', 'Отчёт'))}`
     + `${_deskReportsProject === 'ALL' ? ' · ' + esc(project) : ''}</div>`
     + `<div class="ana-desk-hist-file-sub">${esc(author)} · ${esc(period)} · ${esc(sizeStr)}</div>`
     + `</div>`
@@ -444,7 +431,28 @@ function reportFileCard(r) {
     + `</article>`;
 }
 
-/* ─── Reports: object rail + file cards ─────────────────────────────── */
+/** P2-0039: отчёты разложены по группам типов (по количеству, «Прочее» последней); внутри — свежие сверху. */
+function reportKindGroupsHtml(items) {
+  const byKind = new Map();
+  items.forEach((r) => {
+    const k = reportKindOf(r);
+    if (!byKind.has(k)) byKind.set(k, []);
+    byKind.get(k).push(r);
+  });
+  const kinds = orderKindGroups(new Map([...byKind].map(([k, list]) => [k, list.length])));
+  const single = kinds.length === 1;
+  const groups = kinds.map((k) => {
+    const key = `r:${k}`;
+    const open = _deskReportsOpen.has(key) || (single && !_deskReportsOpen.has('!' + key));
+    const list = byKind.get(k);
+    return groupHtml(0, key, reportKindLabel(k, _t), list,
+      `<div class="ana-desk-hist-files">${list.map(reportFileCard).join('')}</div>`,
+      { open, noUrk: true, cbLabel: _t('quality.history.report.group_select', 'Отметить все отчёты группы') });
+  }).join('');
+  return `<div class="ana-desk-hist-files ana-desk-hist-kind-groups">${groups}</div>`;
+}
+
+/* ─── Reports: object rail + kind groups ────────────────────────────── */
 
 function paintDeskReports() {
   const host = document.getElementById(DESK_IDS.reports);
@@ -462,41 +470,15 @@ function paintDeskReports() {
     return;
   }
 
-  const kindCounts = new Map();
-  filtered.forEach((r) => {
-    const k = reportDocKind(r);
-    kindCounts.set(k, (kindCounts.get(k) || 0) + 1);
-  });
-  if (_deskReportsDocKind !== 'ALL' && !kindCounts.has(_deskReportsDocKind)) {
-    _deskReportsDocKind = 'ALL';
-  }
-  let byKind = filtered;
-  if (_deskReportsDocKind !== 'ALL') {
-    byKind = filtered.filter((r) => reportDocKind(r) === _deskReportsDocKind);
-  }
-
-  const { map, names } = groupByProject(byKind, reportProject);
+  const { map, names } = groupByProject(filtered, reportProject);
   _deskReportsProject = resolveSelectedProject(_deskReportsProject, names);
   const selectedItems = _deskReportsProject === 'ALL'
-    ? byKind.slice().sort((a, b) => new Date(b.generated_at) - new Date(a.generated_at))
-    : (map.get(_deskReportsProject) || []).slice()
-      .sort((a, b) => new Date(b.generated_at) - new Date(a.generated_at));
+    ? filtered.slice()
+    : (map.get(_deskReportsProject) || []).slice();
+  selectedItems.sort((a, b) => new Date(b.generated_at) - new Date(a.generated_at));
 
   const counts = new Map(names.map((n) => [n, (map.get(n) || []).length]));
-  const rail = buildObjectRailHtml('reports', names, counts, _deskReportsProject, byKind.length);
-
-  const kinds = Array.from(kindCounts.keys()).sort(RU_COLLATOR.compare);
-  let chips = '';
-  if (kinds.length > 1) {
-    const chip = (label, value, count, on) => (
-      `<button type="button" class="ana-desk-hist-chip${on ? ' is-on' : ''}" data-ana-desk-doc-kind="${esc(value)}">`
-      + `${esc(label)} <span>${count}</span></button>`
-    );
-    chips = `<div class="ana-desk-hist-chips">`
-      + chip(_t('quality.history.report.chip_all', 'Все'), 'ALL', filtered.length, _deskReportsDocKind === 'ALL')
-      + kinds.map((k) => chip(reportDocKindLabel(k), k, kindCounts.get(k), _deskReportsDocKind === k)).join('')
-      + `</div>`;
-  }
+  const rail = buildObjectRailHtml('reports', names, counts, _deskReportsProject, filtered.length);
 
   const actions = `<div class="ana-desk-hist-reports-actions">`
     + `<label class="ana-desk-hist-check-all"><input type="checkbox" id="ana-desk-reports-select-all" class="accent-indigo-600"> ${_t('quality.history.report.select_all', 'Выбрать всё')}</label>`
@@ -508,12 +490,12 @@ function paintDeskReports() {
   if (!selectedItems.length) {
     body = emptyHtml(_t('quality.history.report.empty_project', 'В этом объекте нет отчётов.'), _t('quality.history.report.empty_project_hint', 'Выберите другой объект.'));
   } else {
-    body = `<div class="ana-desk-hist-files">${selectedItems.map(reportFileCard).join('')}</div>`;
+    body = reportKindGroupsHtml(selectedItems);
   }
 
   const detail = `<div class="ana-desk-hist-detail">`
     + detailHeadHtml(title, selectedItems.length, selectedItems.length === 1 ? _t('quality.history.unit.report_one', 'отчёт') : _t('quality.history.unit.report_many', 'отчётов'))
-    + chips + actions + body
+    + actions + body
     + `</div>`;
 
   host.innerHTML = `<div class="ana-desk-hist-split">${rail}${detail}</div>`;
@@ -1062,7 +1044,6 @@ export function clearHistoryDeskPanels() {
   _deskPlansSelectedFloor = null;
   _deskPlansExpanded = new Set();
   _deskChecksSort = { key: 'date', dir: 'desc' };
-  _deskReportsDocKind = 'ALL';
 }
 
 export function bindHistoryDeskEvents() {
@@ -1103,14 +1084,6 @@ export function bindHistoryDeskEvents() {
         _deskChecksSort = { key, dir: key === 'date' || key === 'urk' ? 'desc' : 'asc' };
       }
       paintDeskChecks();
-      return;
-    }
-
-    const chip = t.closest('[data-ana-desk-doc-kind]');
-    if (chip) {
-      e.preventDefault();
-      _deskReportsDocKind = chip.getAttribute('data-ana-desk-doc-kind') || 'ALL';
-      paintDeskReports();
       return;
     }
 
@@ -1165,8 +1138,11 @@ export function bindHistoryDeskEvents() {
       const key = grp.getAttribute('data-ana-desk-grp');
       const body = grp.parentElement && grp.parentElement.nextElementSibling;
       if (!key || !body) return;
-      const open = !_deskChecksOpen.has(key);
-      if (open) _deskChecksOpen.add(key); else _deskChecksOpen.delete(key);
+      const open = grp.getAttribute('aria-expanded') !== 'true';
+      if (key.startsWith('r:')) {
+        if (open) { _deskReportsOpen.add(key); _deskReportsOpen.delete('!' + key); }
+        else { _deskReportsOpen.delete(key); _deskReportsOpen.add('!' + key); }
+      } else if (open) _deskChecksOpen.add(key); else _deskChecksOpen.delete(key);
       grp.setAttribute('aria-expanded', open ? 'true' : 'false');
       body.hidden = !open;
       return;
@@ -1213,12 +1189,12 @@ export function bindHistoryDeskEvents() {
     // P2-0026: галочка группы — отметить/снять все проверки группы (и вложенные группы)
     if (t.matches && t.matches('[data-ana-desk-grp-cb]')) {
       const body = t.parentElement && t.parentElement.nextElementSibling;
-      if (body) body.querySelectorAll('.hist-checkbox, [data-ana-desk-grp-cb]').forEach((el) => { el.checked = !!t.checked; });
+      if (body) body.querySelectorAll('.hist-checkbox, .report-checkbox, [data-ana-desk-grp-cb]').forEach((el) => { el.checked = !!t.checked; });
       return;
     }
     if (t.id === 'ana-desk-reports-select-all') {
       const on = !!t.checked;
-      document.querySelectorAll('#ana-desk-hist-reports .report-checkbox').forEach((el) => {
+      document.querySelectorAll('#ana-desk-hist-reports .report-checkbox, #ana-desk-hist-reports [data-ana-desk-grp-cb]').forEach((el) => {
         el.checked = on;
       });
     }
