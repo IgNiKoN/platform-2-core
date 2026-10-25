@@ -1,6 +1,7 @@
 -- P2-0033 доработка 1 (033b): атаки ревью — правка справочника объектов и дерева локаций, запись в чужой объект, удалённый
--- объект, пересчёт признаков. Основа и данные — как в 033_rbi_roles_objects.sql. Всё откатывается; отчёт — ERROR P0001 с «FAIL всего: N».
--- Запуск: после 033b_rbi_roles_review_up.sql. Пользователи и компании — тестовые (@test.invalid, is_test).
+-- объект, пересчёт признаков; 033c — справочник объектов и дерево локаций только у Админа (не у Зама). Основа и данные —
+-- как в 033_rbi_roles_objects.sql. Всё откатывается; отчёт — ERROR P0001 с «FAIL всего: N».
+-- Запуск: после 033c_objects_manage_up.sql. Пользователи и компании — тестовые (@test.invalid, is_test).
 -- Объекты Качества Альфы: O1 «Большевиков,22 (гений)» (синоним «Гений»; узел локаций n1), O2 «Школа 400»; Беты: OB.
 -- Проверки (автор): a1 — O1, инженер 1; a2 — O1, инженер 2; a3 — O2, инженер 2; a4 — без объекта, инженер 1; a5 — без объекта,
 -- инженер 2; a6 — «Все», инженер 1; a7 — O1 ЗАГЛАВНЫМИ и в кавычках, инженер 2; a8 — только узел объекта n1, инженер 2;
@@ -134,9 +135,17 @@ begin
   res := res || pg_temp.t(pg_temp.rows($q$update quality.location_nodes set "displayName" = 'Большевиков 22' where id = 'n1-m33'$q$) = 0,
                           'владелец: дерево локаций — не Директор');
   perform pg_temp.as_user(udep, ca);
-  res := res || pg_temp.t(pg_temp.rows($q$update quality.location_nodes set "displayName" = 'Большевиков, 22' where id = 'n1-m33'$q$) = 1,
-                          'владелец: дерево локаций правит Зам. руководителя (manage)');
+  res := res || pg_temp.t(pg_temp.rows($q$update quality.location_nodes set "displayName" = 'Большевиков, 22' where id = 'n1-m33'$q$) = 0,
+                          'владелец (033c): дерево локаций — не Зам. руководителя');
+  res := res || pg_temp.t(pg_temp.rows(format($q$update quality.project_objects set synonyms = array['x'] where id = %L$q$, o1)) = 0,
+                          'владелец (033c): справочник объектов — не Зам. руководителя');
+  -- роль «Админ» теста — права РБИ «Админа» (033c: + справочник объектов)
+  reset role;
+  insert into core.company_role_permissions(role_id, company_id, action)
+  select r_adm, ca, a from unnest(array['quality.objects.manage', 'construction.objects.manage']) a;
   perform pg_temp.as_user(uadm, ca);
+  res := res || pg_temp.t(pg_temp.rows($q$update quality.location_nodes set "displayName" = 'Большевиков, 22' where id = 'n1-m33'$q$) = 1,
+                          'владелец (033c): дерево локаций правит Админ');
   res := res || pg_temp.t(pg_temp.rows(format($q$update quality.project_objects set synonyms = array['Гений', 'ЖК Гений-2'] where id = %L$q$, o1)) = 1,
                           'Админ правит справочник объектов');
 
