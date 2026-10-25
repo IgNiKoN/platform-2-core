@@ -22,6 +22,7 @@ import {
     formatRiskInsightDisplayHtml,
     isAutoRiskInsightText
 } from './analytics.risk-insight.js';
+import { reportKindOf, reportKindLabel, orderKindGroups, REPORT_KIND_OTHER } from '../reports/report-kind.js';
 
 function _t(key, fallback, vars) {
   try {
@@ -39,27 +40,6 @@ function _t(key, fallback, vars) {
   return fallback;
 }
 
-function _reportDocKindLabel(kind) {
-  var map = {
-    'Протокол совещания': 'quality.analytics.report.kind_protocol',
-    'Практика': 'quality.analytics.report.kind_practice',
-    'Воркшоп': 'quality.analytics.report.kind_workshop',
-    'Инструктаж': 'quality.analytics.report.kind_briefing',
-    'КС-2': 'quality.analytics.report.kind_ks2',
-    'Акт-эталон': 'quality.analytics.report.kind_act_etalon',
-    'Дашборд СК': 'quality.analytics.report.kind_sk_dash',
-    'График СМР': 'quality.analytics.report.kind_smr',
-    'День качества': 'quality.analytics.report.kind_qday',
-    'Плакат качества': 'quality.analytics.report.kind_poster',
-    'Отчёт по подрядчику': 'quality.analytics.report.kind_contractor',
-    'Сводный отчёт': 'quality.analytics.report.kind_summary',
-    'Прочее': 'quality.analytics.report.kind_other',
-    'FMEA': 'quality.analytics.report.kind_fmea',
-    'TWI': 'quality.analytics.report.kind_twi'
-  };
-  var key = map[kind];
-  return key ? _t(key, kind) : kind;
-}
 
 
 function _getSetting(key) {
@@ -619,67 +599,38 @@ window.clearAnalyticsViewRuntimeCaches = clearAnalyticsViewRuntimeCaches;
 // =========================================================================
 const REPORTS_GROUP_PAGE_SIZE = 12;
 
-// Fallback-классификация вида документа по title — для отчётов, сохранённых
-// ДО появления поля doc_kind (не мигрируются по решению плана, см.
-// current_plan.md), чтобы чипсы работали и на старых записях, а не только на
-// новых. Текстуально идентична classifyDocKind() из reports.actions.js —
-// модули не импортируют друг друга (по тому же принципу, что и дублированная
-// getSyncBadgeHtml в history.render.js/analytics.render.js), сохранённое поле
-// r.doc_kind всегда в приоритете, эта функция — только резерв для его отсутствия.
-function _classifyDocKindFallback(title) {
-    const t = title || '';
-    if (t.includes('Протокол')) return 'Протокол совещания';
-    if (t.includes('FMEA')) return 'FMEA';
-    if (t.includes('TWI')) return 'TWI';
-    if (t.includes('Практика')) return 'Практика';
-    if (t.includes('Воркшоп')) return 'Воркшоп';
-    if (t.includes('Инструктаж')) return 'Инструктаж';
-    if (t.includes('КС-2')) return 'КС-2';
-    if (t.includes('Акт-Эталон')) return 'Акт-эталон';
-    if (t.includes('Дашборд СК')) return 'Дашборд СК';
-    if (t.includes('График СМР')) return 'График СМР';
-    if (t.includes('День Качества')) return 'День качества';
-    if (t.includes('Плакат Качества')) return 'Плакат качества';
-    if (t.includes('Паспорта Подрядчиков') || t.includes('Список подрядчиков') || t.includes('Срез:') || t.includes('Отчет для')) return 'Отчёт по подрядчику';
-    if (t.includes('Сводка для Руководства') || t.includes('Полный отчет по объекту') || t.includes('База проверок')) return 'Сводный отчёт';
-    return 'Прочее';
-}
-
-function _reportDocKind(r) {
-    return r.doc_kind || _classifyDocKindFallback(r.title);
-}
-
-// Выбранный чип вида документа ('ALL' или конкретное значение doc_kind).
-// Естественно теряется при перезагрузке страницы — не персистится, как и
-// currentHistoryViewMode/остальной ephemeral UI-стейт этой вкладки.
-let _reportsActiveDocKindFilter = 'ALL';
 
 // Сохраняет раскрытые аккордеоны объектов до перерисовки списка (по образцу
 // _captureExpandedHistory/_restoreExpandedHistory в history.render.js, но
 // без второго уровня — у отчётов группировка только по объекту).
+
+// P2-0039: раскрытые группы отчётов (объект `p:…` и тип внутри объекта `p:…|k:…`) — по data-ключам.
 function _captureExpandedReports(listDiv) {
-    const projects = new Set();
-    if (!listDiv) return projects;
-    [...listDiv.children].forEach((card) => {
-        const body = card.querySelector('[id^="reports-group-"]');
-        if (!body || body.classList.contains('hidden')) return;
-        const pName = card.querySelector('.reports-group-title')?.textContent?.trim();
-        if (pName) projects.add(pName);
+    const keys = new Set();
+    if (!listDiv) return keys;
+    listDiv.querySelectorAll('[data-rep-grp-body]').forEach((body) => {
+        if (!body.classList.contains('hidden')) keys.add(body.getAttribute('data-rep-grp-body'));
     });
-    return projects;
+    return keys;
 }
 
-function _restoreExpandedReports(listDiv, expandedProjects) {
-    if (!listDiv || !expandedProjects || expandedProjects.size === 0) return;
-    [...listDiv.children].forEach((card) => {
-        const pName = card.querySelector('.reports-group-title')?.textContent?.trim();
-        if (!pName || !expandedProjects.has(pName)) return;
-        const body = card.querySelector('[id^="reports-group-"]');
-        if (!body) return;
-        body.classList.remove('hidden');
-        const icon = card.querySelector('.chevron-icon');
-        if (icon) icon.style.transform = 'rotate(180deg)';
+function _setReportsGroupOpen(body, open) {
+    if (!body) return;
+    body.classList.toggle('hidden', !open);
+    const head = body.previousElementSibling;
+    const icon = head && head.querySelector('.chevron-icon');
+    if (icon) icon.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+}
+
+function _restoreExpandedReports(listDiv, expandedKeys) {
+    if (!listDiv || !expandedKeys || expandedKeys.size === 0) return;
+    listDiv.querySelectorAll('[data-rep-grp-body]').forEach((body) => {
+        if (expandedKeys.has(body.getAttribute('data-rep-grp-body'))) _setReportsGroupOpen(body, true);
     });
+}
+
+function _escAttr(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // Разрешает photoRef в реальный src, пригодный для ЗАГРУЗКИ В CANVAS
@@ -3869,33 +3820,15 @@ export const AnalyticsRender = {
             }
         }
 
-        // Чипсы doc_kind — считаем набор значений, реально встречающихся среди
-        // отчётов, ПОСЛЕ применения остальных фильтров, но ДО фильтра по самому
-        // doc_kind (иначе выбранный чип исчез бы из своей же панели).
-        const docKindCounts = new Map();
-        filteredArr.forEach(r => {
-            const k = _reportDocKind(r);
-            docKindCounts.set(k, (docKindCounts.get(k) || 0) + 1);
-        });
-        if (_reportsActiveDocKindFilter !== 'ALL' && !docKindCounts.has(_reportsActiveDocKindFilter)) {
-            _reportsActiveDocKindFilter = 'ALL';
-        }
-        const chipsHtml = AnalyticsRender._renderReportsDocKindChips(docKindCounts, filteredArr.length);
-
-        if (_reportsActiveDocKindFilter !== 'ALL') {
-            filteredArr = filteredArr.filter(r => _reportDocKind(r) === _reportsActiveDocKindFilter);
-        }
-
         if (filteredArr.length === 0) {
-            listDiv.innerHTML = chipsHtml + `<div class="text-center py-10 text-muted font-bold text-rbi-label uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm">${_t('quality.analytics.reports.empty_filtered', 'По выбранным фильтрам отчетов не найдено.')}</div>`;
+            listDiv.innerHTML = `<div class="text-center py-10 text-muted font-bold text-rbi-label uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm">${_t('quality.analytics.reports.empty_filtered', 'По выбранным фильтрам отчетов не найдено.')}</div>`;
             return;
         }
 
         // Сортировка по дате (самые свежие сверху)
         const sorted = filteredArr.sort((a, b) => new Date(b.generated_at) - new Date(a.generated_at));
 
-        // Группировка по объекту (единообразно с аккордеоном вкладки «Проверки»,
-        // см. history.render.js) — один уровень, без вложенного подрядчика.
+        // Группировка Объект → Тип отчёта (P2-0039; как Объект → Подрядчик во вкладке «Проверки»).
         const grouped = {};
         sorted.forEach(r => {
             const pName = r.metadata?.project || _t('quality.analytics.reports.summary_default', 'Сводный Отчет');
@@ -3911,33 +3844,49 @@ export const AnalyticsRender = {
         const hiddenRevealClass = isListView ? 'flex' : 'grid';
 
         let groupIndex = 0;
-        const groupsHtml = groupKeys.map(pName => {
-            const items = grouped[pName];
+        const kindGroupHtml = (pKey, kind, items, open) => {
             const safeGroupId = `reports-group-${groupIndex++}`;
             const visibleItems = items.slice(0, REPORTS_GROUP_PAGE_SIZE);
             const hiddenItems = items.slice(REPORTS_GROUP_PAGE_SIZE);
-
             const cardsHtml = visibleItems.map(r => AnalyticsRender._renderReportCard(r, isListView)).join('');
             let hiddenBlockHtml = '';
             if (hiddenItems.length > 0) {
                 const hiddenId = `${safeGroupId}-hidden`;
                 hiddenBlockHtml = `<div id="${hiddenId}" class="hidden ${itemsWrapClass} mt-3">${hiddenItems.map(r => AnalyticsRender._renderReportCard(r, isListView)).join('')}</div>
-                <button onclick="document.getElementById('${hiddenId}').classList.remove('hidden'); document.getElementById('${hiddenId}').classList.add('${hiddenRevealClass}'); this.style.display='none'" class="w-full bg-[var(--hover-bg)] text-muted py-2 mt-3 rounded-lg text-rbi-caption font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]">Показать ещё отчёты (${hiddenItems.length})</button>`;
+                <button onclick="document.getElementById('${hiddenId}').classList.remove('hidden'); document.getElementById('${hiddenId}').classList.add('${hiddenRevealClass}'); this.style.display='none'" class="w-full bg-[var(--hover-bg)] text-muted py-2 mt-3 rounded-lg text-rbi-caption font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]">${_t('quality.analytics.reports.show_more_n', 'Показать ещё отчёты ({n})', { n: hiddenItems.length })}</button>`;
             }
+            return `
+                <div class="border border-[var(--card-border)] rounded-[10px] bg-[var(--card-bg)] overflow-hidden">
+                    <div class="flex justify-between items-center px-2.5 py-2 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="AnalyticsRender._toggleReportsGroup(this)">
+                        <div class="reports-kind-title text-rbi-label font-bold text-ink dark:text-white truncate min-w-0 pr-2">${reportKindLabel(kind, _t)}</div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="text-rbi-caption font-bold text-muted bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${items.length} ${_t('quality.analytics.chart.pcs', 'шт')}</span>
+                            <svg class="w-4 h-4 text-muted transition-transform duration-300 transform chevron-icon" style="transform: rotate(${open ? 180 : 0}deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                    </div>
+                    <div id="${safeGroupId}" data-rep-grp-body="${_escAttr(pKey + '|k:' + kind)}" class="${open ? '' : 'hidden '}border-t border-[var(--card-border)] p-2">
+                        <div class="${itemsWrapClass}">${cardsHtml}</div>
+                        ${hiddenBlockHtml}
+                    </div>
+                </div>`;
+        };
+
+        const groupsHtml = groupKeys.map(pName => {
+            const items = grouped[pName];
+            const safeGroupId = `reports-group-${groupIndex++}`;
+            const pKey = `p:${pName}`;
+            const byKind = new Map();
+            items.forEach(r => {
+                const k = reportKindOf(r);
+                if (!byKind.has(k)) byKind.set(k, []);
+                byKind.get(k).push(r);
+            });
+            const kinds = orderKindGroups(new Map([...byKind].map(([k, list]) => [k, list.length])));
+            const kindsHtml = kinds.map(k => kindGroupHtml(pKey, k, byKind.get(k), kinds.length === 1)).join('');
 
             return `
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden">
-                <div class="flex justify-between items-center p-2.5 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="
-                    const body = document.getElementById('${safeGroupId}');
-                    const icon = this.querySelector('.chevron-icon');
-                    if (body.classList.contains('hidden')) {
-                        body.classList.remove('hidden');
-                        icon.style.transform = 'rotate(180deg)';
-                    } else {
-                        body.classList.add('hidden');
-                        icon.style.transform = 'rotate(0deg)';
-                    }
-                ">
+                <div class="flex justify-between items-center p-2.5 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="AnalyticsRender._toggleReportsGroup(this)">
                     <div class="flex items-center gap-2.5 min-w-0 pr-2">
                         <div class="w-8 h-8 bg-brand-soft/30 text-brand rounded-[10px] flex items-center justify-center shrink-0 border border-brand-soft">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
@@ -3951,14 +3900,11 @@ export const AnalyticsRender = {
                         <svg class="w-4 h-4 text-muted transition-transform duration-300 transform rotate-0 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
                     </div>
                 </div>
-                <div id="${safeGroupId}" class="hidden border-t border-[var(--card-border)] bg-surface/30 p-2.5">
-                    <div class="${itemsWrapClass}">${cardsHtml}</div>
-                    ${hiddenBlockHtml}
-                </div>
+                <div id="${safeGroupId}" data-rep-grp-body="${_escAttr(pKey)}" class="hidden border-t border-[var(--card-border)] bg-surface/30 p-2.5 flex flex-col gap-2">${kindsHtml}</div>
             </div>`;
         }).join('');
 
-        listDiv.innerHTML = chipsHtml + groupsHtml;
+        listDiv.innerHTML = groupsHtml;
         const reportsToggleHost = document.getElementById('reports-view-mode-toggle');
         const kbToggleHtml = window.kbViewModeToggleHtml;
         if (reportsToggleHost && typeof kbToggleHtml === 'function') {
@@ -3967,33 +3913,10 @@ export const AnalyticsRender = {
         _restoreExpandedReports(listDiv, expandedProjects);
     },
 
-    // Горизонтальный ряд чипсов-фильтров по doc_kind над списком отчётов.
-    // Показывает только реально встречающиеся значения (+ «Все») — не полный
-    // хардкод возможных видов документа, чтобы не занимать место пустыми чипами.
-    _renderReportsDocKindChips(docKindCounts, totalCount) {
-        const collator = new Intl.Collator('ru');
-        const kinds = Array.from(docKindCounts.keys()).sort(collator.compare);
-        if (kinds.length <= 1) return ''; // Один тип отчётов — чипсы не несут смысла.
-
-        const chip = (label, value, count, active) => `
-            <button onclick="AnalyticsRender._setReportsDocKindFilter('${value.replace(/'/g, "\\'")}')"
-                class="shrink-0 px-3 py-1.5 rounded-full text-rbi-caption font-black uppercase tracking-wide border transition-colors whitespace-nowrap ${active ? 'bg-brand text-white border-brand shadow-sm' : 'bg-[var(--card-bg)] text-muted border-[var(--card-border)]'}">
-                ${label} <span class="opacity-70">${count}</span>
-            </button>`;
-
-        const allActive = _reportsActiveDocKindFilter === 'ALL';
-        let html = `<div class="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1" style="scrollbar-width: none;">`;
-        html += chip(_t('quality.analytics.chip.all', 'Все'), 'ALL', totalCount, allActive);
-        kinds.forEach(k => {
-            html += chip(k, k, docKindCounts.get(k), _reportsActiveDocKindFilter === k);
-        });
-        html += `</div>`;
-        return html;
-    },
-
-    _setReportsDocKindFilter(value) {
-        _reportsActiveDocKindFilter = value;
-        AnalyticsRender.renderReportsList();
+    // P2-0039: раскрыть/свернуть группу отчётов (объект или тип внутри объекта).
+    _toggleReportsGroup(head) {
+        const body = head && head.nextElementSibling;
+        if (body) _setReportsGroupOpen(body, body.classList.contains('hidden'));
     },
 
     _reportCardAuthor(r) {
@@ -4008,7 +3931,7 @@ export const AnalyticsRender = {
     _renderReportCard(r, isListView) {
         const syncBadge = getSyncBadgeHtml(r);
         const isOwner = !r.created_by || r.created_by === (_getSetting('engineerName') || _t('quality.analytics.fallback.engineer', 'Инженер'));
-        const docKind = _reportDocKind(r);
+        const docKind = reportKindOf(r);
         const safeTitle = String(r.title || '').replace(/'/g, "\\'");
         const dateStr = new Date(r.generated_at).toLocaleDateString('ru-RU');
         const sizeStr = ((r.file_size || 0) / 1024 / 1024).toFixed(2) + ' MB';
@@ -4028,7 +3951,7 @@ export const AnalyticsRender = {
                 <div class="w-9 h-9 rounded-lg shrink-0 bg-surface border border-[var(--card-border)] flex items-center justify-center"><span class="text-rbi-caption font-black ${fileTypeColor}">${fileTypeLabel}</span></div>
                 <div class="min-w-0 flex-1">
                     <div class="text-rbi-body font-black text-ink dark:text-white truncate">${r.title}</div>
-                    <div class="text-rbi-caption font-bold text-muted truncate mt-0.5">${docKind !== 'Прочее' ? _reportDocKindLabel(docKind) + ' · ' : ''}${_t('quality.analytics.reports.author', 'Автор:')} ${author} · ${dateStr}</div>
+                    <div class="text-rbi-caption font-bold text-muted truncate mt-0.5">${docKind !== REPORT_KIND_OTHER ? reportKindLabel(docKind, _t) + ' · ' : ''}${_t('quality.analytics.reports.author', 'Автор:')} ${author} · ${dateStr}</div>
                     <div class="text-rbi-caption font-bold text-muted truncate">${_t('quality.analytics.reports.period', 'Период:')} ${period}</div>
                 </div>
                 <div class="shrink-0">${syncBadge}</div>
@@ -4038,7 +3961,7 @@ export const AnalyticsRender = {
             </div>`;
         }
 
-        const docKindTag = docKind !== 'Прочее' ? `<div class="text-rbi-caption font-bold text-muted truncate mb-0.5">${_reportDocKindLabel(docKind)}</div>` : '';
+        const docKindTag = docKind !== REPORT_KIND_OTHER ? `<div class="text-rbi-caption font-bold text-muted truncate mb-0.5">${reportKindLabel(docKind, _t)}</div>` : '';
         return `
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="openReport('${r.id}')">
                 <input type="checkbox" class="report-checkbox absolute top-2 left-2 w-5 h-5 accent-indigo-600 rounded cursor-pointer z-10" value="${r.id}" onclick="event.stopPropagation()">

@@ -933,6 +933,7 @@
   "quality.analytics.reports.period": "Period:",
   "quality.analytics.reports.period_unknown": "Period nije naveden",
   "quality.analytics.reports.select_all": "Izaberi sve",
+  "quality.analytics.reports.show_more_n": "Prikaži još izveštaja ({n})",
   "quality.analytics.reports.summary_default": "Zbirni izveštaj",
   "quality.analytics.section.causes_compare": "Uzroci i Poređenje",
   "quality.analytics.section.compare_contr": "Poređenje izvođača (Integr. UrK)",

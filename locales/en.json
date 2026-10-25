@@ -933,6 +933,7 @@
   "quality.analytics.reports.period": "Period:",
   "quality.analytics.reports.period_unknown": "Period not set",
   "quality.analytics.reports.select_all": "Select all",
+  "quality.analytics.reports.show_more_n": "Show more reports ({n})",
   "quality.analytics.reports.summary_default": "Summary Report",
   "quality.analytics.section.causes_compare": "Causes and Comparison",
   "quality.analytics.section.compare_contr": "Contractors Comparison (Integr. UrK)",

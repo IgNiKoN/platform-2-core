@@ -933,6 +933,7 @@
   "quality.analytics.reports.period": "Период:",
   "quality.analytics.reports.period_unknown": "Период не указан",
   "quality.analytics.reports.select_all": "Выбрать всё",
+  "quality.analytics.reports.show_more_n": "Показать ещё отчёты ({n})",
   "quality.analytics.reports.summary_default": "Сводный Отчет",
   "quality.analytics.section.causes_compare": "Причины и Сравнение",
   "quality.analytics.section.compare_contr": "Сравнение Подрядчиков (Интегр. УрК)",
