@@ -77,6 +77,7 @@ begin
      and tg.tgname not like '%_refresh_object_keys'     -- 033: пересчёт признаков закреплённых объектов
      and tg.tgname not like '%_queue_guard'             -- 037: решение по заявке — только администратор
      and tg.tgname not like '%_record_object'           -- 039: объект ядра записи
+     and tg.tgname not like '%_record_counterparty'     -- 039a: контрагент записи
      and tg.tgname <> 'project_objects_core_object';     -- 039: объект ядра объекта Качества
   res := res || pg_temp.t(n = 0, 'в quality только триггер привязки к компании (лишние: ' || coalesce(s, '—') || ')');
   select count(*), string_agg(p.proname, ', ') into n, s from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
