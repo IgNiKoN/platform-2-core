@@ -155,7 +155,9 @@ begin
   end loop;
   res := res || pg_temp.t(n = 0, 'очистка: 0 строк компании (есть ' || n || ')');
 
-  -- 3) полный перенос
+  -- 3) полный перенос; владелец уже входил в новое приложение — у него свой профиль в компании (031b)
+  insert into quality.rbi_engineer_profiles(id, inspector_id, engineer_name, project_code, auth_user_id, core_company_id)
+    values (gen_random_uuid(), p || '_owner-031@test.invalid', 'owner-031@test.invalid', p::text, uo, c);
   select count(*) into n from quality.rbi_transfer_run(c) where inserted > 0;
   update quality.rbi_transfer_files set copied_at = now() where core_company_id = c;   -- как после files.mjs copy
   for r in select * from quality.rbi_transfer_verify(c) where not ok loop
@@ -166,7 +168,8 @@ begin
     and (select code from quality.allowed_projects where core_company_id = c) = p::text, 'проект rbi-work (без сопоставления) не переносится; код = объект');
   res := res || pg_temp.t(not exists (select 1 from quality.shared_reports where core_company_id = c), 'отчёты не перенесены');
   res := res || pg_temp.t((select pin_hash from quality.rbi_engineer_profiles where core_company_id = c and id = prof_o) is null
-    and (select auth_user_id from quality.rbi_engineer_profiles where core_company_id = c and id = prof_o) = uo, 'профиль: PIN не перенесён, учётка — новая');
+    and (select auth_user_id from quality.rbi_engineer_profiles where core_company_id = c and id = prof_o) = old_o,
+    'профиль: PIN не перенесён; старый профиль перенесён рядом с профилем нового приложения (учётка — старая)');
   res := res || pg_temp.t((select count(*) from quality.rbi_transfer_files where core_company_id = c) = 4, 'файлы: все кроме reports (4)');
   res := res || pg_temp.t((select count(*) from quality.contracts where core_company_id = c) = 1, 'договор перенесён (после подрядчика)');
   select sum(inserted) into n from quality.rbi_transfer_run(c);
