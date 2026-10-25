@@ -1,5 +1,12 @@
 # Changelog — platform-2-core
 
+## P2-0039 — «История → Отчеты»: группы типов на ПК и телефоне
+
+- **Правила типа отчёта — один модуль** `js/modules/quality/features/reports/report-kind.js` (`reportKindFromTitle`, `reportKindOf`, `reportKindLabel`, `orderKindGroups`) вместо 4 расходящихся копий (ПК, телефон, `classifyDocKind`, `_docKindFromTitle`). Тип — по названию; сохранённый `doc_kind` — запасной вариант (поле локальное, на сервер не синхронизируется). Новые группы «Акт осмотра», «Планёрка»; «One-Pager» и «Отчёт по объекту» — отдельно на обоих видах. RBI: 339 отчётов, «Прочее» 0 (было 198 на ПК, 236 на телефоне).
+- **ПК** (`history.desktop.content.js`): объекты слева, справа — раскрывающиеся группы типов (строка-группа «Проверок», галочка группы, раскрытие запоминается; одна группа — раскрыта), по количеству, «Прочее» последней; чипы убраны.
+- **Телефон** (`analytics.render.js`): объект → группы типов, «Показать ещё» внутри группы, раскрытие сохраняется после перерисовки; чипы убраны.
+- Переводы `quality.history.report.kind_*`, `group_select`, `quality.analytics.reports.show_more_n` (ru/en/ka/sr-Latn). SW `18.82.0`, «История обновлений». Сервер, миграции, sync не менялись. Тесты: unit 633 ×3 (новый `report-kind.test.js`), `check:ts` 0. Владелец на показе: «всё ок».
+
 ## P2-0036 — Перенос РБИ: готовые отчёты в компанию «RBI», проверка эталонов и практик
 
 - **Сервер (CRITICAL — перенос данных):** миграция `036` — отчёты (`shared_reports`) и снимки (`shared_report_snapshots`) в переносе, бакет `reports` — в списке, сверка по каждому бакету; `036a` — перенос пачками `rbi_transfer_run_part` (запрос SQL Editor дольше ~2 мин обрывается). Скрипты `scripts/rbi-transfer/13_reports_inventory.sql` (опись), `14_object_reports.sql`, `15_reports_visibility.sql`, `16_snapshots_batch.sql` (снимки порциями).
