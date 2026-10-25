@@ -15,7 +15,6 @@ import { mountProjectIdBackfillUI } from './features/project-id-backfill-ui.js';
 import { mountCloudDeletedPurgeUI } from './features/cloud-deleted-purge-ui.js';
 import { mountCloudOrphanUrlsUI } from './features/cloud-orphan-urls-ui.js';
 import { mountRoleMatrixUI } from './features/role-matrix-ui.js';
-import { mountEnabledModulesUI } from './features/enabled-modules-ui.js';
 import { mountOfficialTemplatesUI } from './features/official-templates-ui.js';
 
 var SettingsRender = {
@@ -117,24 +116,6 @@ var SettingsRender = {
                         <span class="transition-transform group-open:rotate-180 text-brand">▼</span>
                     </summary>
                     <div id="sync-settings-block"></div>
-                </details>
-
-                <!-- МОДУЛИ ПЛАТФОРМЫ (§37.2 Block 3) — admin-only -->
-                <details id="settings-enabled-modules-section"
-                    class="bg-[var(--card-bg)] border border-brand-soft rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3 hidden">
-                    <summary
-                        class="p-4 font-black text-rbi-body text-brand uppercase tracking-tight cursor-pointer flex justify-between items-center bg-brand-soft transition-colors select-none group-open:border-b border-brand-soft rounded-2xl group-open:rounded-b-none">
-                        <span class="flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                    d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
-                                </path>
-                            </svg>
-                            <span data-i18n="settings.accordion.enabled_modules">Модули платформы</span>
-                        </span>
-                        <span class="transition-transform group-open:rotate-180 text-brand">▼</span>
-                    </summary>
-                    <div id="settings-enabled-modules-root"></div>
                 </details>
 
                 <!-- AI АССИСТЕНТ -->
@@ -1916,9 +1897,6 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (!email && typeof mountRoleMatrixUI === 'function') {
             mountRoleMatrixUI().catch(function () {});
         }
-        if (typeof mountEnabledModulesUI === 'function') {
-            mountEnabledModulesUI().catch(function () {});
-        }
     }
 
     function _getSettingsSubsection() {
@@ -2210,11 +2188,6 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (typeof mountRoleMatrixUI === 'function') {
             mountRoleMatrixUI().catch(function (e) {
                 console.warn('[settings] role-matrix UI:', e);
-            });
-        }
-        if (typeof mountEnabledModulesUI === 'function') {
-            mountEnabledModulesUI().catch(function (e) {
-                console.warn('[settings] enabled-modules UI:', e);
             });
         }
         if (typeof mountOfficialTemplatesUI === 'function') {

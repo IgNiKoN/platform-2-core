@@ -253,7 +253,6 @@ const urlsToCache = [
   './js/modules/settings/features/cloud-deleted-purge-ui.js',
   './js/modules/settings/features/cloud-orphan-urls-ui.js',
   './js/modules/settings/features/role-matrix-ui.js',
-  './js/modules/settings/features/enabled-modules-ui.js',
   './js/modules/settings/features/official-templates-ui.js',
   './js/modules/settings/features/location-directory-ui.js',
   './js/modules/settings/index.js',
