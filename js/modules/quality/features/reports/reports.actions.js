@@ -9,6 +9,7 @@
  */
 
 import { ReportsState } from './reports.state.js';
+import { reportKindFromTitle } from './report-kind.js';
 import { buildMeetingProtocolHtml, meetingRichToSafeHtml } from '../meetings/meetings.protocol.js';
 import { buildInspectionPlanSheetHtml } from '../shared/plan-pin-print.js';
 
@@ -1122,29 +1123,9 @@ function exportPdfData(data, mode = 'script') {
 // перенесённых методов ReportsActions (printEtalon, printMeeting и др.) —
 // резолвится как обычная module-level function declaration этого файла
 // (hoisting), без необходимости в window.X внутри самого модуля.
-// Определяет человекочитаемый вид документа по заголовку — для чипсов-фильтров
-// на вкладке «Отчёты» (см. _ai/current_plan.md, блок "UI вкладки «Отчёты»").
-// Аддитивное поле doc_kind, не заменяет report_type ('print'/'pdf', используется
-// синком/бейджем) — только для UI-группировки. По тому же принципу, что уже
-// используется чуть ниже для скрытия QR по подстроке в title (showQr).
-function classifyDocKind(title) {
-    if (title.includes('Протокол')) return 'Протокол совещания';
-    if (title.includes('FMEA')) return 'FMEA';
-    if (title.includes('TWI')) return 'TWI';
-    if (title.includes('Практика')) return 'Практика';
-    if (title.includes('Воркшоп')) return 'Воркшоп';
-    if (title.includes('Инструктаж')) return 'Инструктаж';
-    if (title.includes('КС-2')) return 'КС-2';
-    if (title.includes('Акт-Эталон')) return 'Акт-эталон';
-    if (title.includes('Дашборд СК')) return 'Дашборд СК';
-    if (title.includes('График СМР')) return 'График СМР';
-    if (title.includes('День Качества')) return 'День качества';
-    if (title.includes('Плакат Качества')) return 'Плакат качества';
-    if (title.includes('Повторяющиеся дефекты')) return 'Повторяющиеся дефекты';
-    if (title.includes('Паспорта Подрядчиков') || title.includes('Список подрядчиков') || title.includes('Срез:') || title.includes('Отчет для')) return 'Отчёт по подрядчику';
-    if (title.includes('Сводка для Руководства') || title.includes('One-Pager 2.0') || title.includes('One-Pager 4.0') || title.includes('Отчёт по объекту 2.0') || title.includes('Сводный отчет по объект') || title.includes('Полный отчет по объекту') || title.includes('База проверок')) return 'Сводный отчёт';
-    return 'Прочее';
-}
+// Вид документа по заголовку — общие правила (P2-0039, report-kind.js);
+// doc_kind — аддитивное локальное поле, не заменяет report_type ('print'/'pdf').
+const classifyDocKind = reportKindFromTitle;
 
 /** Текущее значение фильтра периода аналитики (дефолт 30 дней). */
 function _reportPeriodSel() {
