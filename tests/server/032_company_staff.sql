@@ -24,6 +24,7 @@ declare
   e_new text := 'p2-0028-new-' || substr(md5(random()::text), 1, 8) || '@test.invalid';
 begin
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[uplat, uadm, ufor, ubadm]) u;
+  update auth.users set email_confirmed_at = now() where id in (uplat, uadm, ufor, ubadm);   -- 032d: добавляется только подтверждённая
   insert into core.companies(id, name, is_test) values (ca, 'Альфа 032', true), (cb, 'Бета 032', true);
   insert into core.company_members(company_id, user_id) values (ca, uadm), (ca, ufor), (cb, ubadm);
   insert into core.projects(id, company_id, name) values (pa, ca, 'Объект А 032');
@@ -167,6 +168,29 @@ begin
   select count(*) into n from public.pf_list_company_members(ca) l where l.user_id = unew and l.disabled_at is not null and l.assignment_id is null;
   res := res || pg_temp.t(n = 1, 'список: отключённый виден без ролей');
   perform public.pf_company_disable_member(ca, unew);   -- повтор — без ошибки
+
+  -- 9а. 032d (ревью): H1 — человек в другой компании; M3 — роль отключённому; M4 — неподтверждённая почта
+  reset role;
+  e_new := 'p2-0028-unconf-' || substr(md5(random()::text), 1, 6) || '@test.invalid';
+  insert into auth.users(id, email) values (gen_random_uuid(), e_new);
+  perform pg_temp.as_user(uadm);
+  res := res || pg_temp.t(pg_temp.err(format('select public.pf_company_add_member(%L, %L, %L, %L)',
+                          ca, e_new, 'Неподтверждённый Н.Н.', r_eng)) like '22023%', 'M4: неподтверждённую почту добавить нельзя');
+  res := res || pg_temp.t(pg_temp.err(format('select public.pf_assign_role(%L, %L)', unew, r_eng)) like '42501%', 'M3: отключённому роль не назначается');
+  select a.user_id, a.temp_password into unew, pw from public.pf_company_add_member(ca, 'p2-0028-h1-' || substr(md5(random()::text), 1, 6) || '@test.invalid',
+                                                                                   'Общий О.О.', r_eng, null) a;
+  res := res || pg_temp.t(pg_temp.err(format('select public.pf_company_reset_password(%L, %L)', ca, unew)) = 'OK', 'H1: пока только в своей компании — сброс можно');
+  reset role;
+  select email into e_new from auth.users where id = unew;
+  perform pg_temp.as_user(ubadm);
+  perform public.pf_company_add_member(cb, e_new, 'Общий О.О.', r_bpto, null);
+  perform pg_temp.as_user(uadm);
+  res := res || pg_temp.t(pg_temp.err(format('select public.pf_company_reset_password(%L, %L)', ca, unew)) like '42501%', 'H1: человек в другой компании — сброс нельзя');
+  select count(*) into n from public.pf_list_company_members(ca) l where l.user_id = unew and not l.managed;
+  res := res || pg_temp.t(n = 1, 'H1: в списке — уже не «учётка компании»');
+  perform public.pf_company_disable_member(ca, unew);
+  reset role;
+  res := res || pg_temp.t((select banned_until is null from auth.users where id = unew), 'H1: отключение в одной компании вход не закрывает');
 
   -- 10. Последнего администратора отключить нельзя (админ платформы пробует)
   perform pg_temp.as_user(uplat);

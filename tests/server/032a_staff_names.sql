@@ -27,6 +27,7 @@ declare
 begin
   perform pg_temp.as_owner();
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[uadm, ueng, uoth, ubadm, umulti]) u;
+  update auth.users set email_confirmed_at = now() where id in (uadm, ueng, uoth, ubadm, umulti);
   e_eng := ueng || '@test.invalid';
   insert into core.companies(id, name, is_test) values (ca, 'Альфа 032a', true), (cb, 'Бета 032a', true);
   insert into core.company_members(company_id, user_id) values (ca, uadm), (ca, ueng), (ca, uoth), (cb, ubadm), (ca, umulti), (cb, umulti);
@@ -46,7 +47,8 @@ begin
     ('i6-' || s, pb::text, cb, 'Иванов А.И.', 'Иванов А.И.', null, ueng);        -- другая компания (не участник)
   insert into quality.rbi_tasks(id, project_code, core_company_id, engineer_name, assigned_to_name, assigned_to_auth_user_id, core_created_by) values
     ('t1-' || s, pa::text, ca, 'Иванов А.И.', 'Иванов А.И.', ueng, uadm),        -- назначена инженеру админом
-    ('t2-' || s, pa::text, ca, 'Петров П.П.', 'Петров П.П.', uoth, uadm);
+    ('t2-' || s, pa::text, ca, 'Петров П.П.', 'Петров П.П.', uoth, uadm),
+    ('t3-' || s, pa::text, ca, 'Иванов А.И.', 'Иванов А.И.', uoth, ueng);        -- M2: автор — инженер, назначена однофамильцу-«Иванову» (учётка uoth)
   insert into quality.rbi_engineer_profiles(project_code, core_company_id, engineer_name, inspector_name, auth_user_id) values
     (ca::text, ca, 'Иванов А.И.', 'Иванов А.И.', ueng);
 
@@ -77,10 +79,23 @@ begin
   res := res || pg_temp.t((select engineer_name = 'Иванов Алексей Игоревич' and assigned_to_name = engineer_name from quality.rbi_tasks where id = 't1-' || s), 'задача, назначенная учётке, — ФИО');
   res := res || pg_temp.t((select engineer_name = 'Петров П.П.' from quality.rbi_tasks where id = 't2-' || s), 'чужая задача не тронута');
   res := res || pg_temp.t((select engineer_name = 'Иванов Алексей Игоревич' from quality.rbi_engineer_profiles where auth_user_id = ueng), 'профиль Качества учётки — ФИО');
-  res := res || pg_temp.t(n = 5, 'изменено строк: ' || n || ' (ожидается 5: i1, i2, i3, t1, профиль)');
+  res := res || pg_temp.t(n = 6, 'изменено строк: ' || n || ' (ожидается 6: i1, i2, i3, t1, t3, профиль)');
+  res := res || pg_temp.t((select engineer_name = 'Иванов Алексей Игоревич' and assigned_to_name = 'Иванов А.И.' from quality.rbi_tasks where id = 't3-' || s),
+                          'M2: в своей задаче назначенный другой человек — его имя не тронуто');
   res := res || pg_temp.t(exists (select 1 from core.audit_log where company_id = ca and record_id = ueng and action = 'FULL_NAME' and actor = uadm
-                                  and old_data ->> 'full_name' = 'Иванов А.И.' and (new_data ->> 'quality_rows')::int = 5), 'журнал: FULL_NAME, было/стало, строк');
+                                  and old_data ->> 'full_name' = 'Иванов А.И.' and (new_data ->> 'quality_rows')::int = 6), 'журнал: FULL_NAME, было/стало, строк');
   res := res || pg_temp.t(not exists (select 1 from core.audit_log where company_id = cb and record_id = ueng), 'журнал другой компании пуст');
+
+  -- 2а. M1: админ платформы добавил инженера во вторую компанию (учётка — Альфы, но человек и в Бете) → админ Альфы меняет ФИО:
+  --     имена переписываются только в Альфе, в Бете — нет; админ Альфы больше не «владелец» учётки (в двух компаниях)
+  perform pg_temp.as_owner();
+  insert into core.company_members(company_id, user_id) values (cb, ueng);
+  update quality.rbi_inspections set engineer_name = 'Иванов Алексей Игоревич' where id = 'i6-' || s;   -- запись в Бете
+  perform pg_temp.as_user(uadm);
+  res := res || pg_temp.t(pg_temp.err(format('select public.pf_set_full_name(%L, %L)', ueng, 'Иванов Бета')) like '42501%',
+                          'M1/H1: человек в чужой компании — админ Альфы ФИО не меняет');
+  perform pg_temp.as_owner();
+  delete from core.company_members where company_id = cb and user_id = ueng;
 
   -- 3. Сам сотрудник меняет своё ФИО; прежнее ФИО — тоже «старое имя»
   perform pg_temp.as_user(ueng);

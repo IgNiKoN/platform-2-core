@@ -22,14 +22,15 @@ do $$
 declare
   uadm uuid := gen_random_uuid(); ueng uuid := gen_random_uuid(); uold uuid := gen_random_uuid(); uoth uuid := gen_random_uuid();
   ca uuid := gen_random_uuid(); pa uuid := gen_random_uuid(); prof uuid := gen_random_uuid(); poth uuid := gen_random_uuid();
-  upet uuid := gen_random_uuid(); ppet uuid := gen_random_uuid();
+  upet uuid := gen_random_uuid(); ppet uuid := gen_random_uuid(); pb2 uuid := gen_random_uuid(); prof2 uuid := gen_random_uuid(); uold2 uuid := gen_random_uuid();
   k text; n int; res text := ''; r record;
 begin
   perform pg_temp.as_owner();
-  insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[uadm, ueng, uold, uoth, upet]) u;
+  insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[uadm, ueng, uold, uoth, upet, uold2]) u;
+  update auth.users set email_confirmed_at = now();
   insert into core.companies(id, name, is_test) values (ca, 'Альфа 032b', true);
   insert into core.company_members(company_id, user_id) values (ca, uadm), (ca, ueng), (ca, upet);
-  insert into core.projects(id, company_id, name) values (pa, ca, 'Объект А 032b');
+  insert into core.projects(id, company_id, name) values (pa, ca, 'Объект А 032b'), (pb2, ca, 'Объект Б 032b');
   insert into core.role_assignments(company_id, user_id, role_id, project_id) values
     (ca, uadm, (select id from core.company_roles where company_id = ca and template_code = 'company_admin'), null);
   insert into core.user_profiles(user_id, full_name, managed_company_id) values (ueng, 'Иванов А.И.', ca), (upet, 'Петрушко Д.М.', ca);
@@ -42,7 +43,11 @@ begin
     (ppet, 'rbi-test_ПЕТРУШКО_Д.М.', pa::text, ca, 'ПЕТРУШКО Д.М.', 'ПЕТРУШКО Д.М.', null, '{"gameLogs":[{"id":7}]}');                                 -- имя заглавными
   insert into quality.rbi_inspections(id, project_code, core_company_id, engineer_name, inspector_name, core_created_by) values
     ('pi1-' || ppet, pa::text, ca, 'ПЕТРУШКО Д.М.', 'ПЕТРУШКО Д.М.', upet);
+  -- H2: у инженера второй старый профиль на другом объекте
+  insert into quality.rbi_engineer_profiles(id, inspector_id, project_code, core_company_id, engineer_name, inspector_name, auth_user_id, profile_data) values
+    (prof2, 'rbi-test2_Иванов_А.И.', pb2::text, ca, 'Иванов А.И.', 'Иванов А.И.', uold2, '{"gameLogs":[{"id":5}]}');
   insert into quality.rbi_transfer_people(core_company_id, old_profile_id, email, user_id) values (ca, prof, ueng || '@test.invalid', ueng),
+    (ca, prof2, ueng || '@test.invalid', ueng),
     (ca, ppet, upet || '@test.invalid', upet);
   insert into quality.rbi_engineer_ratings(id, project_code, core_company_id, engineer_name, pi) values
     (k, pa::text, ca, 'Иванов А.И.', 100), ('x-' || poth, pa::text, ca, 'Петров П.П.', 50), ('x-' || ppet, pa::text, ca, 'ПЕТРУШКО Д.М.', 70);
@@ -58,7 +63,7 @@ begin
   res := res || pg_temp.t((select inspector_id = k and auth_user_id = ueng and auth_email = ueng || '@test.invalid'
                            and jsonb_array_length(profile_data -> 'gameLogs') = 3 and profile_data -> 'plan' = '{"w":1}'
                            from quality.rbi_engineer_profiles where id = prof), 'старый профиль: ключ объекта, учётка, очки слиты, остальное на месте');
-  res := res || pg_temp.t((select count(*) from quality.rbi_engineer_profiles where core_company_id = ca and auth_user_id = ueng) = 1, 'дубль удалён — у учётки один профиль');
+  res := res || pg_temp.t((select count(*) from quality.rbi_engineer_profiles where core_company_id = ca and auth_user_id = ueng and project_code = pa::text) = 1, 'дубль удалён — у учётки один профиль на объекте');
   res := res || pg_temp.t((select inspector_id = 'rbi-test_Петров_П.П.' and auth_user_id = uoth and jsonb_array_length(profile_data -> 'gameLogs') = 1
                            from quality.rbi_engineer_profiles where id = poth), 'чужой профиль не тронут');
   res := res || pg_temp.t(k = pa::text || '_Иванов_А.И.', 'ключ как в sync-engine (пробелы → _)');
@@ -67,6 +72,10 @@ begin
                            and auth_user_id = upet from quality.rbi_engineer_profiles where id = ppet), 'ПЕТРУШКО → «Петрушко Д.М.»: профиль и ключ');
   res := res || pg_temp.t((select engineer_name from quality.rbi_engineer_ratings where id = 'x-' || ppet) = 'Петрушко Д.М.', 'ПЕТРУШКО → рейтинг');
   res := res || pg_temp.t((select engineer_name = 'Петрушко Д.М.' and inspector_name = engineer_name from quality.rbi_inspections where id = 'pi1-' || ppet), 'ПЕТРУШКО → записи автора');
+  res := res || pg_temp.t(exists (select 1 from quality.rbi_engineer_profiles where id = prof2 and auth_user_id = uold2
+                                  and jsonb_array_length(profile_data -> 'gameLogs') = 1)
+                          and (select jsonb_array_length(profile_data -> 'gameLogs') from quality.rbi_engineer_profiles where id = prof) = 3,
+                          'H2: профиль на другом объекте сохранён (не удалён, не привязан), очки не перемешаны');
   -- повтор — без изменений
   select * into r from quality.rbi_transfer_attach_profiles(ca) a where a.old_key like '%Иванов%' or a.new_key like '%Иванов%';
   res := res || pg_temp.t(r.merged_duplicates = 0 and r.game_logs = 3 and r.new_key = k, 'повтор: дублей 0, очков 3');
@@ -79,6 +88,15 @@ begin
                            from quality.rbi_engineer_profiles where id = prof), 'ФИО сменили: ключ профиля новый');
   res := res || pg_temp.t((select engineer_name from quality.rbi_engineer_ratings where id = k) = 'Иванов Алексей Игоревич'
                           and (select engineer_name from quality.rbi_engineer_ratings where id = 'x-' || poth) = 'Петров П.П.', 'рейтинг переименован, чужой — нет');
+
+  -- 4. M5: на том же объекте однофамилец с будущим ФИО — смена ФИО не падает, профили не конфликтуют
+  insert into quality.rbi_engineer_profiles(id, inspector_id, project_code, core_company_id, engineer_name, inspector_name, auth_user_id) values
+    (gen_random_uuid(), core.staff_profile_key(pa::text, 'Иванов Третий'), pa::text, ca, 'Иванов Третий', 'Иванов Третий', null);
+  perform pg_temp.as_user(uadm);
+  res := res || pg_temp.t(pg_temp.err(format('select public.pf_set_full_name(%L, %L)', ueng, 'Иванов Третий')) = 'OK', 'M5: однофамилец на объекте — смена ФИО не падает');
+  perform pg_temp.as_owner();
+  res := res || pg_temp.t((select engineer_name from quality.rbi_engineer_profiles where id = prof) = 'Иванов Алексей Игоревич'
+                          and (select full_name from core.user_profiles where user_id = ueng) = 'Иванов Третий', 'M5: ФИО сохранено, профиль при конфликте не переименован');
 
   raise exception E'ОТЧЁТ (откат):\n%\nFAIL всего: %', res, (length(res) - length(replace(res, 'FAIL', ''))) / 4;
 end $$;
