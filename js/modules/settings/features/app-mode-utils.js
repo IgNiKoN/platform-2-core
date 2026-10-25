@@ -550,6 +550,9 @@ const AppModeManager = {
         // Иначе early-return оставлял hash на #/settings и F5 снова открывал настройки.
         if (this.currentMode === newMode) {
             if (!onSettings && !onPlatform && !this._pendingKnowledgeReferencePath) return;
+            // P2-0030: План/Факт прячет плашку «Стройконтроль — бета» — вернувшись в Стройконтроль, показать снова
+            const bannerSame = document.getElementById('construction-warning-banner');
+            if (bannerSame) bannerSame.style.display = newMode === 'construction' ? 'flex' : 'none';
             this.renderBottomNav();
             this.updateHeaderVisibility();
             const shellSame = window.RBI?.services?.shell;

@@ -39750,9 +39750,11 @@ function Gj() {
 }
 function j_() {
   const n = Gj();
-  document.querySelectorAll(".view-section").forEach((r) => r.classList.remove("active")), n.classList.add("active");
+  document.querySelectorAll(".view-section").forEach((s) => s.classList.remove("active")), n.classList.add("active");
   const t = document.getElementById("main-header");
-  t && (t.style.display = "none"), (fi !== n || !mr) && Pj(n), gr = !0, Ti(), window.dispatchEvent(new Event(Op));
+  t && (t.style.display = "none");
+  const r = document.getElementById("construction-warning-banner");
+  r && (r.style.display = "none"), (fi !== n || !mr) && Pj(n), gr = !0, Ti(), window.dispatchEvent(new Event(Op));
 }
 async function Yj(n) {
   n && Array.isArray(n.nav) && (pw = n.nav);

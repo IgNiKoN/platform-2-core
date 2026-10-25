@@ -185,6 +185,9 @@ export function showView(): void {
   el.classList.add('active');
   const header = document.getElementById('main-header');
   if (header) header.style.display = 'none';
+  // P2-0030: плашка «Стройконтроль — бета» — режима Стройконтроля; при переходе оттуда в План/Факт она оставалась
+  const banner = document.getElementById('construction-warning-banner');
+  if (banner) banner.style.display = 'none';
   if (mountedEl !== el || !root) mount(el);
   navActive = true;
   syncPlatformNav();
