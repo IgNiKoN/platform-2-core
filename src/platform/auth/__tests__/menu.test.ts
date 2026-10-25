@@ -56,6 +56,15 @@ test('почта (P2-0016): Качество и Стройконтроль — �
   assert.ok(!noBridge.includes('Качество'), 'без подключённого хранилища компании — пункта нет');
 });
 
+test('почта (P2-0031): «База знаний» — по выключателю компании (ответ сервера) и мосту; без флага — нет', () => {
+  const on = shell('email', { quality: true, knowledge: true }, { active: true });
+  assert.equal(on.RBI.services.shell.legacyModuleAllowed('knowledge'), true);
+  assert.ok(!sidebar(on).includes('База знаний'), 'при Качестве База знаний — вкладка внутри Качества, не отдельный пункт (как при PIN)');
+  assert.equal(shell('email', { quality: true }, { active: true }).RBI.services.shell.legacyModuleAllowed('knowledge'), false);
+  assert.equal(shell('email', { quality: true, knowledge: true }, null).RBI.services.shell.legacyModuleAllowed('knowledge'), false);
+  assert.equal(shell('pin', {}).RBI.services.shell.legacyModuleAllowed('knowledge'), true);
+});
+
 test('PIN (старый вход): Quality / Стройконтроль как раньше, пунктов Platform 2.0 нет — даже если флаг остался', () => {
   const win = shell('pin', { planfact: true });
   const s = sidebar(win);

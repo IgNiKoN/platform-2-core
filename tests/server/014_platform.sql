@@ -33,10 +33,10 @@ begin
   insert into core.platform_admins(user_id) values (uplat);
 
   -- 1. Каталог модулей
-  -- (P2-0016: после 018 Качество и Стройконтроль тоже управляемые; «старый» модуль — База знаний)
-  res := res || pg_temp.t((select count(*) from core.module_catalog where managed and code not in ('quality', 'construction')) = 1
-                          and (select managed from core.module_catalog where code = 'planfact')
-                          and not (select managed from core.module_catalog where code = 'knowledge'), 'каталог: управляется planfact (+ Качество/Стройконтроль с 018), старые — с пометкой');
+  -- (P2-0016: после 018 Качество и Стройконтроль тоже управляемые; P2-0031, 038: и База знаний — старых модулей не осталось)
+  res := res || pg_temp.t((select managed from core.module_catalog where code = 'planfact')
+                          and (select managed from core.module_catalog where code = 'knowledge')
+                          and not exists (select 1 from core.module_catalog where not managed), 'каталог: все модули управляемые (planfact; 018 — Качество/Стройконтроль; 038 — База знаний)');
 
   -- 2. Прораб: кто я
   reset role; perform pg_temp.as_user(ufor);
@@ -94,8 +94,8 @@ begin
   res := res || pg_temp.t(n2 = n, 'pf_platform_companies: все компании');
   select modules into c from public.pf_platform_companies() where id = ca;
   res := res || pg_temp.t((select (x ->> 'enabled')::boolean = false from jsonb_array_elements(c) x where x ->> 'code' = 'planfact')
-                          and (select x -> 'enabled' = 'null'::jsonb and not (x ->> 'managed')::boolean from jsonb_array_elements(c) x where x ->> 'code' = 'knowledge'),
-                          'pf_platform_companies: planfact выключен, База знаний — без выключателя');
+                          and (select (x ->> 'enabled')::boolean = false and (x ->> 'managed')::boolean from jsonb_array_elements(c) x where x ->> 'code' = 'knowledge'),
+                          'pf_platform_companies: planfact выключен, База знаний — с выключателем (038), выключена');
   res := res || pg_temp.t((select people from public.pf_platform_companies() where id = ca) = 3, 'pf_platform_companies: людей в Альфе 3');
 
   -- 8. Создать компанию
@@ -120,7 +120,7 @@ begin
   reset role;
   res := res || pg_temp.t((select count(*) from core.audit_log where company_id = cc and action = 'platform.module.set') = 1, 'модуль: повтор без изменений — без записи');
   perform pg_temp.as_user(uplat);
-  res := res || pg_temp.t(pg_temp.err(format('select public.pf_platform_set_module(%L, ''knowledge'', false)', cc)) like '22023%', 'модуль: старый (База знаний) — отказ');
+  res := res || pg_temp.t(pg_temp.err(format('select public.pf_platform_set_module(%L, ''no_such'', false)', cc)) like '22023%', 'модуль: неизвестный — отказ (старых после 038 нет)');
   res := res || pg_temp.t(pg_temp.err(format('select public.pf_platform_set_module(%L, ''nope'', true)', cc)) like '22023%', 'модуль: неизвестный — отказ');
   perform public.pf_platform_set_module(ca, 'planfact', true);
   reset role; perform pg_temp.as_user(ufor);

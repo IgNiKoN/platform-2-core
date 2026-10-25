@@ -430,6 +430,12 @@ function isConstructionV2TestMode(mode) {
 /** knowledge ∈ availableModules (enabled ∩ role). Default true if context missing. */
 function isKnowledgeAvailable() {
     try {
+        // P2-0031: вход по почте — по выключателю «База знаний» у компании (ответ сервера), как пункт меню
+        var sh = window.RBI && window.RBI.services && window.RBI.services.shell;
+        if (sh && typeof sh.platformEntryMode === 'function' && sh.platformEntryMode() === 'email'
+            && typeof sh.legacyModuleAllowed === 'function') {
+            return sh.legacyModuleAllowed('knowledge');
+        }
         var uc = window.RBI && window.RBI.services && window.RBI.services.userContext;
         if (uc && typeof uc.getUserContext === 'function') {
             var snap = uc.getUserContext();
