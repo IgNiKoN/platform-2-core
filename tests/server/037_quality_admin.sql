@@ -148,9 +148,27 @@ begin
                           'Админ публикует официальные чек-листы');
   res := res || pg_temp.t(pg_temp.err(format($q$insert into quality.project_settings(project_code, core_company_id) values (%L, %L)$q$, pc, ca)) = 'OK',
                           'Админ меняет оформление');
+  -- этап 4: оформление при почте — одна запись на компанию (project_code = id компании), повторная публикация — обновление
+  s := pg_temp.err(format($q$insert into quality.project_settings(project_code, logo_url, brand_color, core_company_id) values (%L, 'l1', '#111111', %L)
+    on conflict (core_company_id, project_code) do update set logo_url = excluded.logo_url, brand_color = excluded.brand_color$q$, ca::text, ca));
+  res := res || pg_temp.t(s = 'OK', 'Админ публикует оформление компании');
+  s := pg_temp.err(format($q$insert into quality.project_settings(project_code, logo_url, brand_color, core_company_id) values (%L, 'l2', '#222222', %L)
+    on conflict (core_company_id, project_code) do update set logo_url = excluded.logo_url, brand_color = excluded.brand_color$q$, ca::text, ca));
+  res := res || pg_temp.t(s = 'OK' and pg_temp.val(format('select logo_url || brand_color || coalesce(core_project_id::text, ''-'') from quality.project_settings where project_code = %L', ca::text)) = 'l2#222222-',
+                          'оформление компании — одна запись без объекта, повторная публикация обновляет');
+
+  perform pg_temp.as_user(ueng, ca);
+  res := res || pg_temp.t(pg_temp.val(format('select logo_url from quality.project_settings where project_code = %L', ca::text)) = 'l2',
+                          'инженер видит оформление компании');
+  res := res || pg_temp.t(pg_temp.rows(format($q$update quality.project_settings set logo_url = 'взлом' where project_code = %L$q$, ca::text)) = 0,
+                          'инженер не меняет оформление компании');
 
   -- 5. Чужая компания: Админ Беты не видит и не меняет справочник Альфы
   perform pg_temp.as_user(ub, cb);
+  res := res || pg_temp.t(pg_temp.val(format('select count(*) from quality.project_settings where core_company_id = %L', ca)) = '0',
+                          'Бета не видит оформление Альфы');
+  res := res || pg_temp.t(pg_temp.rows(format($q$update quality.project_settings set logo_url = 'взлом' where core_company_id = %L$q$, ca)) = 0,
+                          'Бета не меняет оформление Альфы');
   res := res || pg_temp.t(pg_temp.val(format('select count(*) from quality.contractor_directory where core_company_id = %L', ca)) = '0',
                           'Бета не видит подрядчиков Альфы');
   res := res || pg_temp.t(pg_temp.rows(format($q$update quality.contractor_directory set display_name = 'Взлом' where core_company_id = %L$q$, ca)) = 0,

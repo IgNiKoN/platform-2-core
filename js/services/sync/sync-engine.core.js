@@ -854,10 +854,13 @@ window.triggerSync = async function (mode = 'silent') {
         // 1.5. PULL: КОРПОРАТИВНЫЙ СТИЛЬ (Логотип и Цвет)
         // =====================================================
         try {
+            // P2-0037: при входе по почте оформление — одно на компанию (ключ — id компании входа, как при публикации)
+            const qsBrand = window.RBI && window.RBI.qualitySync;
+            const brandCode = (qsBrand && qsBrand.active && qsBrand.companyId) ? qsBrand.companyId : pCode;
             const { data: pSet, error: pSetErr } = await window.supabaseClient
                 .from('project_settings')
                 .select('*')
-                .eq('project_code', pCode)
+                .eq('project_code', brandCode)
                 .maybeSingle();
 
             if (!pSetErr && pSet) {

@@ -331,3 +331,16 @@ test('P2-0037: права компании пришли — событие дл�
   const other = deps();
   assert.ok(await applyQualityBridge(st(), other.d));
 });
+
+test('P2-0037: уборка облака администратором — файлы удаляются только в папке своей компании (чужой путь не выходит из неё)', () => {
+  const calls: N[] = [];
+  const raw = { from: (b: string) => ({ bucket: b, remove(this: N, paths: string[]) { calls.push([this.bucket, paths]); return 'remove'; } }) };
+  const s = companyStorage(raw as N, A);
+  s.from('inspection-photos').remove([B + '/P/x.jpg', 'rbi/P/y.jpg']);
+  s.from('custom-assets').remove([A + '/branding/logo.png']);
+  assert.deepEqual(calls, [
+    ['quality-inspection-photos', [A + '/' + B + '/P/x.jpg', A + '/rbi/P/y.jpg']],
+    ['quality-custom-assets', [A + '/branding/logo.png']]
+  ]);
+  for (const [, paths] of calls) for (const p of paths as string[]) assert.ok(p.startsWith(A + '/'), p);
+});

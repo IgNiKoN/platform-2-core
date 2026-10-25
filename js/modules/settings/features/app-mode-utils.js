@@ -307,7 +307,9 @@ async function publishCorporateBranding() {
     if (!window.supabaseClient) return showToast("❌ Облако не подключено!");
     showToast("⏳ Публикация корпоративного стиля...");
     try {
-        const pCode = window.syncConfig?.projectCode;
+        // P2-0037: при входе по почте оформление — одно на компанию (ключ — id компании входа), не на объект
+        const qs = window.RBI && window.RBI.qualitySync;
+        const pCode = (qs && qs.active && qs.companyId) ? qs.companyId : window.syncConfig?.projectCode;
         let logoUrl = _getSetting('brandLogo');
 
         if (logoUrl && (logoUrl.startsWith('data:') || logoUrl.startsWith('local://'))) {
