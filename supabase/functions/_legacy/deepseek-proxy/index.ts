@@ -50,32 +50,11 @@ serve(async (req) => {
         });
       }
     } else if (mode === 'role') {
-      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-        return new Response(JSON.stringify({ error: 'База данных не настроена' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const { data, error } = await supabase
-        .from('rbi_engineer_profiles')
-        .select('role, cloud_status')
-        .eq('project_code', project_code)
-        .eq('engineer_name', engineer_name)
-        .single();
-
-      if (error || !data) {
-        return new Response(JSON.stringify({ error: 'Пользователь не найден в базе' }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      if (!['engineer', 'deputy_manager', 'manager', 'director', 'project_manager'].includes(data.role) || data.cloud_status !== 'approved') {
-        return new Response(JSON.stringify({ error: 'Ваша роль не позволяет использовать AI' }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
+      // P2-0034 (решение владельца 25.10.2026): вход «по имени инженера и коду объекта» закрыт — ИИ по учётке в Платформе 2.0.
+      return new Response(JSON.stringify({ error: 'Режим отключён, войдите в Платформу 2.0' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     } else {
       return new Response(JSON.stringify({ error: 'Неизвестный режим доступа' }), {
         status: 400,
