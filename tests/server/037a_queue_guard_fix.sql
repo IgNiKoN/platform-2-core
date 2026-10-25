@@ -1,5 +1,5 @@
 -- P2-0031 этап 5 (037a, ТД №206): сторож очередей заявок. Всё откатывается; отчёт — ERROR P0001 с «FAIL всего: N».
--- Запуск: после 037a_queue_guard_fix_up.sql. Пользователи и компании — тестовые (@test.invalid, is_test).
+-- Запуск: после 037b_queue_guard_project_up.sql (P2-0031 доработка 1: + перенос в два шага, не-UUID код объекта). Пользователи и компании — тестовые (@test.invalid, is_test).
 -- Альфа, объекты X и Y. Админ (всё + справочник объектов), Зам. (quality.manage без справочника объектов), Инженер СК (edit),
 -- «Рук. объекта X» (manage только на X, edit на Y), «Стройконтроль-админ» (construction.* без quality.*), подрядчик (scope.contractor).
 -- Действие и проверка результата — отдельными операторами.
@@ -74,6 +74,34 @@ begin
   res := res || pg_temp.t(pg_temp.val(format(q_c, '037a0000-0000-4000-8000-000000000001')) like 'approved|%', 'M1: на своём объекте X решает (как раньше)');
   reset role;
   update quality.contractor_normalization_queue set status = 'pending' where id = '037a0000-0000-4000-8000-000000000001';
+
+  -- M1 в два шага (ревью P2-0031 review-1 M1): перенос отдельным запросом — объект не меняется, затем решить нельзя
+  perform pg_temp.as_user(umx, ca);
+  n := pg_temp.rows(format($q$update quality.contractor_normalization_queue set project_code = %L where id = '037a0000-0000-4000-8000-000000000003'$q$, px::text));
+  res := res || pg_temp.t(pg_temp.val($q$select core_project_id::text from quality.contractor_normalization_queue where id = '037a0000-0000-4000-8000-000000000003'$q$) = py::text,
+                          'M1-2: перенос Y→X не-админом отдельным запросом — объект остался Y');
+  perform pg_temp.as_user(umx, ca);
+  n := pg_temp.rows($q$update quality.contractor_normalization_queue set status = 'approved' where id = '037a0000-0000-4000-8000-000000000003'$q$);
+  res := res || pg_temp.t(pg_temp.val(format(q_c, '037a0000-0000-4000-8000-000000000003')) like 'pending|%', 'M1-2: после попытки переноса решить чужую заявку нельзя');
+  -- не-UUID код объекта: объект не обнуляется, решить нельзя
+  perform pg_temp.as_user(umx, ca);
+  n := pg_temp.rows($q$update quality.contractor_normalization_queue set project_code = 'мусор' where id = '037a0000-0000-4000-8000-000000000003'$q$);
+  res := res || pg_temp.t(pg_temp.val($q$select core_project_id::text || '|' || project_code from quality.contractor_normalization_queue where id = '037a0000-0000-4000-8000-000000000003'$q$) = py::text || '|' || py::text,
+                          'не-UUID код у не-админа — объект и код прежние (' || pg_temp.val($q$select coalesce(core_project_id::text, 'NULL') || '|' || project_code from quality.contractor_normalization_queue where id = '037a0000-0000-4000-8000-000000000003'$q$) || ')');
+  perform pg_temp.as_user(umx, ca);
+  n := pg_temp.rows($q$update quality.contractor_normalization_queue set status = 'approved' where id = '037a0000-0000-4000-8000-000000000003'$q$);
+  res := res || pg_temp.t(pg_temp.val(format(q_c, '037a0000-0000-4000-8000-000000000003')) like 'pending|%', 'не-UUID код: решить нельзя');
+  -- инженер уточняет текст своей заявки как раньше (без ошибки), объект прежний
+  perform pg_temp.as_user(ueng, ca);
+  res := res || pg_temp.t(pg_temp.err(format($q$update quality.contractor_normalization_queue set project_code = %L, raw_name = 'Игрек ООО' where id = '037a0000-0000-4000-8000-000000000003'$q$, px::text)) = 'OK',
+                          'инженер: повторная подача с другим объектом — без ошибки');
+  res := res || pg_temp.t(pg_temp.val($q$select core_project_id::text || '|' || raw_name from quality.contractor_normalization_queue where id = '037a0000-0000-4000-8000-000000000003'$q$) = py::text || '|Игрек ООО',
+                          'инженер: текст уточнён, объект прежний');
+  -- Админ переносит заявку, как раньше
+  perform pg_temp.as_user(uadm, ca);
+  n := pg_temp.rows(format($q$update quality.contractor_normalization_queue set project_code = %L where id = '037a0000-0000-4000-8000-000000000003'$q$, px::text));
+  res := res || pg_temp.t(pg_temp.val($q$select core_project_id::text from quality.contractor_normalization_queue where id = '037a0000-0000-4000-8000-000000000003'$q$) = px::text,
+                          'Админ переносит заявку на другой объект');
 
   -- M2: разобранную заявку инженер не переписывает (без ошибки); заявку «на рассмотрении» — уточняет, как раньше
   perform pg_temp.as_user(ueng, ca);
