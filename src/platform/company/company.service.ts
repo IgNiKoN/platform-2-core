@@ -15,7 +15,11 @@ export interface MemberRow {
   counterparty_id?: string | null; counterparty_name?: string | null;
   /** P2-0028 (032): ФИО (ядро), отключён, ждёт смены пароля, учётка создана этой компанией (её пароль можно сбросить). */
   full_name?: string | null; disabled_at?: string | null; must_change_password?: boolean; managed?: boolean;
+  /** P2-0033 (033): закреплённые объекты Качества назначения; null — все объекты. */
+  quality_objects?: QualityObjectRef[] | null;
 }
+/** P2-0033: объект Качества компании (постоянный id, ADR-070) — для закрепления сотрудника при назначении роли. */
+export interface QualityObjectRef { id: string; name: string }
 /** P2-0028: результат «Добавить сотрудника» — временный пароль только у новой учётки и только один раз. */
 export interface AddMemberResult { user_id: string; temp_password: string | null; created: boolean }
 export interface ContractorRef { id: string; name: string; draft?: boolean }
@@ -39,7 +43,11 @@ export interface CompanyApi {
   deleteRole(roleId: string): Promise<Result>;
   /** Действующие контрагенты компании вида «подрядчик» — фирма для назначения роли с quality.scope.contractor. */
   listContractors(companyId: string): Promise<ContractorRef[]>;
-  assignRole(userId: string, roleId: string, projectId: string | null, validTo: string | null, counterpartyId?: string | null): Promise<Result<string>>;
+  /** P2-0033: объекты Качества компании для выбора при назначении (пусто — у компании нет объектов Качества). */
+  listQualityObjects?(companyId: string): Promise<QualityObjectRef[]>;
+  /** objectIds — id объектов Качества (пусто — все объекты). */
+  assignRole(userId: string, roleId: string, projectId: string | null, validTo: string | null, counterpartyId?: string | null,
+    objectIds?: string[]): Promise<Result<string>>;
   revoke(assignmentId: string): Promise<Result>;
   /** P2-0028: сотрудники — добавить (учётка + роль), сбросить пароль (новый временный), отключить доступ. */
   addMember(companyId: string, email: string, fullName: string, roleId: string, projectId: string | null): Promise<Result<AddMemberResult>>;
@@ -88,7 +96,9 @@ export function createCompanyService(): CompanyApi | null {
     deleteRole: (id) => call('pf_delete_role', { p_role: id }),
     listContractors: async (co) => ((await createCoreService()?.listCounterparties(co, false)) || [])   // REUSE: контрагенты — ядро
       .filter((x) => x.kinds.includes('contractor')).map((x) => ({ id: x.id, name: x.name, draft: x.draft })),
-    assignRole: (u, r, p, to, cp) => call<string>('pf_assign_role', { p_user: u, p_role: r, p_project: p, p_valid_to: to, ...(cp ? { p_counterparty: cp } : {}) }),
+    listQualityObjects: (co) => rows<QualityObjectRef>('pf_list_quality_objects', { p_company: co }),
+    assignRole: (u, r, p, to, cp, objs) => call<string>('pf_assign_role', { p_user: u, p_role: r, p_project: p, p_valid_to: to,
+      ...(cp ? { p_counterparty: cp } : {}), ...(objs && objs.length ? { p_objects: objs } : {}) }),
     revoke: (id) => call('pf_revoke_assignment', { p_assignment: id }),
     addMember: async (co, email, name, role, project) => {
       const r = await call<AddMemberResult[]>('pf_company_add_member', { p_company: co, p_email: email, p_full_name: name, p_role: role, p_project: project });

@@ -100,16 +100,19 @@ export function roleFor(actions: string[]): string {
   return 'guest';
 }
 
-/** Доступ из quality.my_access: projects — назначенные объекты (null — вся компания), contractor — фирма назначения. */
-export interface QualityAccess { actions: string[]; templates: string[]; projects: string[] | null; contractor: string }
+/** Доступ из quality.my_access: projects — назначенные объекты ядра (null — вся компания), contractor — фирма назначения,
+ *  objects — ключи закреплённых объектов Качества (P2-0033, 033; null — все объекты). */
+export interface QualityAccess { actions: string[]; templates: string[]; projects: string[] | null; contractor: string; objects: string[] | null }
 export function parseAccess(data: unknown): QualityAccess {
-  const d = (data && typeof data === 'object' ? data : {}) as { actions?: unknown; templates?: unknown; projects?: unknown; contractor?: unknown };
+  const d = (data && typeof data === 'object' ? data : {}) as { actions?: unknown; templates?: unknown; projects?: unknown; contractor?: unknown; objects?: unknown };
   const c = (d.contractor && typeof d.contractor === 'object' ? d.contractor : {}) as { name?: unknown };
   return {
     actions: Array.isArray(d.actions) ? d.actions.map(String) : [],
     templates: Array.isArray(d.templates) ? d.templates.map(String) : [],
     projects: Array.isArray(d.projects) ? d.projects.map(String) : null,
-    contractor: typeof c.name === 'string' ? c.name : ''
+    contractor: typeof c.name === 'string' ? c.name : '',
+    objects: Array.isArray(d.objects)
+      ? d.objects.map((o) => (o && typeof o === 'object' ? String((o as { key?: unknown }).key ?? '') : '')).filter(Boolean) : null
   };
 }
 
@@ -313,9 +316,11 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
   const applyRole = (a: QualityAccess): void => {
     sync.actions = a.actions;
     sync.role = roleFor(a.actions);
-    // Фирма подрядчика — из назначения роли (020); объекты экрану не передаются: их держит сервер.
+    // Фирма подрядчика — из назначения роли (020). Закреплённые объекты Качества (033) — экрану ключами объектов, как в старом
+    // профиле (assignedProjects): старые фильтры и выбор объекта работают как раньше; что видно — решает сервер. Все объекты — [].
+    const assigned = a.objects || [];
     if (deps.win.appSettings) pinAccess(deps.win.appSettings, { userRole: sync.role, cloudStatus: 'approved', engineerName,
-      contractorName: a.contractor, assignedContractor: a.contractor, assignedProjects: [], assigned_projects: [] });
+      contractorName: a.contractor, assignedContractor: a.contractor, assignedProjects: assigned, assigned_projects: assigned });
     // Руководящим ролям экрана (Админ, Директор) — режим «Вся команда», как делал профиль старого Качества (sync-engine).
     const c = deps.win.syncConfig;
     if (c && (sync.role === 'manager' || sync.role === 'director') && c.syncMode !== 'full') {

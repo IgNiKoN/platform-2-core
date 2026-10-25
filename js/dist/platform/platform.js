@@ -263,8 +263,8 @@ class Ps {
           signal: m
         }).catch((Ee) => {
           throw new Cs(Ee);
-        }), I = S.headers.get("x-relay-error");
-        if (I && I === "true")
+        }), O = S.headers.get("x-relay-error");
+        if (O && O === "true")
           throw new Kt(S);
         if (!S.ok)
           throw new Vt(S);
@@ -10332,7 +10332,7 @@ class W extends Ne {
     super(e, s, n), this.name = r, this.status = s;
   }
 }
-class P extends W {
+class I extends W {
   constructor() {
     super("Auth session missing!", "AuthSessionMissingError", 400, void 0);
   }
@@ -10853,7 +10853,7 @@ async function vr(t) {
     if (s === "weak_password")
       throw new hr(se(r), t.status, ((e = r.weak_password) === null || e === void 0 ? void 0 : e.reasons) || []);
     if (s === "session_not_found")
-      throw new P();
+      throw new I();
   } else if (typeof r == "object" && r && typeof r.weak_password == "object" && r.weak_password && Array.isArray(r.weak_password.reasons) && r.weak_password.reasons.length && r.weak_password.reasons.reduce((i, a) => i && typeof a == "string", !0))
     throw new hr(se(r), t.status, r.weak_password.reasons);
   throw new mi(se(r), t.status || 500, s);
@@ -12006,7 +12006,7 @@ Resources:`;
   return `${y}
 ${_}`;
 }
-class C extends Error {
+class P extends Error {
   constructor({ message: e, code: r, cause: s, name: n }) {
     var i;
     super(e, { cause: s }), this.__isWebAuthnError = !0, this.name = (i = n ?? (s instanceof Error ? s.name : void 0)) !== null && i !== void 0 ? i : "Unknown Error", this.code = r;
@@ -12019,7 +12019,7 @@ class C extends Error {
     };
   }
 }
-class at extends C {
+class at extends P {
   constructor(e, r) {
     super({
       code: "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY",
@@ -12035,14 +12035,14 @@ function ta({ error: t, options: e }) {
     throw Error("options was missing required publicKey property");
   if (t.name === "AbortError") {
     if (e.signal instanceof AbortSignal)
-      return new C({
+      return new P({
         message: "Registration ceremony was sent an abort signal",
         code: "ERROR_CEREMONY_ABORTED",
         cause: t
       });
   } else if (t.name === "ConstraintError") {
     if (((r = i.authenticatorSelection) === null || r === void 0 ? void 0 : r.requireResidentKey) === !0)
-      return new C({
+      return new P({
         message: "Discoverable credentials were required but no available authenticator supported it",
         code: "ERROR_AUTHENTICATOR_MISSING_DISCOVERABLE_CREDENTIAL_SUPPORT",
         cause: t
@@ -12051,36 +12051,36 @@ function ta({ error: t, options: e }) {
       // @ts-ignore: `mediation` doesn't yet exist on CredentialCreationOptions but it's possible as of Sept 2024
       e.mediation === "conditional" && ((s = i.authenticatorSelection) === null || s === void 0 ? void 0 : s.userVerification) === "required"
     )
-      return new C({
+      return new P({
         message: "User verification was required during automatic registration but it could not be performed",
         code: "ERROR_AUTO_REGISTER_USER_VERIFICATION_FAILURE",
         cause: t
       });
     if (((n = i.authenticatorSelection) === null || n === void 0 ? void 0 : n.userVerification) === "required")
-      return new C({
+      return new P({
         message: "User verification was required but no available authenticator supported it",
         code: "ERROR_AUTHENTICATOR_MISSING_USER_VERIFICATION_SUPPORT",
         cause: t
       });
   } else {
     if (t.name === "InvalidStateError")
-      return new C({
+      return new P({
         message: "The authenticator was previously registered",
         code: "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED",
         cause: t
       });
     if (t.name === "NotAllowedError")
-      return new C({
+      return new P({
         message: t.message,
         code: "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY",
         cause: t
       });
     if (t.name === "NotSupportedError")
-      return i.pubKeyCredParams.filter((o) => o.type === "public-key").length === 0 ? new C({
+      return i.pubKeyCredParams.filter((o) => o.type === "public-key").length === 0 ? new P({
         message: 'No entry in pubKeyCredParams was of type "public-key"',
         code: "ERROR_MALFORMED_PUBKEYCREDPARAMS",
         cause: t
-      }) : new C({
+      }) : new P({
         message: "No available authenticator supported any of the specified pubKeyCredParams algorithms",
         code: "ERROR_AUTHENTICATOR_NO_SUPPORTED_PUBKEYCREDPARAMS_ALG",
         cause: t
@@ -12089,31 +12089,31 @@ function ta({ error: t, options: e }) {
       const a = window.location.hostname;
       if (ps(a)) {
         if (i.rp.id !== a)
-          return new C({
+          return new P({
             message: `The RP ID "${i.rp.id}" is invalid for this domain`,
             code: "ERROR_INVALID_RP_ID",
             cause: t
           });
-      } else return new C({
+      } else return new P({
         message: `${window.location.hostname} is an invalid domain`,
         code: "ERROR_INVALID_DOMAIN",
         cause: t
       });
     } else if (t.name === "TypeError") {
       if (i.user.id.byteLength < 1 || i.user.id.byteLength > 64)
-        return new C({
+        return new P({
           message: "User ID was not between 1 and 64 characters",
           code: "ERROR_INVALID_USER_ID_LENGTH",
           cause: t
         });
     } else if (t.name === "UnknownError")
-      return new C({
+      return new P({
         message: "The authenticator was unable to process the specified options, or could not create a new credential",
         code: "ERROR_AUTHENTICATOR_GENERAL_ERROR",
         cause: t
       });
   }
-  return new C({
+  return new P({
     message: "a Non-Webauthn related error has occurred",
     code: "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY",
     cause: t
@@ -12125,14 +12125,14 @@ function ra({ error: t, options: e }) {
     throw Error("options was missing required publicKey property");
   if (t.name === "AbortError") {
     if (e.signal instanceof AbortSignal)
-      return new C({
+      return new P({
         message: "Authentication ceremony was sent an abort signal",
         code: "ERROR_CEREMONY_ABORTED",
         cause: t
       });
   } else {
     if (t.name === "NotAllowedError")
-      return new C({
+      return new P({
         message: t.message,
         code: "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY",
         cause: t
@@ -12141,24 +12141,24 @@ function ra({ error: t, options: e }) {
       const s = window.location.hostname;
       if (ps(s)) {
         if (r.rpId !== s)
-          return new C({
+          return new P({
             message: `The RP ID "${r.rpId}" is invalid for this domain`,
             code: "ERROR_INVALID_RP_ID",
             cause: t
           });
-      } else return new C({
+      } else return new P({
         message: `${window.location.hostname} is an invalid domain`,
         code: "ERROR_INVALID_DOMAIN",
         cause: t
       });
     } else if (t.name === "UnknownError")
-      return new C({
+      return new P({
         message: "The authenticator was unable to process the specified options, or could not create a new assertion signature",
         code: "ERROR_AUTHENTICATOR_GENERAL_ERROR",
         cause: t
       });
   }
-  return new C({
+  return new P({
     message: "a Non-Webauthn related error has occurred",
     code: "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY",
     cause: t
@@ -13708,14 +13708,14 @@ class Ue {
           throw new Error("@supabase/auth-js: Both wallet and url must be specified in non-browser environments.");
         m = y;
       }
-      const S = new URL((r = b == null ? void 0 : b.url) !== null && r !== void 0 ? r : window.location.href), I = await m.request({
+      const S = new URL((r = b == null ? void 0 : b.url) !== null && r !== void 0 ? r : window.location.href), O = await m.request({
         method: "eth_requestAccounts"
       }).then((K) => K).catch(() => {
         throw new Error("@supabase/auth-js: Wallet method eth_requestAccounts is missing or invalid");
       });
-      if (!I || I.length === 0)
+      if (!O || O.length === 0)
         throw new Error("@supabase/auth-js: No accounts available. Please ensure the wallet is connected.");
-      const E = fs(I[0]);
+      const E = fs(O[0]);
       let A = (s = b == null ? void 0 : b.signInWithEthereum) === null || s === void 0 ? void 0 : s.chainId;
       if (!A) {
         const K = await m.request({
@@ -13788,13 +13788,13 @@ class Ue {
           throw new Error("@supabase/auth-js: Both wallet and url must be specified in non-browser environments.");
         S = _;
       }
-      const I = new URL((r = m == null ? void 0 : m.url) !== null && r !== void 0 ? r : window.location.href);
+      const O = new URL((r = m == null ? void 0 : m.url) !== null && r !== void 0 ? r : window.location.href);
       if ("signIn" in S && S.signIn) {
         const E = await S.signIn(Object.assign(Object.assign(Object.assign({ issuedAt: (/* @__PURE__ */ new Date()).toISOString() }, m == null ? void 0 : m.signInWithSolana), {
           // non-overridable properties
           version: "1",
-          domain: I.host,
-          uri: I.href
+          domain: O.host,
+          uri: O.href
         }), b ? { statement: b } : null));
         let A;
         if (Array.isArray(E) && E[0] && typeof E[0] == "object")
@@ -13811,11 +13811,11 @@ class Ue {
         if (!("signMessage" in S) || typeof S.signMessage != "function" || !("publicKey" in S) || typeof S != "object" || !S.publicKey || !("toBase58" in S.publicKey) || typeof S.publicKey.toBase58 != "function")
           throw new Error("@supabase/auth-js: Wallet does not have a compatible signMessage() and publicKey.toBase58() API");
         p = [
-          `${I.host} wants you to sign in with your Solana account:`,
+          `${O.host} wants you to sign in with your Solana account:`,
           S.publicKey.toBase58(),
           ...b ? ["", b, ""] : [""],
           "Version: 1",
-          `URI: ${I.href}`,
+          `URI: ${O.href}`,
           `Issued At: ${(n = (s = m == null ? void 0 : m.signInWithSolana) === null || s === void 0 ? void 0 : s.issuedAt) !== null && n !== void 0 ? n : (/* @__PURE__ */ new Date()).toISOString()}`,
           ...!((i = m == null ? void 0 : m.signInWithSolana) === null || i === void 0) && i.notBefore ? [`Not Before: ${m.signInWithSolana.notBefore}`] : [],
           ...!((a = m == null ? void 0 : m.signInWithSolana) === null || a === void 0) && a.expirationTime ? [`Expiration Time: ${m.signInWithSolana.expirationTime}`] : [],
@@ -14372,7 +14372,7 @@ class Ue {
         if (s)
           throw s;
         if (!r)
-          throw new P();
+          throw new I();
         const { error: n } = await w(this.fetch, "GET", `${this.url}/reauthenticate`, {
           headers: this.headers,
           jwt: r.access_token
@@ -14768,7 +14768,7 @@ class Ue {
         const { data: a, error: o } = r;
         if (o)
           throw o;
-        return !(!((s = a.session) === null || s === void 0) && s.access_token) && !this.hasCustomAuthorizationHeader ? { data: { user: null }, error: new P() } : await w(this.fetch, "GET", `${this.url}/user`, {
+        return !(!((s = a.session) === null || s === void 0) && s.access_token) && !this.hasCustomAuthorizationHeader ? { data: { user: null }, error: new I() } : await w(this.fetch, "GET", `${this.url}/user`, {
           headers: this.headers,
           jwt: (i = (n = a.session) === null || n === void 0 ? void 0 : n.access_token) !== null && i !== void 0 ? i : void 0,
           xform: ee
@@ -14905,7 +14905,7 @@ class Ue {
         if (a)
           throw a;
         if (!i.session)
-          throw new P();
+          throw new I();
         const o = i.session;
         let l = null, c = null;
         this.flowType === "pkce" && e.email != null && ([l, c, s] = await this._getCodeChallengeAndMethod());
@@ -15056,7 +15056,7 @@ class Ue {
   async _setSession(e) {
     try {
       if (!e.access_token || !e.refresh_token)
-        throw new P();
+        throw new I();
       const r = Date.now() / 1e3;
       let s = r, n = !0, i = null;
       const { payload: a } = Ge(e.access_token);
@@ -15226,7 +15226,7 @@ class Ue {
           e = (s = a.session) !== null && s !== void 0 ? s : void 0;
         }
         if (!(e != null && e.refresh_token))
-          throw new P();
+          throw new I();
         const { data: n, error: i } = await this._callRefreshToken(e.refresh_token);
         return i ? this._returnResult({ data: { user: null, session: null }, error: i }) : n ? this._returnResult({ data: { user: n.user, session: n }, error: null }) : this._returnResult({ data: { user: null, session: null }, error: null });
       });
@@ -15268,8 +15268,8 @@ class Ue {
         });
         if (S)
           throw S;
-        const I = new URL(window.location.href);
-        return I.searchParams.delete("code"), I.searchParams.delete(ae), window.history.replaceState(window.history.state, "", I.toString()), {
+        const O = new URL(window.location.href);
+        return O.searchParams.delete("code"), O.searchParams.delete(ae), window.history.replaceState(window.history.state, "", O.toString()), {
           data: { session: m.session, redirectType: (s = m.redirectType) !== null && s !== void 0 ? s : null },
           error: null
         };
@@ -15954,7 +15954,7 @@ class Ue {
   async _callRefreshToken(e) {
     var r, s;
     if (!e)
-      throw new P();
+      throw new I();
     if (this.refreshingDeferred)
       return this.refreshingDeferred.promise;
     if (this.lastRefreshFailure && this.lastRefreshFailure.refreshToken === e && Date.now() < this.lastRefreshFailure.expiresAt)
@@ -15968,7 +15968,7 @@ class Ue {
       if (o)
         throw o;
       if (!a.session)
-        throw new P();
+        throw new I();
       const l = await $(this.storage, this.storageKey);
       if (i !== null && (l === null || l.refresh_token !== i.refresh_token)) {
         this._debug(n, "commit guard: storage changed since refresh started, discarding rotated tokens", {
@@ -16669,7 +16669,7 @@ class Ue {
           headers: this.headers,
           jwt: s.access_token,
           xform: (i) => ({ data: i, error: null })
-        }) : this._returnResult({ data: null, error: new P() });
+        }) : this._returnResult({ data: null, error: new I() });
       });
     } catch (r) {
       if (v(r))
@@ -16688,7 +16688,7 @@ class Ue {
         if (i)
           return this._returnResult({ data: null, error: i });
         if (!n)
-          return this._returnResult({ data: null, error: new P() });
+          return this._returnResult({ data: null, error: new I() });
         const a = await w(this.fetch, "POST", `${this.url}/oauth/authorizations/${e}/consent`, {
           headers: this.headers,
           jwt: n.access_token,
@@ -16714,7 +16714,7 @@ class Ue {
         if (i)
           return this._returnResult({ data: null, error: i });
         if (!n)
-          return this._returnResult({ data: null, error: new P() });
+          return this._returnResult({ data: null, error: new I() });
         const a = await w(this.fetch, "POST", `${this.url}/oauth/authorizations/${e}/consent`, {
           headers: this.headers,
           jwt: n.access_token,
@@ -16741,7 +16741,7 @@ class Ue {
           headers: this.headers,
           jwt: r.access_token,
           xform: (n) => ({ data: n, error: null })
-        }) : this._returnResult({ data: null, error: new P() });
+        }) : this._returnResult({ data: null, error: new I() });
       });
     } catch (e) {
       if (v(e))
@@ -16762,7 +16762,7 @@ class Ue {
           jwt: s.access_token,
           query: { client_id: e.clientId },
           noResolveJson: !0
-        }), { data: {}, error: null }) : this._returnResult({ data: null, error: new P() });
+        }), { data: {}, error: null }) : this._returnResult({ data: null, error: new I() });
       });
     } catch (r) {
       if (v(r))
@@ -17018,7 +17018,7 @@ class Ue {
         if (s)
           return this._returnResult({ data: null, error: s });
         if (!r)
-          return this._returnResult({ data: null, error: new P() });
+          return this._returnResult({ data: null, error: new I() });
         const { data: n, error: i } = await w(this.fetch, "POST", `${this.url}/passkeys/registration/options`, {
           headers: this.headers,
           jwt: r.access_token,
@@ -17043,7 +17043,7 @@ class Ue {
         if (n)
           return this._returnResult({ data: null, error: n });
         if (!s)
-          return this._returnResult({ data: null, error: new P() });
+          return this._returnResult({ data: null, error: new I() });
         const { data: i, error: a } = await w(this.fetch, "POST", `${this.url}/passkeys/registration/verify`, {
           headers: this.headers,
           jwt: s.access_token,
@@ -17111,7 +17111,7 @@ class Ue {
         if (s)
           return this._returnResult({ data: null, error: s });
         if (!r)
-          return this._returnResult({ data: null, error: new P() });
+          return this._returnResult({ data: null, error: new I() });
         const { data: n, error: i } = await w(this.fetch, "GET", `${this.url}/passkeys`, {
           headers: this.headers,
           jwt: r.access_token,
@@ -17135,7 +17135,7 @@ class Ue {
         if (n)
           return this._returnResult({ data: null, error: n });
         if (!s)
-          return this._returnResult({ data: null, error: new P() });
+          return this._returnResult({ data: null, error: new I() });
         const { data: i, error: a } = await w(this.fetch, "PATCH", `${this.url}/passkeys/${e.passkeyId}`, {
           headers: this.headers,
           jwt: s.access_token,
@@ -17159,7 +17159,7 @@ class Ue {
         if (n)
           return this._returnResult({ data: null, error: n });
         if (!s)
-          return this._returnResult({ data: null, error: new P() });
+          return this._returnResult({ data: null, error: new I() });
         const { error: i } = await w(this.fetch, "DELETE", `${this.url}/passkeys/${e.passkeyId}`, {
           headers: this.headers,
           jwt: s.access_token,
@@ -17293,7 +17293,7 @@ function Rr(t, e) {
   }
   return r;
 }
-function O(t) {
+function C(t) {
   for (var e = 1; e < arguments.length; e++) {
     var r = arguments[e] != null ? arguments[e] : {};
     e % 2 ? Rr(Object(r), !0).forEach(function(s) {
@@ -17322,7 +17322,7 @@ const Ta = (t) => t ? (...e) => t(...e) : (...e) => fetch(...e), Aa = () => Head
       const y = Ca(f, u, c);
       y && (y.traceparent && !g.has("traceparent") && g.set("traceparent", y.traceparent), y.tracestate && !g.has("tracestate") && g.set("tracestate", y.tracestate), y.baggage && !g.has("baggage") && g.set("baggage", y.baggage));
     }
-    return a(f, O(O({}, d), {}, { headers: g }));
+    return a(f, C(C({}, d), {}, { headers: g }));
   };
 };
 let Pr = !1, Ir = !1;
@@ -17360,11 +17360,11 @@ function Ia(t) {
 function xa(t, e) {
   var r, s, n, i, a, o;
   const { db: l, auth: c, realtime: u, global: h } = t, { db: f, auth: d, realtime: p, global: g } = e, y = xr(t.tracePropagation), _ = xr(e.tracePropagation), b = {
-    db: O(O({}, f), l),
-    auth: O(O({}, d), c),
-    realtime: O(O({}, p), u),
+    db: C(C({}, f), l),
+    auth: C(C({}, d), c),
+    realtime: C(C({}, p), u),
     storage: {},
-    global: O(O(O({}, g), h), {}, { headers: O(O({}, (r = g == null ? void 0 : g.headers) !== null && r !== void 0 ? r : {}), (s = h == null ? void 0 : h.headers) !== null && s !== void 0 ? s : {}) }),
+    global: C(C(C({}, g), h), {}, { headers: C(C({}, (r = g == null ? void 0 : g.headers) !== null && r !== void 0 ? r : {}), (s = h == null ? void 0 : h.headers) !== null && s !== void 0 ? s : {}) }),
     tracePropagation: {
       enabled: (n = (i = y == null ? void 0 : y.enabled) !== null && i !== void 0 ? i : _ == null ? void 0 : _.enabled) !== null && n !== void 0 ? n : !1,
       respectSamplingDecision: (a = (o = y == null ? void 0 : y.respectSamplingDecision) !== null && o !== void 0 ? o : _ == null ? void 0 : _.respectSamplingDecision) !== null && a !== void 0 ? a : !0
@@ -17611,7 +17611,7 @@ var $a = class extends ua {
     const a = `sb-${i.hostname.split(".")[0]}-auth-token`, o = {
       db: pa,
       realtime: ma,
-      auth: O(O({}, ga), {}, { storageKey: a }),
+      auth: C(C({}, ga), {}, { storageKey: a }),
       global: fa,
       tracePropagation: ya
     }, l = xa(r ?? {}, o);
@@ -17623,7 +17623,7 @@ var $a = class extends ua {
       var c;
       this.auth = this._initSupabaseAuthClient((c = l.auth) !== null && c !== void 0 ? c : {}, this.headers, l.global.fetch);
     }
-    this.fetch = Cr(e, t, this._getSessionToken.bind(this), l.global.fetch, l.tracePropagation), this.functionsFetch = Cr(e, t, this._getSessionToken.bind(this), l.global.fetch, l.tracePropagation, { omitApiKeyAsBearer: !0 }), this.realtime = this._initRealtimeClient(O({
+    this.fetch = Cr(e, t, this._getSessionToken.bind(this), l.global.fetch, l.tracePropagation), this.functionsFetch = Cr(e, t, this._getSessionToken.bind(this), l.global.fetch, l.tracePropagation, { omitApiKeyAsBearer: !0 }), this.realtime = this._initRealtimeClient(C({
       headers: this.headers,
       accessToken: this._getAccessToken.bind(this),
       fetch: this.fetch
@@ -17791,7 +17791,7 @@ var $a = class extends ua {
     };
     return new $a({
       url: this.authUrl.href,
-      headers: O(O({}, g), d),
+      headers: C(C({}, g), d),
       storageKey: i,
       autoRefreshToken: t,
       persistSession: e,
@@ -17810,7 +17810,7 @@ var $a = class extends ua {
     });
   }
   _initRealtimeClient(t) {
-    return new xn(this.realtimeUrl.href, O(O({}, t), {}, { params: O(O({}, { apikey: this.supabaseKey }), t == null ? void 0 : t.params) }));
+    return new xn(this.realtimeUrl.href, C(C({}, t), {}, { params: C(C({}, { apikey: this.supabaseKey }), t == null ? void 0 : t.params) }));
   }
   _listenForAuthEvents() {
     return this.auth.onAuthStateChange((t, e) => {
@@ -17958,7 +17958,8 @@ function Ha(t) {
     actions: Array.isArray(e.actions) ? e.actions.map(String) : [],
     templates: Array.isArray(e.templates) ? e.templates.map(String) : [],
     projects: Array.isArray(e.projects) ? e.projects.map(String) : null,
-    contractor: typeof r.name == "string" ? r.name : ""
+    contractor: typeof r.name == "string" ? r.name : "",
+    objects: Array.isArray(e.objects) ? e.objects.map((s) => s && typeof s == "object" ? String(s.key ?? "") : "").filter(Boolean) : null
   };
 }
 function Dr(t, e) {
@@ -18078,20 +18079,22 @@ async function Xa(t, e) {
   const a = Wa(e.createClient, e.cfg, r, e.platformClient);
   e.win.supabaseClient = a;
   const o = async (m) => {
-    const { data: S, error: I } = await a.rpc("my_access", { p_project: m });
-    return Ha(I ? null : S);
+    const { data: S, error: O } = await a.rpc("my_access", { p_project: m });
+    return Ha(O ? null : S);
   }, l = (await o(null)).projects, c = (await e.listProjects(r).catch(() => [])).filter((m) => l === null || l.includes(m.id)), u = e.store.getItem(Lr + r), h = c.some((m) => m.id === u) ? u : c.length === 1 ? c[0].id : null, f = t.companies.find((m) => m.id === r), d = t.email, p = (t.fullName || "").trim() || d, g = (m) => {
-    _.actions = m.actions, _.role = Fa(m.actions), e.win.appSettings && Dr(e.win.appSettings, {
+    _.actions = m.actions, _.role = Fa(m.actions);
+    const S = m.objects || [];
+    e.win.appSettings && Dr(e.win.appSettings, {
       userRole: _.role,
       cloudStatus: "approved",
       engineerName: p,
       contractorName: m.contractor,
       assignedContractor: m.contractor,
-      assignedProjects: [],
-      assigned_projects: []
+      assignedProjects: S,
+      assigned_projects: S
     });
-    const S = e.win.syncConfig;
-    S && (_.role === "manager" || _.role === "director") && S.syncMode !== "full" && (S.syncMode = "full", e.store.setItem("rbi_sync_config", JSON.stringify(S)));
+    const O = e.win.syncConfig;
+    O && (_.role === "manager" || _.role === "director") && O.syncMode !== "full" && (O.syncMode = "full", e.store.setItem("rbi_sync_config", JSON.stringify(O)));
   }, y = (m) => {
     const S = e.win.syncConfig = e.win.syncConfig || {};
     S.enabled = !!m, S.engineerName = p, S.projectCode = m || "", S.pinHash = null, S.syncMode || (S.syncMode = "personal"), e.store.setItem("rbi_sync_config", JSON.stringify(S));
