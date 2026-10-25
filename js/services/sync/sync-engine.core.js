@@ -897,10 +897,13 @@ window.triggerSync = async function (mode = 'silent') {
             const companyId = (companySvc && typeof companySvc.getCompanyId === 'function')
                 ? companySvc.getCompanyId()
                 : 'rbi';
+            // P2-0037: при входе по почте строка настроек — компании входа (сервер пишет company_id = id компании, 018 bind_company)
+            const qs = window.RBI && window.RBI.qualitySync;
+            const settingsCompanyId = (qs && qs.active && qs.companyId) ? qs.companyId : companyId;
             const { data: cSet, error: cSetErr } = await window.supabaseClient
                 .from('rbi_company_settings')
                 .select('company_id, role_matrix_overrides, official_templates, updated_at')
-                .eq('company_id', companyId)
+                .eq('company_id', settingsCompanyId)
                 .maybeSingle();
 
             if (cSetErr) {
