@@ -150,10 +150,16 @@ end $$;
 revoke all on function public.pf_assign_role(uuid, uuid, uuid, timestamptz, uuid), public.pf_list_company_members(uuid) from public, anon;
 grant execute on function public.pf_assign_role(uuid, uuid, uuid, timestamptz, uuid), public.pf_list_company_members(uuid) to authenticated;
 
+drop trigger project_objects_refresh_object_keys on quality.project_objects;
+drop trigger location_nodes_refresh_object_keys on quality.location_nodes;
+drop trigger role_assignments_quality_object_keys on core.role_assignments;
 drop function quality.row_visible(uuid, uuid, text[], text, uuid, uuid, text, text, text[]);
-drop function quality.assignment_sees_obj(core.role_assignments, text, uuid, text, uuid, uuid, text, text, text[]);
-drop function quality.record_object_state(uuid, text[], text[]);
+drop function quality.refresh_object_keys();
+drop function quality.assignment_object_keys();
+drop function quality.objects_keys(uuid, text[]);
+drop function quality.record_keys(text[]);
 drop function quality.object_clean(text);
+alter table core.role_assignments drop column quality_object_keys;
 alter table core.role_assignments drop column quality_objects;
 
 commit;

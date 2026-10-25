@@ -23,91 +23,116 @@ begin
   end if;
 end $$;
 
--- 1. Закреплённые объекты Качества у назначения (одно место — ядро, рядом с назначением).
+-- 1. Закреплённые объекты Качества у назначения (одно место — ядро, рядом с назначением) и служебные признаки этих объектов
+--    для быстрой проверки строки (считает сервер: при назначении и при правке справочника объектов; клиент таблицу не пишет).
 alter table core.role_assignments add column quality_objects text[]
   constraint role_assignments_quality_objects_chk check (quality_objects is null or cardinality(quality_objects) between 1 and 500);
+alter table core.role_assignments add column quality_object_keys text[];
+comment on column core.role_assignments.quality_objects is 'P2-0033: id объектов Качества (quality.project_objects.id); null — все объекты';
+comment on column core.role_assignments.quality_object_keys is 'P2-0033: служебно — признаки закреплённых объектов (id, узлы локаций, очищенные названия); считает сервер';
 
 -- 2. Строка для сравнения названий объекта — как ObjectDirectory.cleanString (object-directory.service.js).
 create function quality.object_clean(p text)
 returns text language sql immutable set search_path = pg_catalog as $$
-  select btrim(regexp_replace(regexp_replace(lower(coalesce(p, '')), '[''"«»]', '', 'g'), 'жк\s+', '', 'g'), E' \t\r\n')
+  -- регулярное выражение — только если есть «жк» (правило считается на каждой строке, замер P2-0033)
+  select btrim(case when strpos(lower(coalesce(p, '')), 'жк') > 0
+                    then regexp_replace(translate(lower(coalesce(p, '')), '''"«»', ''), 'жк\s+', '', 'g')
+                    else translate(lower(coalesce(p, '')), '''"«»', '') end, E' \t\r\n')
+$$;
+-- Признаки закреплённых объектов (как ObjectDirectory.isRecordInAssignedProjects): id объекта; очищенные ключ, название,
+-- синонимы; id узлов-объектов локаций с тем же названием (у записей "projectId" — id узла).
+create function quality.objects_keys(p_company uuid, p_ids text[])
+returns text[] language sql stable security definer set search_path = pg_catalog as $$
+  with o as (
+    select po.id, array[quality.object_clean(po.canonical_key), quality.object_clean(po.display_name)]
+             || array(select quality.object_clean(y) from unnest(coalesce(po.synonyms, '{}')) y) names
+      from quality.project_objects po where po.core_company_id = p_company and po.id = any (p_ids))
+  select coalesce(array_agg(distinct x) filter (where x <> ''), '{}') from (
+    select o.id x from o
+    union all select unnest(o.names) from o
+    union all select n.id from quality.location_nodes n
+     where n.core_company_id = p_company and n."nodeType" = 'object' and not n.is_deleted
+       and exists (select 1 from o where quality.object_clean(coalesce(nullif(n.canonical_key, ''), n."displayName")) = any (o.names))) t;
 $$;
 
--- Объект записи относительно закреплённых: 'in' — в списке, 'none' — запись без объекта, 'out' — чужой объект.
--- p_obj — признаки записи (до 3): id узла объекта ("projectId"), ключ, название (пустые — пропуск). Совпадение — как
--- ObjectDirectory.isRecordInAssignedProjects: id объекта, его ключ / название / синоним; id узла-объекта локаций с тем же
--- названием (узел — только по первому признаку "projectId", по первичному ключу и если по названию не нашлось).
-create function quality.record_object_state(p_company uuid, p_ids text[], p_obj text[])
-returns text language plpgsql stable security definer set search_path = pg_catalog as $$
-declare
-  -- без подзапросов и сборки массивов: правило считается на каждой строке (замер P2-0033)
-  k1 text := quality.object_clean(p_obj[1]);
-  k2 text := quality.object_clean(p_obj[2]);
-  k3 text := quality.object_clean(p_obj[3]);
+-- Признаки считает сервер при любой записи назначения (подставить свои нельзя).
+create function quality.assignment_object_keys()
+returns trigger language plpgsql security definer set search_path = pg_catalog as $$
 begin
-  if k1 in ('unknown', 'все', 'all') or k1 like 'все %' then k1 := ''; end if;
-  if k2 in ('unknown', 'все', 'all') or k2 like 'все %' then k2 := ''; end if;
-  if k3 in ('unknown', 'все', 'all') or k3 like 'все %' then k3 := ''; end if;
-  if k1 = '' and k2 = '' and k3 = '' then return 'none'; end if;
-  if exists (select 1 from quality.project_objects o where o.core_company_id = p_company and o.id = any (p_ids)
-              and (o.id in (btrim(p_obj[1]), btrim(p_obj[2]), btrim(p_obj[3]))
-                   or quality.object_clean(o.canonical_key) in (k1, k2, k3) or quality.object_clean(o.display_name) in (k1, k2, k3)
-                   or exists (select 1 from unnest(o.synonyms) y where quality.object_clean(y) in (k1, k2, k3)))) then
-    return 'in';
+  new.quality_object_keys := case when new.quality_objects is null then null else quality.objects_keys(new.company_id, new.quality_objects) end;
+  return new;
+end $$;
+create trigger role_assignments_quality_object_keys before insert or update on core.role_assignments
+  for each row execute function quality.assignment_object_keys();
+
+-- Справочник объектов или узел-объект локаций изменён — пересчитать признаки действующих назначений компании с объектами.
+create function quality.refresh_object_keys()
+returns trigger language plpgsql security definer set search_path = pg_catalog as $$
+declare
+  n jsonb := to_jsonb(new);   -- общая функция двух таблиц: поля — через jsonb (у объектов нет "nodeType")
+  o jsonb := to_jsonb(old);
+begin
+  if tg_table_name = 'location_nodes' and coalesce(n ->> 'nodeType', '') <> 'object' and coalesce(o ->> 'nodeType', '') <> 'object' then
+    return null;
   end if;
-  if k1 = '' then return 'out'; end if;
-  if exists (select 1 from quality.location_nodes n
-              join quality.project_objects o on o.core_company_id = n.core_company_id and o.id = any (p_ids)
-             where n.core_company_id = p_company and n.id = btrim(p_obj[1]) and n."nodeType" = 'object' and not n.is_deleted
-               and quality.object_clean(coalesce(nullif(n.canonical_key, ''), n."displayName"))
-                   in (quality.object_clean(o.canonical_key), quality.object_clean(o.display_name))) then
-    return 'in';
-  end if;
-  return 'out';
+  update core.role_assignments a set quality_object_keys = quality.objects_keys(a.company_id, a.quality_objects)
+   where a.company_id = coalesce(n ->> 'core_company_id', o ->> 'core_company_id')::uuid and a.quality_objects is not null and a.revoked_at is null
+     and (tg_table_name = 'location_nodes' or a.quality_objects && array[coalesce(n ->> 'id', o ->> 'id')]);
+  return null;
+end $$;
+create trigger project_objects_refresh_object_keys after insert or update or delete on quality.project_objects
+  for each row execute function quality.refresh_object_keys();
+create trigger location_nodes_refresh_object_keys after insert or update or delete on quality.location_nodes
+  for each row execute function quality.refresh_object_keys();
+
+-- 3. Область видимости строки с объектом записи p_obj (до 3 признаков: "projectId", ключ, название; null — у таблицы нет
+--    объекта записи, правило объектов не применяется). Назначение с объектами: чужой объект — нет; без объекта — только своя
+--    запись (дальше — правила роли); свой объект — просмотр любого автора (решение владельца 25.10.2026: как вид 'contractor' —
+--    фирма подрядчика и объект ядра как раньше), правка — по правилам роли. Остальное — как 020.
+-- Признаки объекта записи для сравнения: исходные значения и очищенные; null — «нет объекта» (отдельная функция, чтобы план
+-- правила оставался простым: sql-правило планируется на каждой строке, тяжёлые выражения в нём — замер P2-0033).
+create function quality.record_keys(p_obj text[])
+returns text[] language plpgsql immutable set search_path = pg_catalog as $$
+declare
+  v text[] := array[btrim(p_obj[1]), btrim(p_obj[2]), btrim(p_obj[3])];
+  x text;
+  i int;
+  v_any boolean := false;
+begin
+  for i in 1..3 loop
+    -- = quality.object_clean за один проход; «нет объекта» (пусто, unknown, «Все») — пустая строка
+    x := translate(lower(coalesce(p_obj[i], '')), '''"«»', '');
+    if strpos(x, 'жк') > 0 then x := regexp_replace(x, 'жк\s+', '', 'g'); end if;
+    x := btrim(x, E' \t\r\n');
+    if x in ('unknown', 'все', 'all') or x like 'все %' then x := ''; end if;
+    v_any := v_any or x <> '';
+    v := v || x;
+  end loop;
+  return case when v_any then v end;
 end $$;
 
--- 3. Что видит одно назначение с учётом объектов (act — действие целиком: видеть или править).
---    p_obj is null — у таблицы нет объекта записи: правило объектов не применяется (как раньше).
-create function quality.assignment_sees_obj(a core.role_assignments, act text, p_project uuid, p_kind text,
-  p_author uuid, p_assignee uuid, p_ckey text, p_cname text, p_obj text[])
-returns boolean language plpgsql stable security definer set search_path = pg_catalog, core as $$
-declare
-  m text := split_part(act, '.', 1);
-  v_state text;
-  v_own boolean;
-begin
-  if p_obj is not null and p_kind in ('author', 'contractor') and a.quality_objects is not null then
-    v_own := coalesce(auth.uid() is not null and (p_author = auth.uid() or p_assignee = auth.uid()), false);   -- null автора/назначенного = не своя
-    v_state := quality.record_object_state(a.company_id, a.quality_objects, p_obj);
-    if v_state = 'out' or (v_state = 'none' and not v_own) then return false; end if;
-    -- просмотр записей своего объекта — любой автор (решение владельца 25.10.2026); фирма подрядчика и объект ядра — как раньше
-    if v_state = 'in' and split_part(act, '.', 2) = 'view' and p_kind = 'author' then
-      if not (p_project is null or a.project_id is null or a.project_id = p_project) then return false; end if;
-      if exists (select 1 from core.company_role_permissions rp where rp.role_id = a.role_id and rp.company_id = a.company_id
-                  and rp.action = 'quality.scope.contractor')
-         and not exists (select 1 from core.company_role_permissions rp where rp.role_id = a.role_id and rp.company_id = a.company_id
-                  and rp.action in ('quality.scope.company', m || '.manage')) then
-        return quality.contractor_matches(a.company_id, a.counterparty_id, p_ckey, p_cname);
-      end if;
-      return true;
-    end if;
-  end if;
-  return quality.assignment_sees(a, m, p_project, p_kind, p_author, p_assignee, p_ckey, p_cname);
-end $$;
-
--- 4. Область видимости строки с объектом записи (тело — как 020, назначение — с объектами).
 create function quality.row_visible(p_company uuid, p_project uuid, p_actions text[], p_kind text,
   p_author uuid, p_assignee uuid, p_ckey text, p_cname text, p_obj text[])
 returns boolean language sql stable security definer set search_path = pg_catalog, core, planfact as $$
   select p_company is not null and p_company = quality.request_company() and exists (
     select 1 from unnest(p_actions) act
     join core.company_modules cm on cm.company_id = p_company and cm.module = split_part(act, '.', 1) and cm.enabled
+    cross join (select quality.record_keys(p_obj) ks) k
     where planfact.is_platform_admin() or exists (
       select 1 from core.role_assignments a
       join core.company_role_permissions rp on rp.role_id = a.role_id and rp.company_id = a.company_id and rp.action = act
       where a.company_id = p_company and a.user_id = auth.uid()
         and a.revoked_at is null and a.valid_from <= now() and (a.valid_to is null or a.valid_to > now())
-        and quality.assignment_sees_obj(a, act, p_project, p_kind, p_author, p_assignee, p_ckey, p_cname, p_obj)));
+        and case
+          when p_obj is null or p_kind not in ('author', 'contractor') or a.quality_objects is null then
+            quality.assignment_sees(a, split_part(act, '.', 1), p_project, p_kind, p_author, p_assignee, p_ckey, p_cname)
+          when k.ks is null then
+            coalesce(auth.uid() = p_author or auth.uid() = p_assignee, false)
+            and quality.assignment_sees(a, split_part(act, '.', 1), p_project, p_kind, p_author, p_assignee, p_ckey, p_cname)
+          when a.quality_object_keys && k.ks then
+            quality.assignment_sees(a, split_part(act, '.', 1), p_project,
+              case when split_part(act, '.', 2) = 'view' then 'contractor' else p_kind end, p_author, p_assignee, p_ckey, p_cname)
+          else false end));
 $$;
 
 -- Пункты и фото проверки — по своей проверке, с её объектом (сигнатуры и правила таблиц — как в 023).
@@ -141,8 +166,8 @@ begin
   return quality.can(p_company, p_project, array(select replace(x, '.edit', '.manage') from unnest(p_actions) x));
 end $$;
 
-revoke all on function quality.object_clean(text), quality.record_object_state(uuid, text[], text[]),
-  quality.assignment_sees_obj(core.role_assignments, text, uuid, text, uuid, uuid, text, text, text[]),
+revoke all on function quality.object_clean(text), quality.record_keys(text[]), quality.objects_keys(uuid, text[]),
+  quality.assignment_object_keys(), quality.refresh_object_keys(),
   quality.row_visible(uuid, uuid, text[], text, uuid, uuid, text, text, text[]) from public, anon, authenticated;
 grant execute on function quality.row_visible(uuid, uuid, text[], text, uuid, uuid, text, text, text[]) to authenticated;
 

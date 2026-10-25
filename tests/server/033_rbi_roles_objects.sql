@@ -159,6 +159,17 @@ begin
   s := pg_temp.vis('project_meetings'); res := res || pg_temp.t(s = 'm2', 'инженер O2: совещания (своё без объекта) ' || s);
   s := pg_temp.vis('rbi_inspection_items'); res := res || pg_temp.t(s = 'p2', 'инженер O2: пункты ' || s);
 
+  -- Справочник изменён после назначения: новый синоним O2 — признаки пересчитаны, запись с синонимом видна инженеру 2
+  reset role;
+  update quality.project_objects set synonyms = array['Крыленко'] where core_company_id = ca and id = o2;
+  perform set_config('m33.pc', pa::text, true);
+  perform pg_temp.mk('rbi_inspections', 'a10', ue1, format('core_company_id = %L, project_canonical_key = %L', ca, 'крыленко'));
+  perform pg_temp.as_user(ue2, ca);
+  s := pg_temp.vis('rbi_inspections'); res := res || pg_temp.t(s = 'a10,a3,a5', 'инженер O2: синоним, добавленный после назначения ' || s);
+  reset role;
+  res := res || pg_temp.t(pg_temp.err(format('update core.role_assignments set quality_object_keys = array[%L] where user_id = %L', 'школа 400 (крыленко)', ue1)) = 'OK'
+                          and (select not ('школа 400 (крыленко)' = any (quality_object_keys)) from core.role_assignments where user_id = ue1),
+                          'признаки объектов считает сервер (подставить нельзя)');
   -- Без закреплённых объектов (null = все): как до 033 — свои проверки и задачи, СК всей компании
   perform pg_temp.as_user(ue0, ca);
   s := pg_temp.vis('rbi_inspections'); res := res || pg_temp.t(s = '', 'инженер без объектов: только свои проверки (своих нет) ' || s);
@@ -168,7 +179,7 @@ begin
 
   -- Директор: видит всё, ничего не правит и не создаёт
   perform pg_temp.as_user(udir, ca);
-  s := pg_temp.vis('rbi_inspections'); res := res || pg_temp.t(s = 'a1,a2,a3,a4,a5,a6,a7,a8,a9,c1,c2', 'директор: все проверки ' || s);
+  s := pg_temp.vis('rbi_inspections'); res := res || pg_temp.t(s = 'a1,a10,a2,a3,a4,a5,a6,a7,a8,a9,c1,c2', 'директор: все проверки ' || s);
   s := pg_temp.vis('rbi_tasks');       res := res || pg_temp.t(s = 't1,t2', 'директор: все задачи ' || s);
   res := res || pg_temp.t(pg_temp.rows($q$update quality.rbi_inspections set project_code = project_code where id = 'a2-m33'$q$) = 0, 'директор: не правит');
   res := res || pg_temp.t(pg_temp.rows($q$delete from quality.rbi_inspections where id = 'a2-m33'$q$) = 0, 'директор: не удаляет');
@@ -177,11 +188,11 @@ begin
 
   -- Зам. руководителя и Админ: видят всё, правят и удаляют чужие
   perform pg_temp.as_user(udep, ca);
-  s := pg_temp.vis('rbi_inspections'); res := res || pg_temp.t(s = 'a1,a2,a3,a4,a5,a6,a7,a8,a9,c1,c2', 'зам.: все проверки ' || s);
+  s := pg_temp.vis('rbi_inspections'); res := res || pg_temp.t(s = 'a1,a10,a2,a3,a4,a5,a6,a7,a8,a9,c1,c2', 'зам.: все проверки ' || s);
   res := res || pg_temp.t(pg_temp.rows($q$update quality.rbi_inspections set project_code = project_code where id = 'a2-m33'$q$) = 1, 'зам.: правит чужую');
   res := res || pg_temp.t(pg_temp.rows($q$delete from quality.rbi_tasks where id = 't1-m33'$q$) = 1, 'зам.: удаляет чужую задачу');
   perform pg_temp.as_user(uadm, ca);
-  s := pg_temp.vis('rbi_inspections'); res := res || pg_temp.t(s = 'a1,a2,a3,a4,a5,a6,a7,a8,a9,c1,c2', 'админ: все проверки ' || s);
+  s := pg_temp.vis('rbi_inspections'); res := res || pg_temp.t(s = 'a1,a10,a2,a3,a4,a5,a6,a7,a8,a9,c1,c2', 'админ: все проверки ' || s);
   res := res || pg_temp.t(pg_temp.rows($q$delete from quality.rbi_inspections where id = 'a3-m33'$q$) = 1, 'админ: удаляет чужую');
 
   -- Изоляция компаний: инженер Беты с тем же ключом объекта; заголовок чужой компании
@@ -223,7 +234,7 @@ begin
   res := res || pg_temp.t(pg_temp.err(format('select public.pf_assign_role(%L, %L, null, null, null, array[%L])', ue2, r_eng, o1)) = '42501',
                           'назначение: инженеру — нет');
   perform pg_temp.as_user(null, ca);
-  res := res || pg_temp.t(pg_temp.err('select quality.record_object_state(null, null, null)') = '42501', 'anon: служебные функции закрыты');
+  res := res || pg_temp.t(pg_temp.err('select quality.objects_keys(null, null)') = '42501', 'anon: служебные функции закрыты');
 
   reset role;
   raise exception E'ОТЧЁТ (откат):\n%FAIL всего: %', res, (select count(*) from regexp_matches(res, 'FAIL', 'g')) using errcode = 'P0001';
