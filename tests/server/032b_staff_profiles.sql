@@ -27,7 +27,7 @@ declare
 begin
   perform pg_temp.as_owner();
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[uadm, ueng, uold, uoth, upet, uold2]) u;
-  update auth.users set email_confirmed_at = now();
+  update auth.users set email_confirmed_at = now() where id in (uadm, ueng, uold, uoth, upet, uold2);
   insert into core.companies(id, name, is_test) values (ca, 'Альфа 032b', true);
   insert into core.company_members(company_id, user_id) values (ca, uadm), (ca, ueng), (ca, upet);
   insert into core.projects(id, company_id, name) values (pa, ca, 'Объект А 032b'), (pb2, ca, 'Объект Б 032b');
