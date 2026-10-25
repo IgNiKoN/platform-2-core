@@ -3658,7 +3658,13 @@ window.triggerSync = async function (mode = 'silent') {
                             }
 
                             // Push справочника локаций v2 + планов этажей — только admin (как contractor_directory).
-                            if (STORES.LOCATION_NODES && typeof window.prepareLocationNodeForCloud === 'function') {
+                            // P2-0037 (ТД №194): при входе по почте — только роль со справочником объектов (033c); иначе сервер
+                            // отклоняет узел, ошибка повторяется каждый обмен и останавливает отправку следующих узлов.
+                            const qsLoc = window.RBI && window.RBI.qualitySync;
+                            const locActions = qsLoc && qsLoc.active && Array.isArray(qsLoc.actions) ? qsLoc.actions : null;
+                            const canPushLocations = !locActions || locActions.indexOf('quality.objects.manage') !== -1
+                                || locActions.indexOf('construction.objects.manage') !== -1;
+                            if (canPushLocations && STORES.LOCATION_NODES && typeof window.prepareLocationNodeForCloud === 'function') {
                                 try {
                                     const nodeItems = await dbGetAll(STORES.LOCATION_NODES) || [];
                                     const nodesToPush = nodeItems.filter(n => {
