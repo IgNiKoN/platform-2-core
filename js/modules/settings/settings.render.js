@@ -166,11 +166,11 @@ var SettingsRender = {
                             <div class="p-4 bg-[var(--hover-bg)]">
                                 <div class="font-bold text-sm mb-3" data-i18n="settings.body.ai.mode_title">Способ вызова нейросети</div>
                                 <div class="flex flex-col gap-3">
-                                    <!-- Режим 1: По роли -->
+                                    <!-- Режим 1: По учётке (P2-0034: сервер решает по входу и галочке «ИИ-помощник» в роли) -->
                                     <label
                                         class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
-                                        <input type="radio" name="ai-mode" value="role"
-                                            class="w-4 h-4 accent-indigo-600" data-action="changeAiMode" data-action-arg="role" data-action-event="change">
+                                        <input type="radio" name="ai-mode" value="account"
+                                            class="w-4 h-4 accent-indigo-600" data-action="changeAiMode" data-action-arg="account" data-action-event="change">
                                         <span
                                             class="text-rbi-body font-bold text-ink flex items-center gap-1">
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
@@ -178,38 +178,11 @@ var SettingsRender = {
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                     d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
                                                 </path>
-                                            </svg> <span data-i18n="settings.body.ai.mode_role">Автоматически (По роли)</span>
+                                            </svg> <span data-i18n="settings.body.ai.mode_account">По учётке</span>
                                         </span>
                                     </label>
 
-                                    <!-- Режим 2: Корпоративный пароль -->
-                                    <label
-                                        class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
-                                        <input type="radio" name="ai-mode" value="corporate"
-                                            class="w-4 h-4 accent-indigo-600"
-                                            data-action="changeAiMode" data-action-arg="corporate" data-action-event="change">
-                                        <span
-                                            class="text-rbi-body font-bold text-ink flex items-center gap-1">
-                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
-                                                viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
-                                                </path>
-                                            </svg> <span data-i18n="settings.body.ai.mode_corporate">Через корпоративный пароль</span>
-                                        </span>
-                                    </label>
-                                    <div id="corporate-pwd-field"
-                                        class="hidden bg-surface p-3 rounded-xl border border-surface shadow-inner ml-6">
-                                        <form onsubmit="event.preventDefault();">
-                                            <!-- ВСТАВКА: Скрытый логин -->
-                                            <input type="text" autocomplete="username" style="display:none;" value="admin">
-                                            
-                                            <label class="text-rbi-caption font-bold text-[var(--text-muted)] uppercase mb-1 block" data-i18n="settings.body.ai.corp_pwd_label">Пароль доступа к ИИ</label>
-                                            <input type="password" id="set-ai-corp-pwd" autocomplete="new-password" class="input-base font-mono text-rbi-caption bg-surface" placeholder="Введите пароль..." data-i18n="settings.body.ai.corp_pwd_ph" data-i18n-attr="placeholder" data-settings-action="toggleSetting" data-settings-action-key="aiCorpPwd" data-settings-action-val-type="element" data-action-event="change">
-                                        </form>
-                                    </div>
-
-                                    <!-- Режим 3: Личный ключ -->
+                                    <!-- Режим 2: Личный ключ -->
                                     <label
                                         class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
                                         <input type="radio" name="ai-mode" value="personal"
@@ -2117,23 +2090,13 @@ console.log('[SettingsRender] settings.render.js markup mounted');
             document.getElementById('ai-settings-body').style.display = _getSetting('aiEnabled') ? 'block' : 'none';
         }
         if (document.getElementById('set-ai-key')) document.getElementById('set-ai-key').value = _getSetting('apiKey') || '';
-        if (document.getElementById('set-ai-corp-pwd')) document.getElementById('set-ai-corp-pwd').value = _getSetting('aiCorpPwd') || '';
 
         var aiModes = document.getElementsByName('ai-mode');
         if (aiModes.length > 0) {
-            var mode = _getSetting('aiAuthMode') || 'role';
-            document.getElementById('corporate-pwd-field').classList.add('hidden');
-            document.getElementById('personal-key-field').classList.add('hidden');
-
-            if (mode === 'role') {
-                aiModes[0].checked = true;
-            } else if (mode === 'corporate') {
-                aiModes[1].checked = true;
-                document.getElementById('corporate-pwd-field').classList.remove('hidden');
-            } else if (mode === 'personal') {
-                aiModes[2].checked = true;
-                document.getElementById('personal-key-field').classList.remove('hidden');
-            }
+            // P2-0034: два способа — «по учётке» и «свой ключ»; старые «по роли» / «корпоративный пароль» → «по учётке»
+            var isPersonal = _getSetting('aiAuthMode') === 'personal';
+            aiModes[isPersonal ? 1 : 0].checked = true;
+            document.getElementById('personal-key-field').classList.toggle('hidden', !isPersonal);
         }
 
         // 4. Автоматизация бэкапов
@@ -2402,7 +2365,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
 
         var personalKeyBlock = document.getElementById('personal-key-field');
         if (personalKeyBlock) {
-            if (_getSetting('usePersonalKey')) personalKeyBlock.classList.remove('hidden');
+            if (_getSetting('aiAuthMode') === 'personal') personalKeyBlock.classList.remove('hidden');
             else personalKeyBlock.classList.add('hidden');
         }
 

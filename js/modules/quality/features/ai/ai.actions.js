@@ -224,22 +224,14 @@ function _templates() {
     return (AIActions._ctx && AIActions._ctx.templates) || window.RBI.services.templates;
 }
 
-// === ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА AI (перенесено 1:1 из app.js) ===
+// === ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА AI ===
 function changeAiMode(mode) {
     var settingsSvc = (AIActions._ctx && AIActions._ctx.settings) || window.RBI.services.settings;
     settingsSvc.set('aiAuthMode', mode);
 
+    // P2-0034: «account» (по учётке) или «personal» (свой ключ DeepSeek)
     const personalKeyBlock = document.getElementById('personal-key-field');
-    const corporatePwdBlock = document.getElementById('corporate-pwd-field');
-
-    if (personalKeyBlock) personalKeyBlock.classList.add('hidden');
-    if (corporatePwdBlock) corporatePwdBlock.classList.add('hidden');
-
-    if (mode === 'personal') {
-        if (personalKeyBlock) personalKeyBlock.classList.remove('hidden');
-    } else if (mode === 'corporate') {
-        if (corporatePwdBlock) corporatePwdBlock.classList.remove('hidden');
-    }
+    if (personalKeyBlock) personalKeyBlock.classList.toggle('hidden', mode !== 'personal');
 };
 
 // === ГЛОБАЛЬНАЯ ФУНКЦИЯ ВЫЗОВА DEEPSEEK AI ===
