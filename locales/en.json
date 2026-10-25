@@ -3012,6 +3012,7 @@
   "settings.body.ai.device_only": "Stored only on this device.",
   "settings.body.ai.enable": "Enable AI",
   "settings.body.ai.enable_hint": "Smart tips and analytics",
+  "settings.body.ai.company_off": "The AI assistant is turned off for your company. The platform administrator turns it on.",
   "settings.body.ai.mode_account": "By account",
   "settings.body.ai.mode_corporate": "Via corporate password",
   "settings.body.ai.mode_personal": "My personal API key",

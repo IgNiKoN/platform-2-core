@@ -46,17 +46,21 @@ begin
   res := res || pg_temp.t(not exists (select 1 from core.company_modules q where q.module = 'quality' and q.enabled
                             and not exists (select 1 from core.company_modules k where k.company_id = q.company_id and k.module = 'knowledge' and k.enabled)),
                           'у всех компаний с Качеством База знаний включена');
+  res := res || pg_temp.t((select managed and access_action = 'quality.ai' from core.module_catalog where code = 'ai'), 'ai — управляемый, по праву quality.ai');
+  res := res || pg_temp.t(not exists (select 1 from core.companies c where not exists (
+                            select 1 from core.company_modules m where m.company_id = c.id and m.module = 'ai' and m.enabled)),
+                          'ИИ включён у всех существующих компаний');
 
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[uadm, uview, ucus, upf, ub, upa]) u;
   insert into core.platform_admins(user_id) values (upa);
   insert into core.companies(id, name, is_test) values (ca, 'Альфа 038', true), (cb, 'Бета 038', true), (cn, 'Новая 038', true);
   insert into core.company_members(company_id, user_id) select ca, u from unnest(array[uadm, uview, ucus, upf]) u union all select cb, ub;
   insert into core.company_modules(company_id, module, enabled)
-    select ca, m, true from unnest(array['quality', 'construction', 'planfact', 'knowledge']) m
-    union all select cb, m, true from unnest(array['quality', 'knowledge']) m
+    select ca, m, true from unnest(array['quality', 'construction', 'planfact', 'knowledge', 'ai']) m
+    union all select cb, m, true from unnest(array['quality', 'knowledge', 'ai']) m
     on conflict (company_id, module) do update set enabled = true;
   delete from core.company_modules where company_id = cn;   -- как у новой компании без включённых модулей
-  update core.company_modules set enabled = false where company_id = cb and module not in ('quality', 'knowledge');
+  update core.company_modules set enabled = false where company_id = cb and module not in ('quality', 'knowledge', 'ai');
   insert into core.company_roles(company_id, name) values (ca, 'Админ 038') returning id into r_adm;
   insert into core.company_roles(company_id, name) values (ca, 'Наблюдатель 038') returning id into r_view;
   insert into core.company_roles(company_id, name) values (ca, 'Стройконтроль 038') returning id into r_cus;
@@ -72,31 +76,38 @@ begin
     (ca, uadm, r_adm), (ca, uview, r_view), (ca, ucus, r_cus), (ca, upf, r_pf), (cb, ub, r_b);
 
   -- 1. Кто что видит при всём включённом
-  res := res || pg_temp.t(pg_temp.mods(uadm, ca) = 'construction,knowledge,quality', 'Админ: Качество, Стройконтроль, База знаний: ' || pg_temp.mods(uadm, ca));
-  res := res || pg_temp.t(pg_temp.mods(uview, ca) = 'knowledge,quality', 'с quality.view — База знаний есть: ' || pg_temp.mods(uview, ca));
+  res := res || pg_temp.t(pg_temp.mods(uadm, ca) = 'ai,construction,knowledge,quality', 'Админ: Качество, Стройконтроль, База знаний, ИИ: ' || pg_temp.mods(uadm, ca));
+  res := res || pg_temp.t(pg_temp.mods(uview, ca) = 'knowledge,quality', 'с quality.view без quality.ai — База знаний есть, ИИ нет: ' || pg_temp.mods(uview, ca));
   res := res || pg_temp.t(pg_temp.mods(ucus, ca) = 'construction', 'без прав Качества — Базы знаний нет: ' || pg_temp.mods(ucus, ca));
   res := res || pg_temp.t(pg_temp.mods(upf, ca) = 'planfact', 'План/Факт — как раньше: ' || pg_temp.mods(upf, ca));
-  res := res || pg_temp.t(pg_temp.mods(upa, ca) = 'construction,knowledge,planfact,quality', 'админ платформы — все включённые: ' || pg_temp.mods(upa, ca));
+  res := res || pg_temp.t(pg_temp.mods(upa, ca) = 'ai,construction,knowledge,planfact,quality', 'админ платформы — все включённые: ' || pg_temp.mods(upa, ca));
   res := res || pg_temp.t(pg_temp.mods(null, ca) = 'ERR:42501', 'anon — отказ');
 
   -- 2. Выключатель «База знаний» — только админ платформы; только у этой компании
   res := res || pg_temp.t(pg_temp.set_mod(uadm, ca, 'knowledge', false) = '42501', 'админ компании не выключает модуль');
   res := res || pg_temp.t(pg_temp.set_mod(upa, ca, 'knowledge', false) = 'OK', 'админ платформы выключает Базу знаний');
-  res := res || pg_temp.t(pg_temp.mods(uadm, ca) = 'construction,quality', 'выключена — у Альфы пропала: ' || pg_temp.mods(uadm, ca));
-  res := res || pg_temp.t(pg_temp.mods(ub, cb) = 'knowledge,quality', 'у Беты осталась: ' || pg_temp.mods(ub, cb));
+  res := res || pg_temp.t(pg_temp.mods(uadm, ca) = 'ai,construction,quality', 'выключена — у Альфы пропала: ' || pg_temp.mods(uadm, ca));
+  res := res || pg_temp.t(pg_temp.mods(ub, cb) = 'ai,knowledge,quality', 'у Беты осталась: ' || pg_temp.mods(ub, cb));
   res := res || pg_temp.t(exists (select 1 from core.audit_log where company_id = ca and action = 'platform.module.set'
                                     and new_data ->> 'module' = 'knowledge'), 'выключение записано в журнал');
-  res := res || pg_temp.t(pg_temp.set_mod(upa, ca, 'knowledge', true) = 'OK' and pg_temp.mods(uadm, ca) = 'construction,knowledge,quality', 'включили — вернулась');
+  res := res || pg_temp.t(pg_temp.set_mod(upa, ca, 'knowledge', true) = 'OK' and pg_temp.mods(uadm, ca) = 'ai,construction,knowledge,quality', 'включили — вернулась');
 
   -- 3. База знаний живёт в хранилище Качества: Качество выключено — Базы знаний нет (и данные закрыты сервером, 018)
   res := res || pg_temp.t(pg_temp.set_mod(upa, ca, 'quality', false) = 'OK', 'админ платформы выключает Качество');
-  res := res || pg_temp.t(pg_temp.mods(uadm, ca) = 'construction', 'Качество выключено — Базы знаний нет: ' || pg_temp.mods(uadm, ca));
+  res := res || pg_temp.t(pg_temp.mods(uadm, ca) = 'construction', 'Качество выключено — Базы знаний и ИИ нет: ' || pg_temp.mods(uadm, ca));
   res := res || pg_temp.t(pg_temp.mods(uview, ca) = '', 'наблюдатель без Качества — ничего: ' || pg_temp.mods(uview, ca));
   res := res || pg_temp.t(pg_temp.set_mod(upa, ca, 'quality', true) = 'OK' and pg_temp.mods(uview, ca) = 'knowledge,quality', 'Качество включили — всё вернулось');
+
+  -- 3а. Выключатель «ИИ-помощник»: у Альфы пропал, у Беты остался; право quality.can не меняется (его проверяет pf-ai вместе с модулем)
+  res := res || pg_temp.t(pg_temp.set_mod(upa, ca, 'ai', false) = 'OK', 'админ платформы выключает ИИ');
+  res := res || pg_temp.t(pg_temp.mods(uadm, ca) = 'construction,knowledge,quality', 'ИИ выключен — у Альфы нет: ' || pg_temp.mods(uadm, ca));
+  res := res || pg_temp.t(pg_temp.mods(ub, cb) = 'ai,knowledge,quality', 'у Беты ИИ есть: ' || pg_temp.mods(ub, cb));
+  res := res || pg_temp.t(pg_temp.set_mod(upa, ca, 'ai', true) = 'OK' and pg_temp.mods(uadm, ca) = 'ai,construction,knowledge,quality', 'ИИ включили — вернулся');
 
   -- 4. Новая компания: модулей нет, пока не включат
   res := res || pg_temp.t(pg_temp.mods(upa, cn) = '', 'новая компания — без модулей');
   res := res || pg_temp.t(pg_temp.set_mod(upa, cn, 'knowledge', true) = 'OK' and pg_temp.mods(upa, cn) = '', 'База знаний без Качества — не появляется');
+  res := res || pg_temp.t(pg_temp.set_mod(upa, cn, 'ai', true) = 'OK' and pg_temp.mods(upa, cn) = '', 'ИИ без Качества — не появляется');
 
   reset role;
   raise exception E'ОТЧЁТ (откат):\n%FAIL всего: %', res, (select count(*) from regexp_matches(res, 'FAIL', 'g')) using errcode = 'P0001';

@@ -3012,6 +3012,7 @@
   "settings.body.ai.device_only": "Сохраняется только на вашем устройстве.",
   "settings.body.ai.enable": "Включить AI",
   "settings.body.ai.enable_hint": "Интеллектуальные подсказки и аналитика",
+  "settings.body.ai.company_off": "ИИ-помощник выключен для вашей компании. Включает администратор платформы.",
   "settings.body.ai.mode_account": "По учётке",
   "settings.body.ai.mode_corporate": "Через корпоративный пароль",
   "settings.body.ai.mode_personal": "Мой персональный API-ключ",

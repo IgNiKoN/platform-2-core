@@ -157,6 +157,7 @@ var SettingsRender = {
                             <div>
                                 <div class="font-bold text-sm" data-i18n="settings.body.ai.enable">Включить AI</div>
                                 <div class="text-rbi-caption text-[var(--text-muted)] mt-1" data-i18n="settings.body.ai.enable_hint">Интеллектуальные подсказки и аналитика</div>
+                                <div id="set-ai-company-off" class="text-rbi-caption text-[var(--text-muted)] mt-1 hidden" data-i18n="settings.body.ai.company_off">ИИ-помощник выключен для вашей компании. Включает администратор платформы.</div>
                             </div>
                             <label class="toggle-switch"><input type="checkbox" id="set-ai-enabled"
                                     data-settings-action="toggleSetting" data-settings-action-key="aiEnabled" data-settings-action-val-type="element" data-action-event="change"><span
@@ -2115,6 +2116,12 @@ console.log('[SettingsRender] settings.render.js markup mounted');
 
         // 3.5. AI-настройки
         if (document.getElementById('set-ai-enabled')) {
+            // P2-0031: модуль «ИИ-помощник» выключен у компании — переключатель недоступен, пояснение вместо него
+            var shAi = window.RBI && window.RBI.services && window.RBI.services.shell;
+            var aiCompanyOff = !!(shAi && typeof shAi.legacyModuleAllowed === 'function' && !shAi.legacyModuleAllowed('ai'));
+            document.getElementById('set-ai-enabled').disabled = aiCompanyOff;
+            var aiOffNote = document.getElementById('set-ai-company-off');
+            if (aiOffNote) aiOffNote.classList.toggle('hidden', !aiCompanyOff);
             document.getElementById('set-ai-enabled').checked = _getSetting('aiEnabled');
             document.getElementById('ai-settings-body').style.display = _getSetting('aiEnabled') ? 'block' : 'none';
         }

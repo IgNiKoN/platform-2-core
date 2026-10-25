@@ -3,7 +3,9 @@
 --    Её документы лежат в хранилище Качества (quality.shared_docs, shared_nodes, shared_twi_cards — право quality.view, 018),
 --    поэтому модуль доступен человеку по праву quality.view и только при включённом у компании Качестве.
 --    Включена у компаний, где включено Качество (у RBI — как было: документы видны в Качестве).
--- 2) core.module_catalog.access_action — право, по которому модуль доступен человеку, если у модуля нет своих прав «<код>.*»;
+-- 2) «ИИ-помощник» (ai) — новый управляемый модуль: доступен по праву quality.ai (034) при включённом Качестве; включён у всех
+--    существующих компаний (доступ к ИИ не меняется). Функция pf-ai отказывает, если модуля нет в pf_my_platform.
+-- 3) core.module_catalog.access_action — право, по которому модуль доступен человеку, если у модуля нет своих прав «<код>.*»;
 --    модуль этого права (часть до точки) тоже должен быть включён у компании — как в quality.can (018).
 --    pf_my_platform: модуль доступен, если включён у компании и (админ платформы или есть действующее назначение с правом
 --    «<код>.*» — либо, при access_action, с этим правом). Для planfact, quality, construction — без изменений.
@@ -26,6 +28,11 @@ update core.module_catalog set managed = true, access_action = 'quality.view' wh
 
 insert into core.company_modules(company_id, module, enabled)
 select cm.company_id, 'knowledge', true from core.company_modules cm where cm.module = 'quality' and cm.enabled
+on conflict (company_id, module) do nothing;
+
+insert into core.module_catalog(code, name, managed, sort, access_action) values ('ai', 'ИИ-помощник', true, 50, 'quality.ai');
+insert into core.company_modules(company_id, module, enabled)
+select c.id, 'ai', true from core.companies c
 on conflict (company_id, module) do nothing;
 
 create or replace function public.pf_my_platform()

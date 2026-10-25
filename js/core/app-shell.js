@@ -99,13 +99,14 @@
    * P2-0016: модуль старого Quality (quality, construction, construction-v2, knowledge) в меню этого входа?
    * Почта — если модуль включён у текущей компании и положен человеку (RBI.platformMenuAccess, ответ сервера) и мост
    * синхронизации с хранилищем компании подключён (RBI.qualitySync). P2-0031: «База знаний» — тоже по выключателю компании
-   * (сервер даёт её при включённом Качестве и праве quality.view, 038). Демо и «никто» — как раньше.
+   * (сервер даёт её при включённом Качестве и праве quality.view, 038), «ИИ-помощник» (ai) — по выключателю и праву quality.ai.
+   * Демо и «никто» — как раньше.
    */
   function legacyModuleAllowed(id) {
     if (platformEntryMode() !== 'email') return true;
     var access = (window.RBI && window.RBI.platformMenuAccess) || {};
     var base = id === 'construction-v2' ? 'construction' : id;
-    if (base !== 'quality' && base !== 'construction' && base !== 'knowledge') return false;
+    if (base !== 'quality' && base !== 'construction' && base !== 'knowledge' && base !== 'ai') return false;
     return access[base] === true && !!(window.RBI && window.RBI.qualitySync);
   }
 

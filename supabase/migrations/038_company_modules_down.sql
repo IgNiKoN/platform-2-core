@@ -1,5 +1,5 @@
 -- Откат 038 (P2-0031): «База знаний» снова по старому входу (без выключателя), pf_my_platform — как в 014 (после 016 — таблицы core).
--- Строки выключателей «База знаний» у компаний удаляются (до 038 их не было: модуль не управлялся).
+-- Строки выключателей «База знаний» у компаний удаляются (до 038 их не было: модуль не управлялся); модуль «ИИ-помощник» — тоже.
 begin;
 
 create or replace function public.pf_my_platform()
@@ -30,7 +30,8 @@ returns jsonb language sql stable security definer set search_path = pg_catalog,
       ) order by comp.name) from comp), '[]'::jsonb));
 $$;
 
-delete from core.company_modules where module = 'knowledge';
+delete from core.company_modules where module in ('knowledge', 'ai');
+delete from core.module_catalog where code = 'ai';
 update core.module_catalog set managed = false where code = 'knowledge';
 alter table core.module_catalog drop column if exists access_action;
 

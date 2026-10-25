@@ -3012,6 +3012,7 @@
   "settings.body.ai.device_only": "ინახება მხოლოდ თქვენს მოწყობილობაზე.",
   "settings.body.ai.enable": "AI-ს ჩართვა",
   "settings.body.ai.enable_hint": "ჭკვიანი მინიშნებები და ანალიტიკა",
+  "settings.body.ai.company_off": "AI ასისტენტი გამორთულია თქვენი კომპანიისთვის. ჩართავს პლატფორმის ადმინისტრატორი.",
   "settings.body.ai.mode_account": "ანგარიშით",
   "settings.body.ai.mode_corporate": "კორპორატიული პაროლით",
   "settings.body.ai.mode_personal": "ჩემი პერსონალური API-გასაღები",

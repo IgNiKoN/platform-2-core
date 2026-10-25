@@ -65,6 +65,22 @@ test('почта (P2-0031): «База знаний» — по выключат�
   assert.equal(shell('pin', {}).RBI.services.shell.legacyModuleAllowed('knowledge'), true);
 });
 
+test('почта (P2-0031): «ИИ-помощник» выключен у компании — настройка «ИИ включён» читается как выключенная; включён / PIN — как сохранено', () => {
+  const load = (win: N): N => {
+    const code = readFileSync(new URL('../../../../js/services/settings.service.js', import.meta.url), 'utf8');
+    runInNewContext(code, { window: win, document: win.document, localStorage: win.localStorage, console });
+    win.appSettings.aiEnabled = true;   // сервис сам объявляет appSettings (заводские значения) — включаем ИИ как пользователь
+    return win.RBI.services.settings;
+  };
+  assert.equal(load(shell('email', { quality: true }, { active: true })).get('aiEnabled'), false);
+  assert.equal(load(shell('email', { quality: true, ai: true }, { active: true })).get('aiEnabled'), true);
+  assert.equal(load(shell('pin', {})).get('aiEnabled'), true);
+  const off = shell('email', { quality: true }, { active: true });
+  const svc = load(off);
+  off.appSettings.aiEnabled = false;
+  assert.equal(svc.get('aiEnabled'), false, 'выключенный пользователем остаётся выключенным');
+});
+
 test('PIN (старый вход): Quality / Стройконтроль как раньше, пунктов Platform 2.0 нет — даже если флаг остался', () => {
   const win = shell('pin', { planfact: true });
   const s = sidebar(win);

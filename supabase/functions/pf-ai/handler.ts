@@ -1,6 +1,7 @@
 // pf-ai — ИИ-помощник Качества Platform 2.0 (P2-0034, ADR-070 п. 5).
 // Кто может — решает сервер: токен входа (Authorization: Bearer) → учётка; компания — заголовок x-company-id,
-// проверяется членством и правом роли через quality.* (тот же источник прав, что у RLS). Имя инженера и код
+// проверяется членством и правом роли через quality.* (тот же источник прав, что у RLS), модуль «ИИ-помощник» у компании —
+// через pf_my_platform (P2-0031, миграция 038: выключатель в «Админ платформы»). Имя инженера и код
 // объекта не принимаются и не используются. Ключ DeepSeek — только в окружении службы функций.
 // Выкладка и откат — docs/EDGE_FUNCTIONS.md.
 // Логика — здесь (тестируется в Node: supabase/functions/__tests__/pf-ai.test.ts); index.ts — только запуск.
@@ -14,7 +15,7 @@ const MAX_MESSAGES = 50;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Версия функции — в каждом ответе (заголовок x-pf-ai-version): проверка, что сервер подхватил выложенный файл. */
-export const VERSION = '2';
+export const VERSION = '3';
 
 export const corsHeaders = {
   'x-pf-ai-version': VERSION,
@@ -59,6 +60,19 @@ export function createHandler(env: Env, doFetch: Fetch = fetch): (req: Request) 
     return (await qualityRpc('can', { p_company: company, p_project: null, p_actions: ['quality.ai'] }, token, company)) === true;
   }
 
+  /** Включён ли у компании модуль «ИИ-помощник» и положен ли он учётке — ответ pf_my_platform (тот же, что строит меню; 038). */
+  async function aiModuleOn(token: string, company: string): Promise<boolean> {
+    const r = await doFetch(`${SUPABASE_URL}/rest/v1/rpc/pf_my_platform`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY!, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!r.ok) throw new Error(`rpc pf_my_platform: ${r.status}`);
+    const d = (await r.json()) as { companies?: Array<{ id?: string; modules?: unknown }> };
+    const c = (Array.isArray(d?.companies) ? d.companies : []).find((x) => x && x.id === company);
+    return !!c && Array.isArray(c.modules) && c.modules.includes('ai');
+  }
+
   return async (req: Request): Promise<Response> => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
     if (req.method !== 'POST') return reply(405, { error: 'Метод не поддерживается' });
@@ -85,6 +99,9 @@ export function createHandler(env: Env, doFetch: Fetch = fetch): (req: Request) 
 
       if (!(await canUseAi(token, company))) {
         return reply(403, { error: 'У вашей роли нет права «ИИ-помощник». Обратитесь к администратору компании.' });
+      }
+      if (!(await aiModuleOn(token, company))) {
+        return reply(403, { error: 'ИИ-помощник выключен для вашей компании. Включает администратор платформы.' });
       }
 
       let body: Record<string, unknown>;

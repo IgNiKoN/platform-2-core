@@ -3012,6 +3012,7 @@
   "settings.body.ai.device_only": "Čuva se samo na vašem uređaju.",
   "settings.body.ai.enable": "Uključi AI",
   "settings.body.ai.enable_hint": "Pametni predlozi i analitika",
+  "settings.body.ai.company_off": "AI asistent je isključen za vašu kompaniju. Uključuje ga administrator platforme.",
   "settings.body.ai.mode_account": "Preko naloga",
   "settings.body.ai.mode_corporate": "Preko korporativne lozinke",
   "settings.body.ai.mode_personal": "Moj lični API-ključ",
