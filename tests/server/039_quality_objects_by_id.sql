@@ -73,6 +73,7 @@ begin
   insert into core.company_modules(company_id, module, enabled)
     select c, m, true from unnest(array[ca, cb]) c, unnest(array['quality', 'construction']) m
     on conflict (company_id, module) do update set enabled = true;
+  perform set_config('quality.object_sync', '1', true);   -- данные «как до 039b»: без синхронизации объектов ядра и Качества
   insert into core.projects(id, company_id, name) values (pa, ca, 'Объекты Альфы 039'), (pb, cb, 'Объекты Беты 039'),
     (p400, ca, '«Школа 400»'), (gen_random_uuid(), ca, 'Дубль'), (gen_random_uuid(), ca, 'дубль');
   perform set_config('m39.pc', pa::text, true);
@@ -86,6 +87,7 @@ begin
     ('n1-m39', 'Большевиков,22 (гений)', 'Большевиков, 22', 'object', ca, null),
     ('n2-m39', 'школа 400', 'Школа 400', 'object', ca, null),
     ('k2-m39', 'корпус 1', 'Корпус 1', 'building', ca, 'n2-m39');
+  perform set_config('quality.object_sync', '', true);
   select core_object_id into c1 from quality.project_objects where id = o1;
   select core_object_id into c2 from quality.project_objects where id = o2;
   select core_object_id into c3 from quality.project_objects where id = o3;

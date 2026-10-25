@@ -42,10 +42,10 @@ test('роль экрана Качества — из прав компании 
 
 test('доступ из my_access: объекты (null — вся компания) и фирма подрядчика', () => {
   assert.deepEqual(parseAccess({ actions: ['quality.view'], templates: ['pto'], projects: [P1], contractor: null }),
-    { actions: ['quality.view'], templates: ['pto'], projects: [P1], contractor: '', objects: null });
+    { actions: ['quality.view'], templates: ['pto'], projects: [P1], contractor: '', objects: null, container: null });
   assert.deepEqual(parseAccess({ actions: [], projects: null, contractor: { id: 'k', name: 'ООО «Альфа-Строй»', keys: [] } }),
-    { actions: [], templates: [], projects: null, contractor: 'ООО «Альфа-Строй»', objects: null });
-  assert.deepEqual(parseAccess(null), { actions: [], templates: [], projects: null, contractor: '', objects: null });
+    { actions: [], templates: [], projects: null, contractor: 'ООО «Альфа-Строй»', objects: null, container: null });
+  assert.deepEqual(parseAccess(null), { actions: [], templates: [], projects: null, contractor: '', objects: null, container: null });
   assert.deepEqual(parseAccess({ actions: [], objects: [{ id: 'obj_1', key: 'большевиков,22 (гений)', name: 'Большевиков,22 (Гений)' }, { id: 'x' }] }).objects,
     ['большевиков,22 (гений)'], 'P2-0033: ключи закреплённых объектов Качества');
   assert.deepEqual(parseAccess({ actions: [], objects: [] }).objects, [], 'пустой список — не «все»');
@@ -117,6 +117,20 @@ function deps(over: N = {}) {
   };
   return { d, win, store, created, rpcCalls, reloads: () => reloads };
 }
+
+test('P2-0035: контейнер компании из my_access — Качество в нём, без выбора объекта; список объектов ядра не нужен', async () => {
+  const C = '33333333-3333-4333-8333-333333333333';
+  let listed = 0;
+  const { d, win } = deps({ access: { actions: ['quality.view'], templates: [], container: C },
+    projects: [{ id: P1, name: 'ЖК Север' }, { id: '44444444-4444-4444-8444-444444444444', name: 'ЖК Юг' }],
+    deps: { listProjects: async () => { listed++; return [{ id: P1, name: 'ЖК Север' }]; } } });
+  const sync = await applyQualityBridge(st(), d);
+  assert.equal(sync!.projectId, C);
+  assert.equal(win.syncConfig.projectCode, C);
+  assert.deepEqual(sync!.projects.map((p) => p.id), [C]);
+  assert.equal(listed, 0);
+  assert.equal(parseAccess({ container: '' }).container, null);
+});
 
 test('мост: клиент синхронизации — раздел quality, заголовок компании, токен платформы; .auth — Auth платформы', async () => {
   const { d, win, created } = deps();

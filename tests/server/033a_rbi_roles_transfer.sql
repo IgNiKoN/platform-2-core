@@ -19,6 +19,7 @@ begin
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[uadm, udep, udir, ue1, ue2, ue3, ug]) u;
   insert into core.companies(id, name, is_test) values (ca, 'РБИ 033a', true);
   insert into core.company_members(company_id, user_id) select ca, u from unnest(array[uadm, udep, udir, ue1, ue2, ue3, ug]) u;
+  perform set_config('quality.object_sync', '1', true);   -- данные «как до 039b»: без синхронизации объектов ядра и Качества
   insert into core.projects(id, company_id, name) values (pa, ca, 'Объекты 033a');
   insert into quality.project_objects(id, canonical_key, display_name, synonyms, core_company_id) values
     ('obj_a33', 'большевиков,22 (гений)', 'Большевиков,22 (Гений)', '{}', ca),
@@ -26,6 +27,7 @@ begin
   insert into quality.location_nodes(id, canonical_key, "displayName", "nodeType", core_company_id) values
     (n1, 'лиговский 240', 'Лиговский 240', 'object', ca),
     (n2, 'ул. правды, д 15 (типография)', 'ул. Правды, д 15 (ТИПОГРАФИЯ)', 'object', ca);
+  perform set_config('quality.object_sync', '', true);
   insert into core.role_assignments(company_id, user_id, role_id)
   select ca, x.u, (select id from core.company_roles where company_id = ca and template_code = x.tpl)
     from (values (uadm, 'company_admin'), (udir, 'management'), (ue1, 'qc_engineer'), (ue2, 'qc_engineer')) x(u, tpl);

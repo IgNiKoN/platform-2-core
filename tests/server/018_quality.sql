@@ -78,6 +78,9 @@ begin
      and tg.tgname not like '%_queue_guard'             -- 037: решение по заявке — только администратор
      and tg.tgname not like '%_record_object'           -- 039: объект ядра записи
      and tg.tgname not like '%_record_counterparty'     -- 039a: контрагент записи
+     and tg.tgname not like '%_queue_unresolved'        -- 039b: «не разобрано» → очередь названий
+     and tg.tgname not like '%_reresolve'               -- 039b: заново узнать «не разобрано»
+     and tg.tgname <> 'location_nodes_object_sync'      -- 039b: узел-объект ↔ объект Качества и ядра
      and tg.tgname <> 'project_objects_core_object';     -- 039: объект ядра объекта Качества
   res := res || pg_temp.t(n = 0, 'в quality только триггер привязки к компании (лишние: ' || coalesce(s, '—') || ')');
   select count(*), string_agg(p.proname, ', ') into n, s from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
