@@ -96,6 +96,28 @@ begin
   return v_id;
 end $$;
 
+-- Объект Качества — как 039.
+create or replace function quality.project_object_core()
+returns trigger language plpgsql security definer set search_path = pg_catalog as $$
+declare x text;
+begin
+  if coalesce(current_setting('quality.object_bind', true), '') <> '1' then
+    new.core_object_id := case when tg_op = 'UPDATE' then old.core_object_id end;
+  end if;
+  if tg_op = 'UPDATE' then
+    foreach x in array array[old.display_name, old.canonical_key] loop
+      if quality.object_clean(x) <> '' and quality.object_clean(x) not in (quality.object_clean(new.display_name), quality.object_clean(new.canonical_key))
+         and not exists (select 1 from unnest(coalesce(new.synonyms, '{}')) y where quality.object_clean(y) = quality.object_clean(x)) then
+        new.synonyms := coalesce(new.synonyms, '{}') || x;
+      end if;
+    end loop;
+  end if;
+  if new.core_object_id is null and quality.object_alive(new) then
+    new.core_object_id := quality.ensure_core_object(new);
+  end if;
+  return new;
+end $$;
+
 -- 4. Экран Качества и списки объектов — как до 039b.
 create or replace function quality.my_access(p_project uuid default null)
 returns jsonb language sql stable security definer set search_path = pg_catalog, core, planfact as $$

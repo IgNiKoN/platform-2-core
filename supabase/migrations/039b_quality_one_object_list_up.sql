@@ -108,6 +108,36 @@ begin
   return v_id;
 end $$;
 
+-- Объект Качества, созданный сервером по узлу дерева или объекту ядра (039b), уступает место объекту Качества с тем же ключом,
+-- который пришёл позже (перенос РБИ, устройство): связь с объектом ядра переходит к нему (иначе — как 039).
+create or replace function quality.project_object_core()
+returns trigger language plpgsql security definer set search_path = pg_catalog as $$
+declare x text; v_core uuid;
+begin
+  if coalesce(current_setting('quality.object_bind', true), '') <> '1' then
+    new.core_object_id := case when tg_op = 'UPDATE' then old.core_object_id end;
+  end if;
+  if tg_op = 'INSERT' then
+    delete from quality.project_objects po
+     where po.core_company_id = new.core_company_id and po.canonical_key = new.canonical_key and po.id <> new.id
+       and po.created_by_name in ('P2-0035 узел дерева Качества', 'P2-0035 объект компании')
+    returning po.core_object_id into v_core;
+    new.core_object_id := coalesce(new.core_object_id, v_core);
+  end if;
+  if tg_op = 'UPDATE' then
+    foreach x in array array[old.display_name, old.canonical_key] loop
+      if quality.object_clean(x) <> '' and quality.object_clean(x) not in (quality.object_clean(new.display_name), quality.object_clean(new.canonical_key))
+         and not exists (select 1 from unnest(coalesce(new.synonyms, '{}')) y where quality.object_clean(y) = quality.object_clean(x)) then
+        new.synonyms := coalesce(new.synonyms, '{}') || x;
+      end if;
+    end loop;
+  end if;
+  if new.core_object_id is null and quality.object_alive(new) then
+    new.core_object_id := quality.ensure_core_object(new);
+  end if;
+  return new;
+end $$;
+
 -- 2. Названия узла-объекта дерева: ключ, название, синонимы (очищенные, без пустых).
 create function quality.node_names(n quality.location_nodes)
 returns text[] language sql immutable set search_path = pg_catalog as $$

@@ -122,6 +122,17 @@ begin
   insert into core.counterparties(company_id, name, inn, kinds) values (ca, 'Новая фирма', '7700000099', array['contractor']) returning id into v2;
   res := res || pg_temp.t((select core_counterparty_id = v2 from quality.sk_records where id = 'k1-m39b'), 'контрагент заведён → запись узнана');
 
+  -- 6а. Как при переносе РБИ: сначала узел дерева (сервер создаёт объект Качества), затем настоящий объект с тем же ключом
+  insert into quality.location_nodes(id, canonical_key, "displayName", synonyms, "nodeType", core_company_id)
+  values ('nt-m39b', 'лиговский 240', 'Лиговский 240', '[]', 'object', ca);
+  select core_object_id into v from quality.project_objects where id = 'obj_ntm39b';
+  insert into quality.project_objects(id, canonical_key, display_name, synonyms, core_company_id)
+  values ('obj_real_m39b', 'лиговский 240', 'Лиговский 240', '{}', ca) on conflict do nothing;
+  res := res || pg_temp.t(v is not null and exists (select 1 from quality.project_objects where id = 'obj_real_m39b' and core_object_id = v)
+                          and not exists (select 1 from quality.project_objects where id = 'obj_ntm39b'),
+                          'перенос: настоящий объект Качества загрузился, связь с ядром — его, созданный сервером убран');
+  res := res || pg_temp.t((select count(*) = 1 from core.projects where company_id = ca and name = 'Лиговский 240'), 'перенос: объект ядра не задвоился');
+
   -- 7. Компания без контейнера
   insert into core.projects(company_id, name) values (cn, 'Объект Н') returning id into v;
   res := res || pg_temp.t((select count(*) = 1 from quality.project_objects where core_company_id = cn and core_object_id = v)
