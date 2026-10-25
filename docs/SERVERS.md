@@ -92,3 +92,35 @@
 
 - `npm run test:server` — вход и запросы через настоящий REST (нужен `.env.local`; без него SKIP, не PASS). Каждый запуск добавляет тестовую работу «REST-тест …» в проект Альфы.
 - SQL-тесты в SQL Editor (с откатом, отчёт приходит как `ERROR P0001`): `tests/server/002_permissions.sql` (26 проверок), `tests/server/004_audit_money.sql` (13), `tests/server/005_role_builder.sql` (48; можно вставить после `005_up.sql` в одно окно), `tests/server/007_vor.sql` (68+; 21.10.2026 на сервере — FAIL 0), `tests/server/008_estimate.sql` (69; PGlite FAIL 0), `tests/server/009_fact.sql` (87; PGlite FAIL 0), `tests/server/010_ks2.sql` (76; PGlite FAIL 0), `tests/server/011_summary.sql` (57; PGlite FAIL 0), `tests/server/011a_summary_fix.sql` (4; PGlite FAIL 0), `tests/server/013_dashboard.sql` (72; на сервере 22.10.2026 FAIL 0; после 013 старые проверки светофора в `011_summary.sql`/`011a` дают 3 ожидаемых FAIL — правило заменено). `test:server` (с P2-0011) работает на одном постоянном объекте «REST-автопроверки» в «Альфе» (создаётся при первом прогоне, не архивируется; данные прогона помечены меткой времени) и временно назначает alfa-pto/alfa-foreman на него — число объектов не растёт. **Уборка тестового мусора** — `scripts/cleanup-test-projects.sql` (режим `dry` — сухой прогон с отчётом, `apply` — удаление; только архивные `REST-%` в компаниях `is_test`, со всеми данными и журналом этих проектов; сторожа отключаются только внутри транзакции). 22.10.2026: сухой прогон → цифры владельцу → удаление по разрешению: 85 проектов (журнал 929, места 2 477, ВОР 36 загрузок / 108 строк, факт 54, КП 44, акты 28 …), «Альфа» 87 → 2, «Бета» 1, «Демо-компания» 1 — без изменений; остальные данные — счётчики до = после. Справочники «REST-…» (бригады 21, виды работ 39) не удалялись — ТД №82. Снимок объектов RBI до/после — `tests/server/005_rbi_snapshot.sql` (21.10.2026: до и после 005 совпали).
+
+## Место на диске и технические журналы (25.10.2026)
+
+Сервер Beget «rbi-q supabase» (VPS 4 ядра / 6 ГБ памяти / 80 ГБ, Supabase в `/opt/beget/supabase`). Диск был заполнен на 92% (70 из 77 ГБ). Почистили по разрешению владельца без снимка: удалялись только технические журналы, данные не затрагивались. После чистки занято **24 ГБ (31%)**.
+
+**Что занимало место** (разведка — только чтением):
+
+| Где | Размер | Что это |
+|---|---|---|
+| служебная база `_supabase`, схема `_analytics` | 29 ГБ | журнал Logflare (аналитика Supabase) с 30.04.2026, срока хранения нет. Самая большая таблица — `log_events_3203e35f…` (источник `cloudflare.logs.prod` = запросы через шлюз Kong) 24 ГБ; `realtime.logs.prod` 3,7 ГБ |
+| `/var/lib/docker/containers/*/*-json.log` | 17 ГБ | текстовые журналы контейнеров без обрезки: kong 6,3 ГБ, analytics 5,8 ГБ, imgproxy 1,6 ГБ, realtime 1,1 ГБ, storage 0,6 ГБ |
+| journald | 1,1 ГБ | системный журнал |
+| `/var/lib/containerd` | 11 ГБ | образы Docker (хранилище containerd). **Все 14 образов используются, `docker image prune` ничего не освобождает** — не трогать |
+| база `postgres` / `volumes/storage` | 3,2 / 6,9 ГБ | данные (public 1,7 ГБ, quality 1,4 ГБ, …) — не трогали |
+
+**Что сделано** (скрипты загружены в `/tmp` через «Файловый менеджер» Beget и запущены в его VNC-терминале; перед каждым шагом и после него проверялось: `api.rbi-q.ru/rest/v1/` → 401, `/auth/v1/health` → 401, `rbi-q.ru` → `app.rbi-q.ru` 200, все 14 контейнеров healthy):
+
+1. `TRUNCATE` всех `_analytics.log_events_*` от `supabase_admin` (владелец таблиц; от `postgres` — `permission denied`). `_supabase`: 29 ГБ → 13 МБ.
+2. Срок хранения 7 дней: `/usr/local/sbin/supabase-logs-cleanup.sh` (в `_supabase` удаляет строки старше 7 дней из каждой `log_events_*`) и `/etc/cron.d/supabase-logs-cleanup` — каждый день в 03:30 UTC, вывод пишется в `/var/log/supabase-logs-cleanup.log`.
+3. `truncate -s 0` журналов контейнеров (17 ГБ) и `/etc/logrotate.d/docker-containers`: daily, maxsize 100M, rotate 2, compress, copytruncate. Контейнеры не перезапускались. `daemon.json` не меняли: для этого пришлось бы пересоздавать контейнеры.
+4. journald: `/etc/systemd/journald.conf.d/size.conf` → `SystemMaxUse=200M`, rotate + vacuum (1,1 ГБ → 159 МБ).
+
+**Как проверить:** `df -h /`; `du -sh /var/lib/docker/containers`; в контейнере `supabase-db`: `psql -U supabase_admin -d _supabase -c "select pg_size_pretty(pg_database_size('_supabase'))"`; `tail /var/log/supabase-logs-cleanup.log`.
+
+**Откат:** удалить `/etc/cron.d/supabase-logs-cleanup`, `/usr/local/sbin/supabase-logs-cleanup.sh`, `/etc/logrotate.d/docker-containers`, `/etc/systemd/journald.conf.d/size.conf` (и выполнить `systemctl restart systemd-journald`). Удалённые журналы не восстанавливаются: это техническая история, данных приложения в ней нет.
+
+**Замечания:**
+
+- После обрезки журналов контейнеров сборщик `supabase-vector` перестал передавать журналы в аналитику: таблицы `log_events_*` остались пустыми, хотя у kong за 5 минут прибавилось 280 строк. Чтение `docker logs --tail` у vector зависает. На API и приложения это не влияет — пустеет только раздел Logs в Studio. Лечится командой `docker restart supabase-vector`; выполнять по разрешению владельца.
+- Терминал Beget (noVNC) не передаёт символы, набираемые с Shift (`| _ > * { } " :`), и клавишу Ctrl. Длинный ввод теряется. Команды надёжнее загружать файлом через «Файловый менеджер» (`/tmp`) и запускать коротко: `bash /tmp/x.sh`.
+- В `dmesg` 8 раз записано «Out of memory: Killed process … postgres» (6 ГБ памяти, файла подкачки нет); logflare и realtime перезапускались около 15:00 UTC 25.10. Место это не освобождает, но память стоит разобрать отдельно (файл подкачки или больше памяти).
+- В `/opt/beget/supabase` лежит `docker-compose copy.yml` (19 КБ, 21.07) — копия, место не занимает.
