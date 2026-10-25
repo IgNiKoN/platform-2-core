@@ -10,7 +10,8 @@
 -- Расхождения: число строк только в старом / только в новом и до 3 примеров id; объяснённые — отдельно:
 --   «свои Все» — своя запись (автор — этот человек) с объектом «Все»: по карточке P2-0033 §8 — как «свои без объекта», видна;
 --   «сироты» — пункты и фото без проверки (проверка удалена): в старом не видны, в новом — свои автору (правило 023, не менялось);
---   «новые» — записи, созданные уже в новом приложении после переноса (в public их нет).
+--   «новые» — записи, созданные уже в новом приложении после переноса (в public их нет);
+--   «свои „не разобрано“» (P2-0035, 039) — своя запись, объект которой сервер не узнал: видна автору (ничего не скрывается молча).
 -- DIFF — только необъяснённые. Параметр: v_only — почты людей этого запуска
 -- (null — все; на сервере по 3 человека: иначе SQL Editor обрывает долгий запрос).
 do $$
@@ -98,13 +99,17 @@ begin
                  and not exists (select 1 from quality.rbi_inspections i where i.core_company_id = $1 and i.id = jj.j ->> 'inspection_id') then 'сироты'
             when (pg_temp.cs(jj.j ->> 'project_canonical_key') in ('все', 'all') or pg_temp.cs(jj.j ->> 'project_canonical_key') like 'все %%')
                  and jj.j ->> 'core_created_by' = $3::text then 'свои Все'
+            -- P2-0035 (039): своя запись, объект которой сервер не узнал («не разобрано»), видна автору
+            when jj.j ? 'core_object_id' and jj.j ->> 'core_object_id' is null and jj.j ->> 'core_created_by' = $3::text
+                 and pg_temp.cs(coalesce(nullif(jj.j ->> 'project_canonical_key', ''), jj.j ->> 'project_display_name')) not in ('', 'unknown')
+                 then 'свои «не разобрано»'
             else '' end why) x) z$q$, t, t)
         into n_on, s_on, n_ex using c, t, m.user_id;
       if n_oo + n_on > 0 then v_bad := v_bad + 1; end if;
       out := out || format('%s %s | %s | старое %s, новое %s%s%s', case when n_oo + n_on = 0 then 'OK  ' else 'DIFF' end, m.email, t, n_old, n_new,
                case when n_oo > 0 then format(' | только в старом %s: %s', n_oo, s_oo) else '' end,
                case when n_on > 0 then format(' | только в новом %s: %s', n_on, s_on) else '' end)
-             || case when n_ex > 0 then format(' | объяснено (свои «Все», сироты, новые): %s', n_ex) else '' end || E'\n';
+             || case when n_ex > 0 then format(' | объяснено (свои «Все», свои «не разобрано», сироты, новые): %s', n_ex) else '' end || E'\n';
     end loop;
   end loop;
   raise exception E'СВЕРКА (откат), расхождений: %\n%', v_bad, out using errcode = 'P0001';
