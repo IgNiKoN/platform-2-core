@@ -1,5 +1,5 @@
 -- P2-0036 этап 2. Снимки отчётов (≈ 1,2 ГБ HTML) — порциями: запрос SQL Editor дольше ~2 мин обрывается и откатывается,
--- а преобразование снимков идёт ≈ 3–4 МБ/с (самый большой, 37,7 МБ, — 11 с). Порция — снимки подряд по id, ≈ 150 МБ (≈ 45 с).
+-- а преобразование самого большого снимка (37,7 МБ) — 11 с. Порция — снимки подряд по id, ≈ 150 МБ.
 -- Отбор и преобразование — те же функции, что у переноса (quality.rbi_transfer_filter / rbi_transfer_row), повтор безопасен
 -- (on conflict do nothing). Запуск: v_part = 0, 1, 2 … пока в ответе не будет «порций всего N» и v_part = N − 1 (больше — ничего не делает).
 -- Затем — список файлов: select * from quality.rbi_transfer_run_part((select id from core.companies where name = 'RBI'), '{}', true);
@@ -17,10 +17,12 @@ begin
     select p.id, (sum(length(p.html_content)) over (order by p.id collate "C") - length(p.html_content)) / (%s * 1048576) part, length(p.html_content) len
       from public.shared_report_snapshots p where %s$q$, v_mb, quality.rbi_transfer_filter(c, 'shared_report_snapshots', null));
   select count(distinct part), round(coalesce(sum(len) filter (where part = v_part), 0) / 1048576.0, 1) into v_total, v_mb_part from _part;
+  -- lateral: преобразование — один раз на строку ((f()).* вызывало бы его по разу на каждый из ~20 столбцов)
   insert into quality.shared_report_snapshots
-  select (jsonb_populate_record(null::quality.shared_report_snapshots,
-            quality.rbi_transfer_row(c, 'shared_report_snapshots', to_jsonb(p), v_projects, '{}', '{}'))).*
-    from public.shared_report_snapshots p where p.id in (select id from _part where part = v_part)
+  select r.* from public.shared_report_snapshots p,
+         lateral jsonb_populate_record(null::quality.shared_report_snapshots,
+                   quality.rbi_transfer_row(c, 'shared_report_snapshots', to_jsonb(p), v_projects, '{}', '{}')) r
+   where p.id in (select id from _part where part = v_part)
   on conflict do nothing;
   get diagnostics v_n = row_count;
   insert into quality.rbi_transfer_runs (core_company_id, action, scope, result)
