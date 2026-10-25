@@ -12272,7 +12272,8 @@ function Xb(r) {
       a.listRoles(l),
       a.listProjects(),
       a.listContractors(l),
-      a.listQualityObjects ? a.listQualityObjects(l) : Promise.resolve([])
+      // список объектов Качества — необязательный: ошибка сервера не ломает экран (ревью P2-0033, L7)
+      a.listQualityObjects ? a.listQualityObjects(l).catch(() => []) : Promise.resolve([])
     ]);
     f(B), m(oe), p(Ue.filter((we) => we.company_id === l)), $(je), ae(Be);
   }

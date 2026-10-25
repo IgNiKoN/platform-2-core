@@ -48,7 +48,9 @@ begin
   res := res || pg_temp.t(s like '%p4@test.invalid:Инженер СК:-:будет назначено%', 'показ: инженер 1 будет назначен ' || s);
   res := res || pg_temp.t(s like '%p6@test.invalid:Инженер СК:не найден объект: нет такого объекта:пропущен%', 'показ: нерасшифрованный объект — пропуск');
   res := res || pg_temp.t(s like '%p7@test.invalid:-:роль старого профиля не из 4 ролей РБИ: guest:пропущен%', 'показ: гость — пропуск');
-  res := res || pg_temp.t(s like '%p5@test.invalid:Инженер СК:не найден объект: ' || n2 || ':пропущен%', 'показ: до добавления объекта — Типография не найдена');
+  res := res || pg_temp.t(s like '%p5@test.invalid:Инженер СК:-:будет назначено%', 'показ (033b): объект из дерева локаций — без проблемы ' || s);
+  res := res || pg_temp.t((select objects from quality.rbi_transfer_roles(ca, false) where email = 'p5@test.invalid') like '%ул. Правды, д 15 (ТИПОГРАФИЯ) [будет добавлен]%',
+                          'показ (033b): «будет добавлен»');
   res := res || pg_temp.t((select count(*) from core.role_assignments where company_id = ca and revoked_at is null) = n
                           and not exists (select 1 from core.company_roles where company_id = ca and name = 'Инженер СК')
                           and not exists (select 1 from quality.project_objects where core_company_id = ca and display_name like 'ул. Правды%'),
@@ -82,6 +84,12 @@ begin
   n := (select count(*) from core.role_assignments where company_id = ca);
   select string_agg(distinct action, ',') into s from quality.rbi_transfer_roles(ca, true) where problem is null;
   res := res || pg_temp.t(s = 'уже так' and (select count(*) from core.role_assignments where company_id = ca) = n, 'повтор: «уже так», новых назначений нет');
+  -- 033b (L5): чужая роль с тем же названием не перезаписывается
+  update core.company_roles set name = 'Директор (перенос)' where company_id = ca and name = 'Директор';
+  insert into core.company_roles(company_id, name) values (ca, 'Директор');
+  res := res || pg_temp.t(pg_temp.err(format('select * from quality.rbi_transfer_roles(%L, false)', ca)) = 'P0001', 'чужая роль «Директор» — стоп');
+  delete from core.company_roles where company_id = ca and name = 'Директор';
+  update core.company_roles set name = 'Директор' where company_id = ca and name = 'Директор (перенос)';
   -- Клиенту закрыто
   perform set_config('request.jwt.claim.sub', uadm::text, true);
   execute 'set local role authenticated';

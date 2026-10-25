@@ -72,7 +72,8 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
 
   async function load(): Promise<void> {
     const [m, r, p, k, o] = await Promise.all([api.listMembers(companyId), api.listRoles(companyId), api.listProjects(), api.listContractors(companyId),
-      api.listQualityObjects ? api.listQualityObjects(companyId) : Promise.resolve([] as QualityObjectRef[])]);
+      // список объектов Качества — необязательный: ошибка сервера не ломает экран (ревью P2-0033, L7)
+      api.listQualityObjects ? api.listQualityObjects(companyId).catch(() => [] as QualityObjectRef[]) : Promise.resolve([] as QualityObjectRef[])]);
     setRows(m); setRoles(r); setProjects(p.filter((x) => x.company_id === companyId)); setContractors(k); setQObjects(o);
   }
   const needsFirm = roles.find((x) => x.id === roleId)?.actions.includes(SCOPE_CONTRACTOR) ?? false;

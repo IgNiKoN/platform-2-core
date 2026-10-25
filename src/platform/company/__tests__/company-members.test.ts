@@ -392,3 +392,16 @@ test('P2-0033: ничего не отмечено — назначение на 
   await tick();
   assert.equal(calls[0], 'assign:u-for:r-eng:null:null');
 });
+
+test('P2-0033 (L7): ошибка списка объектов Качества не ломает экран — назначение без выбора объектов', async () => {
+  const { api } = fakeApi();
+  api.listQualityObjects = async () => { throw new Error('function pf_list_quality_objects does not exist'); };
+  const el = mount(api);
+  await tick();
+  assert.ok(el.querySelector('[data-testid=co-assign]'));
+  assert.match(el.textContent, /Петров П\.П\./);
+  const role = el.querySelector('[data-testid=co-assign] select[name=role]');
+  role.value = 'r-eng'; role.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await tick();
+  assert.equal(el.querySelector('[data-testid=co-objects]'), null);
+});

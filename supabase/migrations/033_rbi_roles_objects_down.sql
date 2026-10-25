@@ -1,6 +1,21 @@
 -- Откат P2-0033 этап 1 (033_rbi_roles_objects_up.sql): правила таблиц, функции пунктов/фото, my_access, pf_assign_role и
 -- pf_list_company_members — как до 033 (020/023/032d); новые функции и столбец закреплённых объектов удаляются.
+-- Порядок: 033b_down → 033a_down → 033_down; при действующих назначениях с объектами откат останавливается.
 begin;
+
+-- 033b (ревью M2, L6): откат не открывает доступ молча — при действующих назначениях с объектами стоп (иначе инженеры
+-- получили бы записи всех объектов компании); перед 033 — откат 033b и 033a.
+do $$
+begin
+  if to_regprocedure('quality.record_foreign_object(uuid,text[],text[])') is not null
+     or to_regprocedure('quality.rbi_transfer_roles(uuid,boolean)') is not null then
+    raise exception 'Откат 033: сначала 033b_rbi_roles_review_down.sql и 033a_rbi_roles_transfer_down.sql' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from core.role_assignments where quality_objects is not null and revoked_at is null) then
+    raise exception 'Откат 033: есть действующие назначения с закреплёнными объектами (%) — без объектов эти люди увидят записи всех объектов компании. Сначала отзовите их («Сотрудники») или назначьте без объектов',
+      (select count(*) from core.role_assignments where quality_objects is not null and revoked_at is null) using errcode = 'P0001';
+  end if;
+end $$;
 
 do $$
 declare r record; v_vis text; v_edit text;
