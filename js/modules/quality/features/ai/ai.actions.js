@@ -243,57 +243,59 @@ function changeAiMode(mode) {
 };
 
 // === ГЛОБАЛЬНАЯ ФУНКЦИЯ ВЫЗОВА DEEPSEEK AI ===
+// P2-0034: «свой ключ» (personal) — прямой запрос к DeepSeek; иначе — «по учётке»: серверная функция pf-ai
+// через клиент Качества (токен входа и x-company-id подставляет он сам), право решает сервер.
+function _aiText(data, options) {
+    let aiText = data.choices[0].message.content;
+    // raw:true — для JSON-ответов (FMEA / отчёты): не превращать ** в <b>, иначе парсер ломается
+    if (!options.raw) {
+        aiText = aiText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    }
+    return aiText;
+}
+
+async function _callAiByAccount(messages, temperature, max_tokens, options) {
+    const client = window.supabaseClient;
+    if (!client || !client.functions) {
+        throw new Error(_t('quality.ai.error.login', 'Войдите в Платформу 2.0, чтобы пользоваться ИИ-помощником.'));
+    }
+    const { data, error } = await client.functions.invoke('pf-ai', { body: { messages, temperature, max_tokens } });
+    if (error) {
+        let msg = _t('quality.ai.error.unavailable', 'ИИ-помощник недоступен. Попробуйте позже.');
+        try {
+            const errData = error.context && typeof error.context.json === 'function' ? await error.context.json() : null;
+            if (errData && errData.error) msg = errData.error;
+        } catch (e) { }
+        throw new Error(msg);
+    }
+    return _aiText(data, options);
+}
+
 async function callAI(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 2000 } = options;
-    const mode = _getSetting('aiAuthMode') || 'corporate';   // по умолчанию corporate
-
-    let url, headers, body;
-
-    if (mode === 'personal') {
-        if (!_getSetting('apiKey')) throw new Error(_t('quality.ai.error.api_key', 'Введите ваш API-ключ в Настройках!'));
-        url = 'https://api.deepseek.com/chat/completions';
-        headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_getSetting('apiKey')}` };
-        body = { model: 'deepseek-chat', messages, temperature, max_tokens };
-    } else {
-        url = `${window.APP_CONFIG.SUPABASE_URL}/functions/v1/deepseek-proxy`;
-        headers = { 'Content-Type': 'application/json' };
-        body = {
-            model: 'deepseek-chat',
-            messages,
-            temperature,
-            max_tokens,
-            mode: mode,
-            engineer_name: window.syncConfig?.engineerName || '',
-            project_code: window.syncConfig?.projectCode || '',
-            password: _getSetting('aiCorpPwd') || ''
-        };
-    }
+    const mode = _getSetting('aiAuthMode');
 
     try {
-        const response = await fetch(url, {
+        if (mode !== 'personal') return await _callAiByAccount(messages, temperature, max_tokens, options);
+
+        if (!_getSetting('apiKey')) throw new Error(_t('quality.ai.error.api_key', 'Введите ваш API-ключ в Настройках!'));
+        const response = await fetch('https://api.deepseek.com/chat/completions', {
             method: 'POST',
-            headers: headers,
-            body: JSON.stringify(body)
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_getSetting('apiKey')}` },
+            body: JSON.stringify({ model: 'deepseek-chat', messages, temperature, max_tokens })
         });
 
         if (!response.ok) {
             let errorMsg = _t('quality.ai.error.server', 'Ошибка сервера: {status}', { status: response.status });
             try {
                 const errData = await response.json();
-                if (errData.error) errorMsg = errData.error;
+                if (errData.error) errorMsg = errData.error.message || errData.error;
             } catch (e) { }
-            if (response.status === 403) throw new Error(_t('quality.ai.error.forbidden', 'Доступ запрещен. Проверьте пароль.'));
             if (response.status === 401) throw new Error(_t('quality.ai.error.bad_key', 'Неверный персональный API-ключ.'));
             throw new Error(errorMsg);
         }
 
-        const data = await response.json();
-        let aiText = data.choices[0].message.content;
-        // raw:true — для JSON-ответов (FMEA / отчёты): не превращать ** в <b>, иначе парсер ломается
-        if (!options.raw) {
-            aiText = aiText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-        }
-        return aiText;
+        return _aiText(await response.json(), options);
     } catch (e) {
         console.error("[AI Error]:", e);
         throw e;
