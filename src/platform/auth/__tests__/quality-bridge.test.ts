@@ -42,10 +42,13 @@ test('роль экрана Качества — из прав компании 
 
 test('доступ из my_access: объекты (null — вся компания) и фирма подрядчика', () => {
   assert.deepEqual(parseAccess({ actions: ['quality.view'], templates: ['pto'], projects: [P1], contractor: null }),
-    { actions: ['quality.view'], templates: ['pto'], projects: [P1], contractor: '' });
+    { actions: ['quality.view'], templates: ['pto'], projects: [P1], contractor: '', objects: null });
   assert.deepEqual(parseAccess({ actions: [], projects: null, contractor: { id: 'k', name: 'ООО «Альфа-Строй»', keys: [] } }),
-    { actions: [], templates: [], projects: null, contractor: 'ООО «Альфа-Строй»' });
-  assert.deepEqual(parseAccess(null), { actions: [], templates: [], projects: null, contractor: '' });
+    { actions: [], templates: [], projects: null, contractor: 'ООО «Альфа-Строй»', objects: null });
+  assert.deepEqual(parseAccess(null), { actions: [], templates: [], projects: null, contractor: '', objects: null });
+  assert.deepEqual(parseAccess({ actions: [], objects: [{ id: 'obj_1', key: 'большевиков,22 (гений)', name: 'Большевиков,22 (Гений)' }, { id: 'x' }] }).objects,
+    ['большевиков,22 (гений)'], 'P2-0033: ключи закреплённых объектов Качества');
+  assert.deepEqual(parseAccess({ actions: [], objects: [] }).objects, [], 'пустой список — не «все»');
 });
 
 test('мост: подрядчик — фирма в настройках экрана, объекты экрану не передаются; список объектов — только свои', async () => {
@@ -60,6 +63,18 @@ test('мост: подрядчик — фирма в настройках экр
   assert.equal(win.appSettings.contractorName, 'ООО «Альфа-Строй»');
   assert.equal(win.appSettings.assignedContractor, 'ООО «Альфа-Строй»');
   assert.deepEqual(win.appSettings.assignedProjects, []);
+});
+
+test('P2-0033: инженер с закреплёнными объектами — экран получает их ключи (assignedProjects), роль «Инженер СК»', async () => {
+  const { d, win } = deps({ access: { actions: ['quality.view', 'quality.edit', 'construction.view', 'construction.edit'], templates: [],
+    objects: [{ id: 'obj_1', key: 'большевиков,22 (гений)', name: 'Большевиков,22 (Гений)' }] } });
+  win.appSettings.assignedProjects = ['старый'];
+  await applyQualityBridge(st(), d);
+  assert.equal(win.appSettings.userRole, 'engineer');
+  assert.deepEqual(win.appSettings.assignedProjects, ['большевиков,22 (гений)']);
+  assert.deepEqual(win.appSettings.assigned_projects, ['большевиков,22 (гений)']);
+  win.appSettings.assignedProjects = ['чужой'];
+  assert.deepEqual(win.appSettings.assignedProjects, ['большевиков,22 (гений)'], 'значение держит мост');
 });
 
 test('смена компании на устройстве: состояние синхронизации откладывается и возвращается, ключи не смешиваются', () => {

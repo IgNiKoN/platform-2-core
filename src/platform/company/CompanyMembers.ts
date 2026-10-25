@@ -4,11 +4,13 @@
  * фирмы из «Контрагентов» (вид «подрядчик»); что видит сотрудник, проверяет сервер.
  * P2-0028: «Добавить сотрудника» (почта, ФИО, роль, объект) → временный пароль показывается один раз; «Сбросить пароль»
  * (только учётке, созданной компанией), «Отключить доступ», «Изменить ФИО» (032a: новое ФИО — и в старых записях Качества).
- * Всё — через pf_*; права и правила — на сервере (032, 032a).
+ * P2-0033: «Объекты Качества» при назначении роли — галочки по объектам компании (ничего не отмечено — все объекты);
+ * закрепление хранится по id объекта (ADR-070), что видит сотрудник — решает сервер (033).
+ * Всё — через pf_*; права и правила — на сервере (032, 032a, 033).
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
-import type { CompanyApi, ContractorRef, MemberRow, ProjectRef, RoleRow } from './company.service.ts';
+import type { CompanyApi, ContractorRef, MemberRow, ProjectRef, QualityObjectRef, RoleRow } from './company.service.ts';
 
 const DAY = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short' });
 
@@ -20,6 +22,11 @@ interface Person {
 interface TempPassword { who: string; email: string; password: string }
 
 const SCOPE_CONTRACTOR = 'quality.scope.contractor';
+
+/** Объекты назначения для таблицы: null — все объекты Качества. */
+export function objectsText(list: QualityObjectRef[] | null | undefined): string {
+  return list && list.length ? list.map((o) => o.name).join(', ') : '';
+}
 
 function people(rows: MemberRow[]): Person[] {
   const map = new Map<string, Person>();
@@ -61,12 +68,17 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
   const [copied, setCopied] = useState(false);
   const [confirmPerson, setConfirmPerson] = useState('');   // «reset:<id>» | «disable:<id>»
   const [editName, setEditName] = useState('');   // user_id, у которого правится ФИО
+  const [qObjects, setQObjects] = useState<QualityObjectRef[]>([]);
 
   async function load(): Promise<void> {
-    const [m, r, p, k] = await Promise.all([api.listMembers(companyId), api.listRoles(companyId), api.listProjects(), api.listContractors(companyId)]);
-    setRows(m); setRoles(r); setProjects(p.filter((x) => x.company_id === companyId)); setContractors(k);
+    const [m, r, p, k, o] = await Promise.all([api.listMembers(companyId), api.listRoles(companyId), api.listProjects(), api.listContractors(companyId),
+      // список объектов Качества — необязательный: ошибка сервера не ломает экран (ревью P2-0033, L7)
+      api.listQualityObjects ? api.listQualityObjects(companyId).catch(() => [] as QualityObjectRef[]) : Promise.resolve([] as QualityObjectRef[])]);
+    setRows(m); setRoles(r); setProjects(p.filter((x) => x.company_id === companyId)); setContractors(k); setQObjects(o);
   }
   const needsFirm = roles.find((x) => x.id === roleId)?.actions.includes(SCOPE_CONTRACTOR) ?? false;
+  // объекты Качества — для ролей с доступом к Качеству, если у компании есть объекты
+  const showObjects = qObjects.length > 0 && (roles.find((x) => x.id === roleId)?.actions.some((a) => a.startsWith('quality.')) ?? false);
   useEffect(() => { setRows(null); void load(); }, [companyId]);
 
   async function assign(ev: FormEvent): Promise<void> {
@@ -78,8 +90,9 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
     const firm = needsFirm ? val('firm') : '';
     if (!user || !role) { setError('Выберите сотрудника и роль'); return; }
     if (needsFirm && !firm) { setError('Выберите фирму подрядчика: без фирмы сотрудник не увидит ни одной записи'); return; }
+    const objs = showObjects ? Array.from(form.querySelectorAll('input[name=qobj]:checked')).map((x) => (x as HTMLInputElement).value) : [];
     setBusy(true); setError(''); setNotice('');
-    const res = await api.assignRole(user, role, project || null, endOfDayIso(until), firm || null);
+    const res = await api.assignRole(user, role, project || null, endOfDayIso(until), firm || null, objs);
     setBusy(false);
     if (!res.ok) { setError(res.message); return; }
     form.reset(); setRoleId('');
@@ -225,6 +238,11 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
           h('option', { value: '' }, contractors.length ? '— выберите —' : 'нет подрядчиков в «Контрагентах»'),
           contractors.map((c) => h('option', { key: c.id, value: c.id }, c.draft ? `${c.name} (нужен ИНН)` : c.name)))) : null,
       h('label', { className: 'pf-field' }, 'Срок до (необязательно)', h('input', { name: 'until', type: 'date', className: 'co-input' })),
+      showObjects ? h('fieldset', { className: 'co-objects', 'data-testid': 'co-objects' },
+        h('legend', null, 'Объекты Качества'),
+        h('div', { className: 'pf-muted co-hint' }, 'Ничего не отмечено — все объекты. Отмеченные — сотрудник видит записи только этих объектов и свои без объекта.'),
+        h('div', { className: 'co-objects-list' }, qObjects.map((o) =>
+          h('label', { key: o.id, className: 'co-check' }, h('input', { type: 'checkbox', name: 'qobj', value: o.id }), o.name)))) : null,
       h('button', { type: 'submit', className: 'pf-btn', disabled: busy }, 'Назначить роль')),
     needsFirm ? h('div', { className: 'pf-muted co-hint', 'data-testid': 'co-firm-hint' },
       'Сотрудник увидит в Качестве и Стройконтроле только записи этой фирмы — это проверяет сервер.') : null,
@@ -244,7 +262,8 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
               h('span', { key: 'a' }, personActions(p))]),
             h('td', null, r ? [r.role_name, r.counterparty_name ? h('span', { key: 'f', className: 'pf-muted' }, ` · ${r.counterparty_name}`) : null]
               : h('span', { className: 'pf-muted' }, p.disabled ? '—' : 'нет ролей')),
-            h('td', null, r ? (r.project_name || 'Все проекты') : ''),
+            h('td', null, r ? [r.project_name || 'Все проекты', objectsText(r.quality_objects)
+              ? h('div', { key: 'o', className: 'pf-muted co-objects-cell', 'data-testid': 'co-row-objects' }, `Объекты: ${objectsText(r.quality_objects)}`) : null] : ''),
             h('td', { className: 'co-nowrap' }, r ? status(r) : ''),
             h('td', { className: 'co-nowrap' }, !r ? null : confirmRevoke === r.assignment_id
               ? h('span', { className: 'co-row' },
@@ -277,5 +296,11 @@ export const COMPANY_MEMBERS_CSS = `
 .co-person-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .co-temp{flex-direction:column;align-items:stretch;gap:8px}
 .co-temp-title{font-weight:800}
+.co-objects{flex:1 1 100%;min-width:0;border:1px solid var(--card-border);border-radius:10px;padding:8px 12px;margin:0}
+.co-objects legend{font-size:12px;font-weight:700;color:var(--text-muted);padding:0 4px}
+.co-objects-list{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:6px}
+.co-check{display:flex;align-items:center;gap:8px;min-height:36px;font-size:14px;color:var(--text-main);cursor:pointer}
+.co-check input{width:18px;height:18px;flex:none}
+.co-objects-cell{font-size:12px;margin-top:2px;min-width:180px;overflow-wrap:anywhere}
 .co-temp-pw{font-size:18px;font-weight:700;letter-spacing:.06em;padding:6px 10px;border:1px dashed var(--card-border);border-radius:8px;user-select:all;overflow-wrap:anywhere}
 `;

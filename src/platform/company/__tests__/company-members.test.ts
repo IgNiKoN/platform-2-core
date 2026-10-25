@@ -41,12 +41,14 @@ function fakeApi(opts: { fail?: string } = {}) {
     async listContractors() { return [{ id: 'k1', name: 'ООО «Альфа-Строй»' }, { id: 'k2', name: 'Бета Монтаж', draft: true }]; },
     async myAdminCompanies() { return []; }, async catalog() { return []; }, async listAudit() { return []; },
     async listRoles() { return [{ id: 'r-senior', name: 'Старший прораб', template_code: null, actions: [], active_assignments: 0 },
-      { id: 'r-con', name: 'Представитель подрядчика', template_code: 'contractor_rep', actions: ['quality.view', 'quality.scope.contractor'], active_assignments: 0 }]; },
+      { id: 'r-con', name: 'Представитель подрядчика', template_code: 'contractor_rep', actions: ['quality.view', 'quality.scope.contractor'], active_assignments: 0 },
+      { id: 'r-eng', name: 'Инженер СК', template_code: null, actions: ['quality.view', 'quality.edit'], active_assignments: 0 }]; },
+    async listQualityObjects() { return [{ id: 'obj_1', name: 'Большевиков,22 (Гений)' }, { id: 'obj_2', name: 'Школа 400 (Крыленко)' }]; },
     async listMembers() { return members; },
     async listProjects() { return [{ id: 'p1', name: 'Проект Альфа', company_id: 'c1' }, { id: 'pb', name: 'Проект Бета', company_id: 'c2' }]; },
     async createRole() { return res(''); }, async renameRole() { return res(null); }, async setRoleActions() { return res(null); }, async deleteRole() { return res(null); },
-    async assignRole(u, r, p, to, cp) {
-      calls.push(`assign:${u}:${r}:${p}:${to}` + (cp ? `:${cp}` : ''));
+    async assignRole(u, r, p, to, cp, objs) {
+      calls.push(`assign:${u}:${r}:${p}:${to}` + (cp ? `:${cp}` : '') + (objs && objs.length ? `:objs=${objs.join(',')}` : ''));
       if (!opts.fail) members = [...members, { ...A('a-new', u, 'alfa-foreman@test.invalid', cp ? 'Представитель подрядчика' : 'Старший прораб', p ? 'Проект Альфа' : null, true, to),
         counterparty_id: cp || null, counterparty_name: cp === 'k1' ? 'ООО «Альфа-Строй»' : null }];
       return res('a-new');
@@ -350,4 +352,56 @@ test('P2-0028: «Изменить ФИО» — сервер получает н�
   assert.match(el.querySelector('[data-user-id=u-for]').textContent, /Петров Пётр Петрович/);
   assert.match(el.textContent, /обновлено записей: 3/);
   assert.equal(el.querySelector('[data-testid=co-name-form]'), null);
+});
+
+test('P2-0033: объекты Качества — только для роли с Качеством; отмеченные уходят на сервер по id; в таблице — названия', async () => {
+  const { api, calls } = fakeApi();
+  const base = api.listMembers;
+  api.listMembers = async (co) => [...await base(co), { ...A('a-eng', 'u-for', 'alfa-foreman@test.invalid', 'Инженер СК', null, true),
+    quality_objects: [{ id: 'obj_1', name: 'Большевиков,22 (Гений)' }] }];
+  const el = mount(api);
+  await tick();
+  assert.match(el.querySelector('[data-assignment-id=a-eng]').textContent, /Объекты: Большевиков,22 \(Гений\)/);
+  assert.doesNotMatch(el.querySelector('[data-assignment-id=a-adm]').textContent, /Объекты:/);
+  const form = el.querySelector('[data-testid=co-assign]');
+  const role = form.querySelector('select[name=role]');
+  role.value = 'r-senior'; role.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await tick();
+  assert.equal(el.querySelector('[data-testid=co-objects]'), null, 'роль без Качества — без выбора объектов');
+  role.value = 'r-eng'; role.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await tick();
+  const boxes = Array.from(el.querySelectorAll('[data-testid=co-objects] input[name=qobj]')) as N[];
+  assert.deepEqual(boxes.map((b) => b.value), ['obj_1', 'obj_2']);
+  boxes[1].checked = true;
+  fill(form, { user: 'u-for' });
+  submit(form);
+  await tick();
+  assert.equal(calls[0], 'assign:u-for:r-eng:null:null:objs=obj_2');
+});
+
+test('P2-0033: ничего не отмечено — назначение на все объекты (без списка)', async () => {
+  const { api, calls } = fakeApi();
+  const el = mount(api);
+  await tick();
+  const form = el.querySelector('[data-testid=co-assign]');
+  const role = form.querySelector('select[name=role]');
+  role.value = 'r-eng'; role.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await tick();
+  fill(form, { user: 'u-for' });
+  submit(form);
+  await tick();
+  assert.equal(calls[0], 'assign:u-for:r-eng:null:null');
+});
+
+test('P2-0033 (L7): ошибка списка объектов Качества не ломает экран — назначение без выбора объектов', async () => {
+  const { api } = fakeApi();
+  api.listQualityObjects = async () => { throw new Error('function pf_list_quality_objects does not exist'); };
+  const el = mount(api);
+  await tick();
+  assert.ok(el.querySelector('[data-testid=co-assign]'));
+  assert.match(el.textContent, /Петров П\.П\./);
+  const role = el.querySelector('[data-testid=co-assign] select[name=role]');
+  role.value = 'r-eng'; role.dispatchEvent(new win.Event('change', { bubbles: true }));
+  await tick();
+  assert.equal(el.querySelector('[data-testid=co-objects]'), null);
 });

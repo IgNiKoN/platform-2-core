@@ -36,7 +36,9 @@ begin
 
   perform pg_temp.as_user(ua, ca); j := pg_temp.acc(null);
   -- после 020: + quality.scope.company у админа; прораб — только просмотр
-  res := res || pg_temp.t(j -> 'actions' = case when to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null then '["construction.edit", "construction.manage", "construction.view", "quality.edit", "quality.manage", "quality.scope.company", "quality.view"]'::jsonb
+  -- после 033c: + справочник объектов и дерево локаций у админа (quality.objects.manage, construction.objects.manage) — вычитаются
+  res := res || pg_temp.t((j -> 'actions') - 'quality.objects.manage' - 'construction.objects.manage' = case
+      when to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null then '["construction.edit", "construction.manage", "construction.view", "quality.edit", "quality.manage", "quality.scope.company", "quality.view"]'::jsonb
       else '["construction.edit", "construction.manage", "construction.view", "quality.edit", "quality.manage", "quality.view"]' end
     and j -> 'templates' = '["company_admin"]' and j ->> 'company_id' = ca::text, 'админ: все 6 действий, шаблон company_admin: ' || j::text);
   perform pg_temp.as_user(ufor, ca);
@@ -55,7 +57,8 @@ begin
   res := res || pg_temp.t(j -> 'actions' = '[]', 'без текущей компании — ничего: ' || j::text);
   reset role; update core.company_modules set enabled = false where company_id = ca and module = 'quality';
   perform pg_temp.as_user(ua, ca); j := pg_temp.acc(null);
-  res := res || pg_temp.t(j -> 'actions' = '["construction.edit", "construction.manage", "construction.view"]', 'Качество выключено — только Стройконтроль: ' || j::text);
+  res := res || pg_temp.t((j -> 'actions') - 'construction.objects.manage' = '["construction.edit", "construction.manage", "construction.view"]',
+                          'Качество выключено — только Стройконтроль: ' || j::text);
   perform pg_temp.as_user(null, ca); j := pg_temp.acc(null);
   res := res || pg_temp.t(j ? 'error', 'anon — отказ: ' || j::text);
   reset role;
