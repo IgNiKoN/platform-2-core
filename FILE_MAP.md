@@ -67,6 +67,7 @@
 | Страница План/Факт, меню | `src/modules/planfact/PlanfactApp.ts`, `index.ts` (`platformNav`, `planfact:route`), `nav-items.ts` (какие подвкладки видны: по доступу; в демо — все, P2-0026), `js/modules/planfact/planfact.manifest.js` (`nav`), `js/modules/planfact/index.js` |
 | Меню оболочки (общий механизм) | `js/modules/settings/features/app-mode-utils.js` (`renderBottomNav`: `window.RBI.platformNav`), `js/core/app-shell.desktop.js` (`modeLabel('platform')`) |
 | «Компания» в Настройках | `js/modules/settings/settings.render.js`, `settings.desktop.render.js`, `js/core/router.js` (`#/settings/company`), `src/platform/company/index.ts` (`RBI.platformPanels.company`), `company.manifest.js` (без пункта меню) |
+| Телефон: «☰ Модули» на всех экранах, последний модуль (P2-0030) | `js/core/app-shell.js` (`syncMobileModuleStrip`, `currentPlatformItem`), `index.html` (`#mobile-module-strip`), `css/style.css` (`.mobile-module-strip`); `src/platform/auth/platform.service.ts` (`homePathFor`), `entry.ts` (`goHome`); отступ шапки по модулю — `js/shared/layout.utils.js` (`updateBodyPadding`); unit — `src/platform/auth/__tests__/mobile-module-strip.test.ts`, `platform.test.ts` |
 
 ## Изменения P2-0004b (ветка `task/P2-0004b-role-builder`, не в `main` до приёмки)
 
