@@ -22,7 +22,7 @@ create or replace function pg_temp.t(c boolean, l text) returns text language sq
 create or replace function pg_temp.vis(tbl text) returns text language plpgsql as $f$
 declare s text;
 begin
-  execute format('select coalesce(string_agg(split_part(id, ''-'', 1), '','' order by id), '''') from quality.%I where id like ''%%-m33''', tbl) into s;
+  execute format('select coalesce(string_agg(split_part(id, ''-'', 1), '','' order by id collate "C"), '''') from quality.%I where id like ''%%-m33''', tbl) into s;
   return s;
 exception when others then return 'ERR:' || sqlstate; end $f$;
 -- Минимальная строка (как в 020): обязательные колонки + project_code + id = «метка-m33»; затем — p_set.
@@ -228,7 +228,7 @@ begin
   res := res || pg_temp.t((select quality_objects from core.role_assignments where id = v_id) is null, 'назначение: пустой список = все объекты');
   res := res || pg_temp.t((select quality_objects from public.pf_list_company_members(ca) where user_id = ue1)
                           = jsonb_build_array(jsonb_build_object('id', o1, 'name', 'ЖК «Большевиков, 22»')), 'список людей: объекты с названием');
-  res := res || pg_temp.t((select string_agg(id, ',' order by id) from public.pf_list_quality_objects(ca)) = o1 || ',' || o2, 'объекты для выбора — только своей компании');
+  res := res || pg_temp.t((select string_agg(id, ',' order by id collate "C") from public.pf_list_quality_objects(ca)) = o1 || ',' || o2, 'объекты для выбора — только своей компании');
   perform pg_temp.as_user(ue1, ca);
   res := res || pg_temp.t(pg_temp.err(format('select * from public.pf_list_quality_objects(%L)', ca)) = '42501', 'объекты для выбора: инженеру — нет');
   res := res || pg_temp.t(pg_temp.err(format('select public.pf_assign_role(%L, %L, null, null, null, array[%L])', ue2, r_eng, o1)) = '42501',
