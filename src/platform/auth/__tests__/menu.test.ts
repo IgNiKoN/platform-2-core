@@ -56,6 +56,41 @@ test('почта (P2-0016): Качество и Стройконтроль — �
   assert.ok(!noBridge.includes('Качество'), 'без подключённого хранилища компании — пункта нет');
 });
 
+test('почта (P2-0031): «База знаний» — по выключателю компании (ответ сервера) и мосту; без флага — нет', () => {
+  const on = shell('email', { quality: true, knowledge: true }, { active: true });
+  assert.equal(on.RBI.services.shell.legacyModuleAllowed('knowledge'), true);
+  assert.ok(!sidebar(on).includes('База знаний'), 'при Качестве База знаний — вкладка внутри Качества, не отдельный пункт (как при PIN)');
+  assert.equal(shell('email', { quality: true }, { active: true }).RBI.services.shell.legacyModuleAllowed('knowledge'), false);
+  assert.equal(shell('email', { quality: true, knowledge: true }, null).RBI.services.shell.legacyModuleAllowed('knowledge'), false);
+  assert.equal(shell('pin', {}).RBI.services.shell.legacyModuleAllowed('knowledge'), true);
+});
+
+test('почта (P2-0031): «ИИ-помощник» выключен у компании — настройка «ИИ включён» читается как выключенная; включён / PIN — как сохранено', () => {
+  const load = (win: N): N => {
+    const code = readFileSync(new URL('../../../../js/services/settings.service.js', import.meta.url), 'utf8');
+    runInNewContext(code, { window: win, document: win.document, localStorage: win.localStorage, console });
+    win.appSettings.aiEnabled = true;   // сервис сам объявляет appSettings (заводские значения) — включаем ИИ как пользователь
+    return win.RBI.services.settings;
+  };
+  assert.equal(load(shell('email', { quality: true }, { active: true })).get('aiEnabled'), false);
+  assert.equal(load(shell('email', { quality: true, ai: true }, { active: true })).get('aiEnabled'), true);
+  assert.equal(load(shell('pin', {})).get('aiEnabled'), true);
+  const off = shell('email', { quality: true }, { active: true });
+  const svc = load(off);
+  off.appSettings.aiEnabled = false;
+  assert.equal(svc.get('aiEnabled'), false, 'выключенный пользователем остаётся выключенным');
+  // ai.service.isEnabled — через settings.get (ревью P2-0031 L1)
+  const ai = (win: N): N => {
+    const code = readFileSync(new URL('../../../../js/services/ai.service.js', import.meta.url), 'utf8');
+    runInNewContext(code, { window: win, document: win.document, console });
+    return win.RBI.services.ai;
+  };
+  const w1 = shell('email', { quality: true }, { active: true }); load(w1);
+  assert.equal(ai(w1).isEnabled(), false, 'модуль выключен у компании — ai.isEnabled false');
+  const w2 = shell('email', { quality: true, ai: true }, { active: true }); load(w2);
+  assert.equal(ai(w2).isEnabled(), true);
+});
+
 test('PIN (старый вход): Quality / Стройконтроль как раньше, пунктов Platform 2.0 нет — даже если флаг остался', () => {
   const win = shell('pin', { planfact: true });
   const s = sidebar(win);

@@ -10,8 +10,8 @@ const ENV: Record<string, string> = { SUPABASE_URL: 'http://kong:8000', SUPABASE
 
 type Call = { url: string; init: RequestInit };
 
-/** Подставной сервер: токен «good» — учётка есть; право quality.ai — по флагу; DeepSeek отвечает текстом. */
-function fakeServer(opts: { allowed?: boolean; dsStatus?: number } = {}) {
+/** Подставной сервер: токен «good» — учётка есть; право quality.ai — по флагу; модуль «ИИ» у компании — по флагу; DeepSeek отвечает текстом. */
+function fakeServer(opts: { allowed?: boolean; module?: boolean; dsStatus?: number } = {}) {
   const calls: Call[] = [];
   const doFetch = (async (url: string, init: RequestInit = {}) => {
     calls.push({ url, init });
@@ -25,6 +25,10 @@ function fakeServer(opts: { allowed?: boolean; dsStatus?: number } = {}) {
       const args = JSON.parse(String(init.body));
       const ok = opts.allowed !== false && args.p_company === h.get('x-company-id') && args.p_actions.join() === 'quality.ai';
       return new Response(JSON.stringify(ok), { status: 200 });
+    }
+    if (url.endsWith('/rest/v1/rpc/pf_my_platform')) {
+      const mods = opts.module === false ? ['quality'] : ['quality', 'ai'];
+      return new Response(JSON.stringify({ companies: [{ id: COMPANY, modules: mods }, { id: 'other', modules: ['ai'] }] }), { status: 200 });
     }
     if (url.startsWith('https://api.deepseek.com/')) {
       return new Response(JSON.stringify({ choices: [{ message: { content: 'ответ' } }] }), { status: opts.dsStatus ?? 200 });
@@ -49,7 +53,7 @@ describe('pf-ai', () => {
     const r = await fakeServer().handler(new Request('http://x', { method: 'OPTIONS' }));
     assert.equal(r.status, 200);
     assert.match(r.headers.get('Access-Control-Allow-Headers') || '', /x-company-id/);
-    assert.equal(r.headers.get('x-pf-ai-version'), '2');
+    assert.equal(r.headers.get('x-pf-ai-version'), '3');
   });
 
   it('без токена → 401, DeepSeek не вызывается', async () => {
@@ -68,6 +72,22 @@ describe('pf-ai', () => {
 
   it('без компании → 403', async () => {
     const r = await fakeServer().handler(post(MSG, { 'x-company-id': 'nope' }));
+    assert.equal(r.status, 403);
+  });
+
+  it('модуль «ИИ-помощник» выключен у компании (P2-0031) → 403, DeepSeek не вызывается', async () => {
+    const s = fakeServer({ module: false });
+    const r = await s.handler(post(MSG));
+    assert.equal(r.status, 403);
+    assert.match((await r.json()).error, /выключен для вашей компании/);
+    assert.ok(!s.calls.some((c) => c.url.includes('deepseek')));
+    const pm = s.calls.find((c) => c.url.endsWith('/rpc/pf_my_platform'));
+    assert.equal(new Headers(pm!.init.headers).get('Authorization'), 'Bearer good', 'модуль проверяется от имени пользователя');
+  });
+
+  it('модуль включён у другой компании, но не у этой → 403', async () => {
+    const s = fakeServer({ module: false });
+    const r = await s.handler(post(MSG));
     assert.equal(r.status, 403);
   });
 
