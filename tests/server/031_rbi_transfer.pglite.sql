@@ -1,6 +1,6 @@
 -- P2-0027 этап 1: перенос РБИ (031) — ТОЛЬКО ДЛЯ PGlite (наполняет public.* подставными данными; боевой сервер этот файл не выполняет).
 -- Проверяет: каждая переносимая таблица переносится; один объект; повтор без дублей; очистка; полный перенос; ссылки на файлы,
--- код проекта, автор, PIN; отчёты не переносятся; public до = после; клиент видит перенесённое по правилам компании,
+-- код проекта, автор, PIN; отчёты переносятся с 036 (P2-0036; подробно — 036_rbi_transfer_reports.pglite.sql); public до = после; клиент видит перенесённое по правилам компании,
 -- служебные таблицы переноса клиенту закрыты. Отчёт — ERROR P0001 с «FAIL всего: N» (всё откатывается).
 create or replace function pg_temp.as_user(u uuid, company uuid) returns void language plpgsql as $f$
 begin
@@ -98,7 +98,7 @@ begin
     ('inspection-photos', 'rbi-test/inspections/i2/1_0/photo_c.jpg', '{"size": 50}'),
     ('library-docs', 'docs/d1.pdf', '{"size": 300}'), ('reports', 'rbi-test/r1.pdf', '{"size": 400}');
   res := res || pg_temp.t(ntab >= 50, 'переносимых таблиц ≥ 50 (есть ' || ntab || ')');
-  res := res || pg_temp.t(not exists (select 1 from quality.rbi_transfer_tables() t where t in ('shared_reports', 'shared_report_snapshots')), 'отчёты не в списке');
+  res := res || pg_temp.t((select count(*) from quality.rbi_transfer_tables() t where t in ('shared_reports', 'shared_report_snapshots')) = 2, 'отчёты в списке (036)');
 
   create temp table fp_before as select * from quality.rbi_transfer_public_fingerprint();
 
@@ -118,7 +118,7 @@ begin
   res := res || pg_temp.t((select array_agg(old_name order by old_name) from quality.rbi_transfer_files where core_company_id = c)
     = array['rbi-test/inspections/i1/1_0/photo_a', 'rbi-test/inspections/i2/1_0/photo_c.jpg'], 'объект: в списке только его фото (и из строки фото)');
   res := res || pg_temp.t(not exists (select 1 from quality.rbi_transfer_verify(c, 'obj-a') where not ok and t not like 'файлы%'), 'объект: сверка старое = новое');
-  res := res || pg_temp.t((select not ok from quality.rbi_transfer_verify(c, 'obj-a') where t like 'файлы%'), 'объект: файлы не скопированы — сверка не ok');
+  res := res || pg_temp.t((select not ok from quality.rbi_transfer_verify(c, 'obj-a') where t like 'файлы (%'), 'объект: файлы не скопированы — сверка не ok');
   perform * from quality.rbi_transfer_run(c, 'obj-a');
   select sum(inserted) into n from quality.rbi_transfer_run(c, 'obj-a');
   res := res || pg_temp.t(n = 0, 'повтор объекта: 0 новых строк (есть ' || n || ')');
@@ -159,18 +159,21 @@ begin
   insert into quality.rbi_engineer_profiles(id, inspector_id, engineer_name, project_code, auth_user_id, core_company_id)
     values (gen_random_uuid(), p || '_owner-031@test.invalid', 'owner-031@test.invalid', p::text, uo, c);
   select count(*) into n from quality.rbi_transfer_run(c) where inserted > 0;
-  update quality.rbi_transfer_files set copied_at = now() where core_company_id = c;   -- как после files.mjs copy
+  -- как после files.mjs copy (036: сверка по бакетам проверяет и наличие копии)
+  insert into storage.objects(bucket_id, name, metadata) select 'quality-' || l.old_bucket, c || '/' || l.old_name, o.metadata
+    from quality.rbi_transfer_files l join storage.objects o on o.bucket_id = l.old_bucket and o.name = l.old_name where l.core_company_id = c;
+  update quality.rbi_transfer_files set copied_at = now() where core_company_id = c;
   for r in select * from quality.rbi_transfer_verify(c) where not ok loop
     res := res || 'FAIL сверка ' || r.t || ': ' || coalesce(r.old_eligible::text, '-') || ' ≠ ' || coalesce(r.new_rows::text, '-') || E'\n';
   end loop;
   res := res || pg_temp.t((select old_all - old_eligible from quality.rbi_transfer_verify(c) where t = 'rbi_inspections') = 1, 'проверка с чужим кодом проекта (N/A) не переносится');
   res := res || pg_temp.t((select count(*) from quality.allowed_projects where core_company_id = c) = 1
     and (select code from quality.allowed_projects where core_company_id = c) = p::text, 'проект rbi-work (без сопоставления) не переносится; код = объект');
-  res := res || pg_temp.t(not exists (select 1 from quality.shared_reports where core_company_id = c), 'отчёты не перенесены');
+  res := res || pg_temp.t(exists (select 1 from quality.shared_reports where core_company_id = c and id = 'rep1'), 'отчёт перенесён (036)');
   res := res || pg_temp.t((select pin_hash from quality.rbi_engineer_profiles where core_company_id = c and id = prof_o) is null
     and (select auth_user_id from quality.rbi_engineer_profiles where core_company_id = c and id = prof_o) = old_o,
     'профиль: PIN не перенесён; старый профиль перенесён рядом с профилем нового приложения (учётка — старая)');
-  res := res || pg_temp.t((select count(*) from quality.rbi_transfer_files where core_company_id = c) = 4, 'файлы: все кроме reports (4)');
+  res := res || pg_temp.t((select count(*) from quality.rbi_transfer_files where core_company_id = c) = 5, 'файлы: все, с 036 — и reports (5)');
   res := res || pg_temp.t((select count(*) from quality.contracts where core_company_id = c) = 1, 'договор перенесён (после подрядчика)');
   select sum(inserted) into n from quality.rbi_transfer_run(c);
   res := res || pg_temp.t(n = 0, 'повтор полного: 0 новых строк (есть ' || n || ')');
