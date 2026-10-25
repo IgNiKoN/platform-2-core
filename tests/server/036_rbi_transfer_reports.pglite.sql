@@ -141,9 +141,24 @@ begin
   res := res || pg_temp.t(not exists (select 1 from quality.shared_reports where core_company_id = c)
     and not exists (select 1 from quality.shared_report_snapshots where core_company_id = c), 'очистка: отчётов и снимков 0');
 
-  -- 3) полный перенос
+  -- 3) полный перенос — пачками (036a): все таблицы без снимков; затем снимки и список файлов
   perform pg_temp.objects(c);
-  perform * from quality.rbi_transfer_run(c);
+  begin
+    perform * from quality.rbi_transfer_run_part(c, array['shared_reports', 'нет_такой'], false);
+    res := res || 'FAIL пачка с неизвестной таблицей — не отказ' || E'\n';
+  exception when sqlstate 'P0001' then null;
+  end;
+  perform pg_temp.as_user(uo, c);
+  begin
+    perform * from quality.rbi_transfer_run_part(c, array['shared_reports'], false);
+    res := res || 'FAIL клиенту доступен перенос пачками' || E'\n';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+  perform * from quality.rbi_transfer_run_part(c, array(select x from quality.rbi_transfer_tables() x where x <> 'shared_report_snapshots'), false);
+  res := res || pg_temp.t(not exists (select 1 from quality.shared_report_snapshots where core_company_id = c)
+    and not exists (select 1 from quality.rbi_transfer_files where core_company_id = c and old_bucket = 'library-etalons'), 'пачка 1: без снимков и без списка файлов');
+  perform * from quality.rbi_transfer_run_part(c, array['shared_report_snapshots'], true);
   res := res || pg_temp.t((select string_agg(id, ',' order by id) from quality.shared_reports where core_company_id = c) = 'rep1,rep2,rep3', 'полный: отчёты 3 (без чужого кода)');
   res := res || pg_temp.t((select string_agg(id, ',' order by id) from quality.shared_report_snapshots where core_company_id = c) = 'snap_free,snap_rep1,snap_rep2',
                           'полный: снимки 3 (без снимка отчёта с чужим кодом; без отчёта — по коду)');
