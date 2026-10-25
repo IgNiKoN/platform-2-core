@@ -67,6 +67,35 @@
   }
 
   /**
+   * P2-0030: пункт платформы на экране сейчас (План/Факт…) — по началу hash; null — экран старого Quality.
+   * Настройки — служебный раздел текущего модуля: пока они открыты, остаётся тот пункт, с которого в них пришли.
+   */
+  var lastPlatformPath = null;
+  function currentPlatformItem() {
+    var hash = String(location.hash || '');
+    var items = getPlatformMenuItems();
+    var i;
+    for (i = 0; i < items.length; i++) {
+      if (hash.indexOf(items[i].path) === 0) { lastPlatformPath = items[i].path; return items[i]; }
+    }
+    if (!/^#\/(quality\/)?settings(\/|$)/i.test(hash)) { lastPlatformPath = null; return null; }
+    for (i = 0; i < items.length; i++) if (items[i].path === lastPlatformPath) return items[i];
+    return null;
+  }
+
+  function businessModuleLabels() {
+    return {
+      quality: _navLabel('quality', 'Качество'),
+      construction: _navLabel('construction', 'Стройконтроль'),
+      knowledge: _navLabel('knowledge', 'База знаний'),
+      'construction-v2': _navLabel('construction_v2', 'Стройконтроль в2 (тест)')
+    };
+  }
+
+  // Место .mobile-module-menu-wrap в шапке (комментарий-якорь), куда она возвращается из #mobile-module-strip.
+  var mobileMenuWrapAnchor = null;
+
+  /**
    * P2-0016: модуль старого Quality (quality, construction, construction-v2, knowledge) в меню этого входа?
    * Почта — только Качество и Стройконтроль, если модуль включён у текущей компании (RBI.platformMenuAccess) и мост
    * синхронизации с хранилищем компании подключён (RBI.qualitySync); «База знаний» отдельным пунктом — нет. Демо и «никто» — как раньше.
@@ -518,15 +547,12 @@
 
       var selected = this.getSelectedModules();
       var roleAllowedIds = getRoleAllowedBusinessModuleIds();
-      var currentMode = (window.AppModeManager && window.AppModeManager.currentMode) || null;
+      // P2-0030: на экране раздела платформы (План/Факт…) отмечен он, а не режим старого Quality
+      var platformItem = currentPlatformItem();
+      var currentMode = platformItem ? null : ((window.AppModeManager && window.AppModeManager.currentMode) || null);
       var knowledgePeer = this.isKnowledgePeerVisible(selected);
 
-      var labels = {
-        quality: _navLabel('quality', 'Качество'),
-        construction: _navLabel('construction', 'Стройконтроль'),
-        knowledge: _navLabel('knowledge', 'База знаний'),
-        'construction-v2': _navLabel('construction_v2', 'Стройконтроль в2 (тест)')
-      };
+      var labels = businessModuleLabels();
       var html = '';
 
       var legacy = platformEntryMode() !== 'email';   // заглушки модулей — как раньше, не при входе почтой
@@ -554,9 +580,13 @@
       });
 
       getPlatformMenuItems().forEach(function (item) {
+        var pActive = !!platformItem && platformItem.path === item.path;
         html += '<button type="button" data-path="' + item.path + '" data-menu-module-id="' + item.id + '"' +
-          ' class="w-full text-left px-3.5 py-2.5 text-[11px] font-bold uppercase flex items-center justify-between gap-2 transition-colors text-slate-700 dark:text-slate-300">' +
-          '<span>' + item.label + '</span></button>';
+          ' class="w-full text-left px-3.5 py-2.5 text-[11px] font-bold uppercase flex items-center justify-between gap-2 transition-colors ' +
+          (pActive ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-700 dark:text-slate-300') + '">' +
+          '<span>' + item.label + '</span>' +
+          (pActive ? '<span class="text-[8px] font-black text-indigo-500">●</span>' : '') +
+          '</button>';
       });
 
       if (legacy) html += '<div class="border-t border-[var(--card-border)] my-1"></div>';
@@ -584,6 +614,34 @@
     closeMobileModuleMenu: function () {
       var menu = document.getElementById('mobile-module-menu');
       if (menu) menu.classList.add('hidden');
+    },
+    // P2-0030: экраны без шапки #main-header (План/Факт, Настройки, Аналитика…) — на телефоне «☰» пропадал вместе
+    // с ней. Тогда та же .mobile-module-menu-wrap (кнопка и список) переезжает в строку #mobile-module-strip над
+    // содержимым, рядом — название текущего модуля; шапка снова видна — возвращается на место. На ПК строка скрыта (CSS).
+    syncMobileModuleStrip: function () {
+      var strip = document.getElementById('mobile-module-strip');
+      var header = document.getElementById('main-header');
+      var wrap = document.querySelector('.mobile-module-menu-wrap');
+      if (!strip || !header || !wrap) return;
+      if (!mobileMenuWrapAnchor && wrap.parentNode !== strip) {
+        mobileMenuWrapAnchor = document.createComment('mobile-module-menu-wrap');
+        wrap.parentNode.insertBefore(mobileMenuWrapAnchor, wrap);
+      }
+      var headerHidden = header.style.display === 'none' || window.getComputedStyle(header).display === 'none';
+      if (headerHidden && wrap.parentNode !== strip) {
+        this.closeMobileModuleMenu();
+        strip.insertBefore(wrap, strip.firstChild);
+      } else if (!headerHidden && wrap.parentNode === strip && mobileMenuWrapAnchor && mobileMenuWrapAnchor.parentNode) {
+        this.closeMobileModuleMenu();
+        mobileMenuWrapAnchor.parentNode.insertBefore(wrap, mobileMenuWrapAnchor.nextSibling);
+      }
+      strip.classList.toggle('is-on', headerHidden);
+      var label = strip.querySelector('.mobile-module-strip-label');
+      if (label) {
+        var item = currentPlatformItem();
+        var mode = (window.AppModeManager && window.AppModeManager.currentMode) || '';
+        label.textContent = item ? item.label : (businessModuleLabels()[mode] || '');
+      }
     },
     selectMobileModule: function (moduleId) {
       this.closeMobileModuleMenu();
@@ -711,6 +769,30 @@
   bindShellActionDelegation();
   ShellService.renderSidebar();
   ShellService.renderMobileModuleMenu();
+
+  // P2-0030: строка «☰» следит за шапкой — её прячут/показывают экраны (switchViewNode, План/Факт, Аналитика…)
+  // и смена маршрута/ширины; одна проверка на кадр.
+  (function wireMobileModuleStrip() {
+    var queued = false;
+    var sync = function () {
+      if (queued) return;
+      queued = true;
+      var run = function () { queued = false; ShellService.syncMobileModuleStrip(); };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run); else setTimeout(run, 0);
+    };
+    var header = document.getElementById('main-header');
+    if (header && typeof MutationObserver === 'function') {
+      new MutationObserver(sync).observe(header, { attributes: true, attributeFilter: ['style', 'class'] });
+    }
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
+    window.addEventListener('hashchange', sync);
+    window.addEventListener('rbi:route', sync);
+    window.addEventListener('rbi:platform-access', sync);
+    window.addEventListener('resize', sync);
+    ShellService.syncMobileModuleStrip();
+  })();
 
   // i18n — перерисовка chrome без reload
   if (window.RBI && window.RBI.events && typeof window.RBI.events.on === 'function') {
