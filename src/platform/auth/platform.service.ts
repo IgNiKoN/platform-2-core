@@ -73,6 +73,20 @@ export function accessFor(st: PlatformState): PlatformAccess {
   return a;
 }
 
+/** Ключ роутера оболочки (js/core/router.js): последний экран модуля, Настройки туда не пишутся. */
+export const LAST_MODULE_HASH_KEY = 'rbi_last_module_hash';
+
+/**
+ * P2-0030: куда вести после входа почтой — последний открытый модуль, если он ещё доступен у компании;
+ * иначе как раньше: План/Факт, без него — Настройки.
+ */
+export function homePathFor(a: PlatformAccess, lastHash: string | null): string {
+  const h = String(lastHash || '');
+  const modules: Array<[RegExp, string]> = [[/^#\/planfact(\/|$)/, 'planfact'], [/^#\/quality(\/|$)/, 'quality'], [/^#\/construction(-v2)?(\/|$)/, 'construction']];
+  for (const [re, id] of modules) if (re.test(h) && a[id] === true) return h;
+  return a.planfact ? '#/planfact' : '#/settings';
+}
+
 export interface Platform {
   boot(): Promise<PlatformState>;
   refresh(): Promise<PlatformState>;

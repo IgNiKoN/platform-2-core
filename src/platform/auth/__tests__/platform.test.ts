@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
-import { createPlatform, accessFor, parsePlatform, ENTRY_KEY, COMPANY_KEY } from '../platform.service.ts';
+import { createPlatform, accessFor, parsePlatform, homePathFor, ENTRY_KEY, COMPANY_KEY } from '../platform.service.ts';
 import type { PlatformDeps } from '../platform.service.ts';
 import type { AuthApi } from '../auth.service.ts';
 import { renderLoginScreen } from '../login-screen.ts';
@@ -169,4 +169,18 @@ test('экран «Вход»: «Посмотреть без входа (дем�
   renderLoginScreen(el, { signIn: async () => ({ ok: true }), onDemo: () => { demo++; } });
   (el.querySelector('[data-testid=p2-login-demo]') as HTMLElement).click();
   assert.equal(demo, 1);
+});
+
+test('P2-0030: после входа почтой — последний открытый модуль, если он доступен; иначе как раньше', () => {
+  const both = { planfact: true, quality: true };
+  assert.equal(homePathFor(both, '#/quality/analytics/contractors'), '#/quality/analytics/contractors');
+  assert.equal(homePathFor(both, '#/planfact/fact'), '#/planfact/fact');
+  assert.equal(homePathFor({ quality: true, construction: true }, '#/construction-v2'), '#/construction-v2');
+  // модуль отключён у компании (или чужое устройство) — первый доступный
+  assert.equal(homePathFor({ planfact: true }, '#/quality/audit'), '#/planfact');
+  assert.equal(homePathFor({ quality: true }, '#/planfact'), '#/settings');
+  // первый вход / мусор в ключе — как раньше
+  assert.equal(homePathFor(both, null), '#/planfact');
+  assert.equal(homePathFor(both, '#/qualityx'), '#/planfact');
+  assert.equal(homePathFor({}, '#/planfact'), '#/settings');
 });

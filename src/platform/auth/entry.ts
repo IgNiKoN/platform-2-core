@@ -9,7 +9,7 @@ import { createAuthService, getClient, readAuthConfig } from './auth.service.ts'
 import { applyQualityBridge, QUALITY_COMPANY_KEY, QUALITY_USER_KEY } from './quality-bridge.ts';
 import { createProjectsService } from '../core/projects.service.ts';
 import type { QualityProject } from './quality-bridge.ts';
-import { createPlatform } from './platform.service.ts';
+import { createPlatform, homePathFor, LAST_MODULE_HASH_KEY } from './platform.service.ts';
 import type { Platform, PlatformState } from './platform.service.ts';
 import { LOGIN_CSS, renderLoginScreen } from './login-screen.ts';
 import { showShellUser, restoreShellUser } from './shell-user.ts';
@@ -79,10 +79,11 @@ function hideLogin(): void {
   if (o) o.classList.add('hidden');
 }
 
-/** После входа почтой — первый доступный модуль; без модулей — Настройки. */
+/** После входа почтой — последний открытый модуль (P2-0030), если он доступен; иначе первый доступный, без модулей — Настройки. */
 function goHome(): void {
-  const a = getPlatform().access();
-  go(a.planfact ? '#/planfact' : '#/settings');
+  let last: string | null = null;
+  try { last = window.localStorage.getItem(LAST_MODULE_HASH_KEY); } catch { /* нет localStorage — как раньше */ }
+  go(homePathFor(getPlatform().access(), last));
 }
 
 function go(path: string): void {

@@ -18167,7 +18167,13 @@ function Ga(t) {
   if (t.mode === "email" && e) for (const s of e.modules) r[s] = !0;
   return r;
 }
-function za(t) {
+const za = "rbi_last_module_hash";
+function Ja(t, e) {
+  const r = String(e || ""), s = [[/^#\/planfact(\/|$)/, "planfact"], [/^#\/quality(\/|$)/, "quality"], [/^#\/construction(-v2)?(\/|$)/, "construction"]];
+  for (const [n, i] of s) if (n.test(r) && t[i] === !0) return r;
+  return t.planfact ? "#/planfact" : "#/settings";
+}
+function Ya(t) {
   let e = { ...de };
   const r = /* @__PURE__ */ new Set(), s = () => {
     for (const a of r) a(e);
@@ -18213,7 +18219,7 @@ function za(t) {
     }
   };
 }
-const Ja = `
+const Xa = `
 .p2-login{width:100%;max-width:380px;background:var(--card-bg);color:var(--text-main);border:1px solid var(--card-border);border-radius:24px;padding:22px 20px;box-shadow:0 20px 50px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:14px;max-height:calc(100dvh - 32px);overflow-y:auto}
 .p2-login h2{margin:0;text-align:center;font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:-.01em}
 .p2-login-sub{margin:-8px 0 0;text-align:center;font-size:12px;color:var(--text-muted)}
@@ -18235,7 +18241,7 @@ function Lr(t, e, r) {
   const s = Y(t, "label", {}, e);
   return s.appendChild(Y(t, "input", r)), s;
 }
-function Ya(t, e) {
+function Qa(t, e) {
   const r = t.ownerDocument;
   t.replaceChildren();
   const s = Y(r, "div", { class: "p2-login", "data-testid": "p2-login", role: "dialog", "aria-label": "Вход" });
@@ -18266,7 +18272,7 @@ function Ya(t, e) {
 }
 const ps = ["desk-user-name", "desk-user-avatar", "header-user-block"];
 let oe = null;
-function Xa(t, e) {
+function Za(t, e) {
   var s, n;
   if (typeof document > "u") return;
   const r = (n = (s = window.RBI) == null ? void 0 : s.services) == null ? void 0 : n.shell;
@@ -18281,7 +18287,7 @@ function Xa(t, e) {
     r.renderUserBlock({ name: t, role: e || "нет роли" });
   }
 }
-function Qa() {
+function eo() {
   if (!(!oe || typeof document > "u")) {
     for (const t of ps) {
       const e = document.getElementById(t);
@@ -18290,7 +18296,7 @@ function Qa() {
     oe = null;
   }
 }
-const Za = "auth-gate-overlay", Ur = "p2-login-style";
+const to = "auth-gate-overlay", Ur = "p2-login-style";
 let te = null, Je = null;
 function Dt() {
   return window;
@@ -18302,13 +18308,13 @@ function Bt() {
 function gs() {
   if (document.getElementById(Ur)) return;
   const t = document.createElement("style");
-  t.id = Ur, t.textContent = Ja + `
+  t.id = Ur, t.textContent = Xa + `
 .p2-company-switch{max-width:100%;font-size:12px;font-weight:700;min-height:40px;padding:4px 8px;border:1px solid var(--card-border);border-radius:10px;background:var(--card-bg);color:var(--text-main)}`, document.head.appendChild(t);
 }
 function N() {
   if (te) return te;
   const t = fs(), e = t ? Pa(t) : null, r = e ? gt() : null;
-  return te = za({
+  return te = Ya({
     auth: e,
     rpc: r ? async (s) => {
       const n = await r.rpc(s);
@@ -18323,43 +18329,47 @@ function N() {
     })(),
     // P2-0016: в Платформе 2.0 вход только почтой (+ демо); PIN — в старом приложении РБИ.
     pinActive: () => !1
-  }), te.subscribe(so), e && e.onAuthChange && e.onAuthChange(() => {
+  }), te.subscribe(io), e && e.onAuthChange && e.onAuthChange(() => {
     te.refresh();
   }), window.addEventListener("platform2:refresh", () => {
     te.refresh();
   }), te;
 }
 function ys() {
-  return document.getElementById(Za);
+  return document.getElementById(to);
 }
 function qt() {
   const t = ys();
   if (!t) return;
   gs();
   const e = t.querySelector("[data-p2-login-host]") || t, r = N();
-  Ya(e, {
+  Qa(e, {
     signIn: async (s, n) => {
       const i = await r.signIn(s, n);
-      return i.ok && to(), i;
+      return i.ok && so(), i;
     },
     onDemo: () => {
       r.chooseDemo(), ms("#/planfact/vor");
     }
   }), t.classList.remove("hidden");
 }
-function eo() {
+function ro() {
   const t = ys();
   t && t.classList.add("hidden");
 }
-function to() {
-  const t = N().access();
-  ms(t.planfact ? "#/planfact" : "#/settings");
+function so() {
+  let t = null;
+  try {
+    t = window.localStorage.getItem(za);
+  } catch {
+  }
+  ms(Ja(N().access(), t));
 }
 function ms(t) {
   const e = Dt().AppRouter;
   e && typeof e.navigate == "function" ? e.navigate(t, !0) : window.location.hash = t;
 }
-function ro(t) {
+function no(t) {
   if (!t) return;
   const e = N().getState();
   gs();
@@ -18373,26 +18383,26 @@ function ro(t) {
     return n.value = s.id, n.textContent = "Компания: " + s.name, n;
   })), r.value = e.companyId || "";
 }
-function so(t) {
+function io(t) {
   var n;
   const e = Bt();
-  e.platformMenuAccess = N().access(), e.platform2 = oo, window.dispatchEvent(new Event("rbi:platform-access"));
+  e.platformMenuAccess = N().access(), e.platform2 = co, window.dispatchEvent(new Event("rbi:platform-access"));
   const r = (n = e.services) == null ? void 0 : n.shell;
   r && typeof r.renderSidebar == "function" && r.renderSidebar(), r && typeof r.renderMobileModuleMenu == "function" && r.renderMobileModuleMenu();
   const s = Dt().AppModeManager;
   if (s && typeof s.renderBottomNav == "function" && s.renderBottomNav(), t.mode === "email" && t.email) {
     const i = t.companies.find((a) => a.id === t.companyId);
-    Xa(t.email, i ? i.name + (i.roles[0] ? " · " + i.roles[0] : "") : t.isPlatformAdmin ? "администратор платформы" : "");
+    Za(t.email, i ? i.name + (i.roles[0] ? " · " + i.roles[0] : "") : t.isPlatformAdmin ? "администратор платформы" : "");
   } else
-    Qa();
-  t.mode === "none" ? qt() : eo(), io(), no(t);
+    eo();
+  t.mode === "none" ? qt() : ro(), oo(), ao(t);
 }
 let Dr = !1;
 function Br() {
   const t = window.localStorage, e = t.getItem(we) || "";
   return e ? e + ":" + (t.getItem(Ze) || "") : "";
 }
-async function no(t) {
+async function ao(t) {
   var e;
   try {
     const r = fs(), s = gt();
@@ -18429,7 +18439,7 @@ async function no(t) {
     console.warn("[Platform2] Качество: подключение к хранилищу компании не удалось", r);
   }
 }
-function io() {
+function oo() {
   var s;
   const t = (s = Bt().services) == null ? void 0 : s.shell, e = N().access(), r = [];
   t && typeof t.isPlatformModuleAllowed == "function" && t.isPlatformModuleAllowed("planfact") && r.push("planfact"), e.company && r.push("company"), e.platformAdmin && r.push("platform-admin");
@@ -18439,13 +18449,13 @@ function io() {
   } catch {
   }
 }
-function ao() {
+function lo() {
   return Je ? Je.then((t) => {
     t.mode === "none" && qt();
   }) : Je = N().boot(), Je;
 }
-const oo = {
-  start: ao,
+const co = {
+  start: lo,
   getState: () => N().getState(),
   access: () => N().access(),
   setCompany: (t) => N().setCompany(t),
@@ -18455,7 +18465,7 @@ const oo = {
     await N().signOut();
   },
   showLogin: qt,
-  renderCompanySwitch: ro,
+  renderCompanySwitch: no,
   /** Вызов функции сервера от имени вошедшего (одно соединение платформы; раздел администрирования своего клиента не создаёт). */
   rpc: async (t, e) => {
     N();
@@ -18466,7 +18476,7 @@ const oo = {
   }
 };
 export {
-  oo as api,
-  ao as start
+  co as api,
+  lo as start
 };
 //# sourceMappingURL=platform.js.map
