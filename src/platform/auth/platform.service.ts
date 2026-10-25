@@ -26,6 +26,7 @@ export interface PlatformState {
   /** P2-0028: ФИО вошедшего (ядро, pf_my_profile) и «сначала придумайте свой пароль» (временный пароль от администратора). */
   fullName?: string | null;
   mustChangePassword?: boolean;
+  userId?: string | null;
 }
 
 /** Флаги для меню и Настроек (window.RBI.platformMenuAccess): модули выбранной компании, «Компания», «Администрирование платформы». */
@@ -66,9 +67,10 @@ export function parsePlatform(data: unknown): { isPlatformAdmin: boolean; compan
   };
 }
 
-export function parseProfile(data: unknown): { fullName: string | null; mustChangePassword: boolean } {
-  const d = (data && typeof data === 'object' ? data : {}) as { full_name?: unknown; must_change_password?: unknown };
-  return { fullName: typeof d.full_name === 'string' && d.full_name ? d.full_name : null, mustChangePassword: d.must_change_password === true };
+export function parseProfile(data: unknown): { fullName: string | null; mustChangePassword: boolean; userId: string | null } {
+  const d = (data && typeof data === 'object' ? data : {}) as { full_name?: unknown; must_change_password?: unknown; user_id?: unknown };
+  return { fullName: typeof d.full_name === 'string' && d.full_name ? d.full_name : null, mustChangePassword: d.must_change_password === true,
+    userId: typeof d.user_id === 'string' ? d.user_id : null };
 }
 
 export function accessFor(st: PlatformState): PlatformAccess {
@@ -102,6 +104,8 @@ export interface Platform {
   signOut(): Promise<void>;
   /** P2-0028: сменить свой пароль (Auth) и снять флаг на сервере (pf_password_changed). */
   changePassword(password: string): Promise<SignInResult>;
+  /** P2-0028: своё ФИО (pf_set_full_name; сервер переписывает имя в моих записях Качества). */
+  setFullName(name: string): Promise<SignInResult>;
   chooseDemo(): void;
   setCompany(id: string): void;
   getState(): PlatformState;
@@ -116,7 +120,7 @@ export function createPlatform(deps: PlatformDeps): Platform {
 
   async function loadEmail(email: string): Promise<PlatformState> {
     let parsed = { isPlatformAdmin: false, companies: [] as PlatformCompany[] };
-    let profile = { fullName: null as string | null, mustChangePassword: false };
+    let profile = { fullName: null as string | null, mustChangePassword: false, userId: null as string | null };
     if (deps.rpc) {
       const [pl, pr] = await Promise.all([deps.rpc('pf_my_platform'), deps.rpc('pf_my_profile')]);
       if (!pl.error) parsed = parsePlatform(pl.data);
@@ -167,6 +171,16 @@ export function createPlatform(deps: PlatformDeps): Platform {
       if (!res.ok) return res;
       const { error } = await deps.rpc('pf_password_changed');
       if (error) return { ok: false, message: 'Пароль сменён, но сервер не принял отметку — войдите заново новым паролем' };
+      await refresh();
+      return { ok: true };
+    },
+    async setFullName(name) {
+      if (!deps.rpc || state.mode !== 'email' || !state.userId) return { ok: false, message: 'Сервер не настроен' };
+      const { error } = await deps.rpc('pf_set_full_name', { p_user: state.userId, p_full_name: name });
+      if (error) {
+        const m = String((error as { message?: unknown }).message || '');
+        return { ok: false, message: /[А-Яа-яЁё]/.test(m) ? m : 'Не удалось сохранить ФИО. Попробуйте ещё раз' };
+      }
       await refresh();
       return { ok: true };
     },

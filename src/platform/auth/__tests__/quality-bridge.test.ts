@@ -290,3 +290,16 @@ test('старая общая база компании: без неотправ
   assert.equal(switchDeviceCompany(sent, A, ua), true, 'отправил — переходим в свою базу');
   assert.equal(sent.getItem(QUALITY_DROP_DB_KEY), A);
 });
+
+test('P2-0028: имя инженера в Качестве — ФИО учётки; ФИО сменили — новые записи подписываются новым ФИО без перезагрузки', async () => {
+  const { d, win, store } = deps();
+  const sync = await applyQualityBridge({ ...st(), fullName: 'Иванов А.И.' }, d);
+  assert.equal(win.syncConfig.engineerName, 'Иванов А.И.');
+  assert.equal(win.appSettings.engineerName, 'Иванов А.И.');
+  assert.equal(sync!.engineerName, 'Иванов А.И.');
+  const again = await applyQualityBridge({ ...st(), fullName: 'Иванов Алексей Игоревич' }, d);
+  assert.equal(again, sync, 'тот же мост');
+  assert.equal(win.syncConfig.engineerName, 'Иванов Алексей Игоревич');
+  assert.equal(JSON.parse(store.getItem('rbi_sync_config')!).engineerName, 'Иванов Алексей Игоревич');
+  assert.equal(win.appSettings.engineerName, 'Иванов Алексей Игоревич');
+});

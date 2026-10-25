@@ -3,7 +3,8 @@
  * «Назначить роль», «Отозвать». Роль с правом «только своя фирма-подрядчик» (quality.scope.contractor, P2-0018) — с выбором
  * фирмы из «Контрагентов» (вид «подрядчик»); что видит сотрудник, проверяет сервер.
  * P2-0028: «Добавить сотрудника» (почта, ФИО, роль, объект) → временный пароль показывается один раз; «Сбросить пароль»
- * (только учётке, созданной компанией), «Отключить доступ». Всё — через pf_*; права и правила — на сервере (032).
+ * (только учётке, созданной компанией), «Отключить доступ», «Изменить ФИО» (032a: новое ФИО — и в старых записях Качества).
+ * Всё — через pf_*; права и правила — на сервере (032, 032a).
  */
 import { createElement as h, useEffect, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
@@ -59,6 +60,7 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
   const [temp, setTemp] = useState<TempPassword | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmPerson, setConfirmPerson] = useState('');   // «reset:<id>» | «disable:<id>»
+  const [editName, setEditName] = useState('');   // user_id, у которого правится ФИО
 
   async function load(): Promise<void> {
     const [m, r, p, k] = await Promise.all([api.listMembers(companyId), api.listRoles(companyId), api.listProjects(), api.listContractors(companyId)]);
@@ -122,6 +124,20 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
     await load();
   }
 
+  async function saveName(ev: FormEvent, p: Person): Promise<void> {
+    ev.preventDefault();
+    if (busy) return;
+    const name = ((ev.currentTarget as HTMLFormElement).elements.namedItem('full_name') as HTMLInputElement).value.trim();
+    if (!name) { setError('Укажите ФИО'); return; }
+    setBusy(true); setError(''); setNotice('');
+    const res = await api.setFullName(p.user_id, name);
+    setBusy(false);
+    if (!res.ok) { setError(res.message); return; }
+    setEditName('');
+    setNotice(`ФИО сохранено: ${name}` + (res.value ? ` — обновлено записей: ${res.value}` : ''));
+    await load();
+  }
+
   async function copyTemp(): Promise<void> {
     if (!temp) return;
     try { await navigator.clipboard.writeText(temp.password); setCopied(true); }
@@ -143,7 +159,14 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
   const label = (p: Person) => (p.name ? `${p.name} · ${p.email}` : p.email) + (p.email === me ? ' (вы)' : '');
 
   function personActions(p: Person): ReactElement | null {
-    if (p.email === me || p.disabled) return null;
+    if (p.disabled) return null;
+    if (editName === p.user_id) return h('form', { className: 'co-row co-name-form', 'data-testid': 'co-name-form', onSubmit: (e: FormEvent) => { void saveName(e, p); } },
+      h('input', { name: 'full_name', className: 'co-input', defaultValue: p.name, maxLength: 120, 'aria-label': 'ФИО' }),
+      h('button', { type: 'submit', className: 'pf-btn co-btn-sm', disabled: busy }, 'Сохранить'),
+      h('button', { type: 'button', className: 'pf-btn pf-btn--ghost co-btn-sm', onClick: () => setEditName('') }, 'Отмена'));
+    const rename = h('button', { key: 'n', type: 'button', className: 'pf-btn pf-btn--ghost co-btn-sm', 'data-testid': 'co-name-edit', disabled: busy,
+      onClick: () => { setEditName(p.user_id); setConfirmPerson(''); } }, 'Изменить ФИО');
+    if (p.email === me) return h('div', { className: 'co-person-actions' }, rename);
     const ask = (kind: string, text: string, yes: () => void) => confirmPerson === `${kind}:${p.user_id}`
       ? h('span', { key: kind, className: 'co-row' },
           h('button', { type: 'button', className: 'pf-btn co-danger co-btn-sm', 'data-testid': `co-${kind}-yes`, onClick: yes }, text),
@@ -151,6 +174,7 @@ export function CompanyMembers(props: { api: CompanyApi; companyId: string; me: 
       : null;
     return h('div', { className: 'co-person-actions' },
       ask('reset', 'Да, сбросить', () => { void resetPassword(p); }) || ask('disable', 'Да, отключить', () => { void disable(p); }) || [
+        rename,
         p.managed ? h('button', { key: 'r', type: 'button', className: 'pf-btn pf-btn--ghost co-btn-sm', 'data-testid': 'co-reset', disabled: busy,
           onClick: () => setConfirmPerson(`reset:${p.user_id}`) }, 'Сбросить пароль') : null,
         h('button', { key: 'd', type: 'button', className: 'pf-btn pf-btn--ghost co-btn-sm', 'data-testid': 'co-disable', disabled: busy,
@@ -245,6 +269,8 @@ export const COMPANY_MEMBERS_CSS = `
 .co-members .pf-field{min-width:0;max-width:100%}
 .co-members select.co-input{max-width:100%;min-width:0;text-overflow:ellipsis}
 .co-person{min-width:300px}
+.co-name-form{margin-top:6px;gap:6px}
+.co-name-form .co-input{flex:1 1 160px;min-width:0}
 .co-person-name{font-weight:700;color:var(--text-main)}
 .co-person-mail{font-size:12px;overflow-wrap:anywhere}
 .co-badge{display:inline-block;margin:4px 6px 0 0;padding:2px 8px;border-radius:999px;border:1px solid var(--card-border);font-size:11px;color:var(--text-muted)}

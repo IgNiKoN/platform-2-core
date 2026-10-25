@@ -45,7 +45,7 @@ test('профиль с сервера: ФИО и флаг «сменить па
   const st = await p.boot();
   assert.equal(st.fullName, 'Новиков Н.Н.');
   assert.equal(st.mustChangePassword, true);
-  assert.deepEqual(parseProfile(null), { fullName: null, mustChangePassword: false });
+  assert.deepEqual(parseProfile(null), { fullName: null, mustChangePassword: false, userId: null });
 });
 
 test('сменить пароль: Auth → pf_password_changed → состояние обновлено, флаг снят', async () => {
@@ -123,4 +123,46 @@ test('«Мой профиль»: ФИО и почта; «Сменить паро
   assert.deepEqual(changes, ['Длинный-пароль']);
   assert.equal(form.hidden, true);
   assert.equal(host.querySelector('[role=status]').hidden, false);
+});
+
+test('«Мой профиль»: «Изменить ФИО» → сохранить; отказ — текст; пусто — подсказка', async () => {
+  const host = win.document.createElement('div') as N;
+  const names: string[] = []; let fail = '';
+  renderMyProfile(host, { email: 'new@test.invalid', fullName: 'Новиков Н.Н.', change: async () => ({ ok: true }),
+    saveName: async (n) => { names.push(n); return fail ? { ok: false, message: fail } : { ok: true }; } });
+  const form = host.querySelector('[data-testid=p2-profile-name-form]');
+  assert.equal(form.hidden, true);
+  click(host.querySelector('[data-testid=p2-profile-name-edit]'));
+  assert.equal(form.hidden, false);
+  assert.equal(form.querySelector('[name=full_name]').value, 'Новиков Н.Н.');
+  form.querySelector('[name=full_name]').value = ' ';
+  submit(form); await settle();
+  assert.deepEqual(names, []);
+  assert.match(form.querySelector('[role=alert]').textContent, /Укажите ФИО/);
+  fail = 'ФИО: от 2 до 120 знаков, буквы';
+  form.querySelector('[name=full_name]').value = 'Новиков Николай';
+  submit(form); await settle();
+  assert.match(form.querySelector('[role=alert]').textContent, /от 2 до 120/);
+  fail = '';
+  submit(form); await settle();
+  assert.deepEqual(names, ['Новиков Николай', 'Новиков Николай']);
+  assert.equal(form.hidden, true);
+});
+
+test('setFullName: pf_set_full_name со своим id, состояние обновлено; без входа — отказ', async () => {
+  const calls: Array<[string, unknown]> = [];
+  let name = 'Новиков Н.Н.';
+  const p = createPlatform({
+    auth: { async signIn() { return { ok: true }; }, async signOut() {}, async getEmail() { return 'new@test.invalid'; }, async getAccess() { return []; } },
+    rpc: async (fn, args) => { calls.push([fn, args]);
+      if (fn === 'pf_set_full_name') { name = String((args as { p_full_name: string }).p_full_name); return { data: 2, error: null }; }
+      if (fn === 'pf_my_profile') return { data: { user_id: 'u-1', full_name: name, must_change_password: false }, error: null };
+      return { data: { companies: [] }, error: null }; },
+    storage: null, pinActive: () => false
+  });
+  assert.equal((await p.setFullName('X')).ok, false, 'до входа');
+  await p.boot();
+  assert.deepEqual(await p.setFullName('Новиков Николай'), { ok: true });
+  assert.deepEqual(calls.find((c) => c[0] === 'pf_set_full_name')![1], { p_user: 'u-1', p_full_name: 'Новиков Николай' });
+  assert.equal(p.getState().fullName, 'Новиков Николай');
 });

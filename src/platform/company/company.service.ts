@@ -45,6 +45,8 @@ export interface CompanyApi {
   addMember(companyId: string, email: string, fullName: string, roleId: string, projectId: string | null): Promise<Result<AddMemberResult>>;
   resetPassword(companyId: string, userId: string): Promise<Result<string>>;
   disableMember(companyId: string, userId: string): Promise<Result>;
+  /** P2-0028 (032a): ФИО сотрудника — сервер переписывает имя в его записях Качества. Возвращает число переписанных записей. */
+  setFullName(userId: string, fullName: string): Promise<Result<number>>;
 }
 
 /** Ошибка сервера → понятный текст. Русские сообщения сервера (миграция 005) показываются как есть. */
@@ -95,6 +97,7 @@ export function createCompanyService(): CompanyApi | null {
       return row ? { ok: true, value: row } : { ok: false, message: 'Не удалось выполнить. Попробуйте ещё раз' };
     },
     resetPassword: (co, u) => call<string>('pf_company_reset_password', { p_company: co, p_user: u }),
-    disableMember: (co, u) => call('pf_company_disable_member', { p_company: co, p_user: u })
+    disableMember: (co, u) => call('pf_company_disable_member', { p_company: co, p_user: u }),
+    setFullName: (u, name) => call<number>('pf_set_full_name', { p_user: u, p_full_name: name })
   };
 }

@@ -60,6 +60,12 @@ function fakeApi(opts: { fail?: string } = {}) {
         full_name: name, must_change_password: !existing, managed: !existing }];
       return { ok: true, value: { user_id: 'u-added', temp_password: existing ? null : 'Tmp7Pass9wordQ', created: !existing } };
     },
+    async setFullName(u, name) {
+      calls.push(`name:${u}:${name}`);
+      if (opts.fail) return { ok: false, message: opts.fail };
+      members = members.map((m) => m.user_id === u ? { ...m, full_name: name } : m);
+      return { ok: true, value: 3 };
+    },
     async resetPassword(co, u) { calls.push(`reset:${co}:${u}`); return res('NewTmp8Pass2xy'); },
     async disableMember(co, u) {
       calls.push(`disable:${co}:${u}`);
@@ -326,4 +332,22 @@ test('P2-0028: «Отключить доступ» — с подтвержден
   assert.match(el.textContent, /Доступ отключён: Петров П\.П\./);
   const opts = Array.from(el.querySelectorAll('select[name=user] option')).map((o: N) => o.value);
   assert.ok(!opts.includes('u-for'));
+});
+
+test('P2-0028: «Изменить ФИО» — сервер получает новое ФИО, список обновлён, сказано сколько записей обновлено; себе — тоже можно', async () => {
+  const { api, calls } = fakeApi();
+  const el = mount(api);
+  await tick();
+  assert.ok(el.querySelector('[data-user-id=u-adm] [data-testid=co-name-edit]'), 'своё ФИО — можно');
+  click(el.querySelector('[data-user-id=u-for] [data-testid=co-name-edit]'));
+  await tick();
+  const form = el.querySelector('[data-user-id=u-for] [data-testid=co-name-form]');
+  assert.equal(form.querySelector('[name=full_name]').value, 'Петров П.П.');
+  form.querySelector('[name=full_name]').value = 'Петров Пётр Петрович';
+  submit(form);
+  await tick();
+  assert.deepEqual(calls, ['name:u-for:Петров Пётр Петрович']);
+  assert.match(el.querySelector('[data-user-id=u-for]').textContent, /Петров Пётр Петрович/);
+  assert.match(el.textContent, /обновлено записей: 3/);
+  assert.equal(el.querySelector('[data-testid=co-name-form]'), null);
 });

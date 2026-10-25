@@ -46,7 +46,7 @@ function fakeApi(opts: { fail?: string } = {}) {
     async catalog() { return CATALOG; },
     async listRoles() { return roles; },
     async listMembers() { return []; },
-    async addMember() { return { ok: false, message: 'нет' }; }, async resetPassword() { return { ok: false, message: 'нет' }; }, async disableMember() { return res(null); },
+    async addMember() { return { ok: false, message: 'нет' }; }, async resetPassword() { return { ok: false, message: 'нет' }; }, async disableMember() { return res(null); }, async setFullName() { return res(0); },
     async listProjects() { return []; },
     async listAudit() { return []; },
     async createRole(src, name) {

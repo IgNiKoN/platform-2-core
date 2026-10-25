@@ -1,7 +1,7 @@
 /**
  * P2-0028: смена пароля без React (файл входа маленький — как login-screen.ts).
  * renderPasswordScreen — «Придумайте пароль» поверх оболочки после входа временным паролем: дальше не пускает, только «Выйти».
- * renderMyProfile — «Настройки → Платформа → Мой профиль»: ФИО, почта, «Сменить пароль».
+ * renderMyProfile — «Настройки → Платформа → Мой профиль»: ФИО («Изменить ФИО»), почта, «Сменить пароль».
  * Правило пароля на экране — checkNewPassword; сервер (GoTrue) проверяет своё, флаг снимает pf_password_changed.
  */
 import { checkNewPassword } from './auth.service.ts';
@@ -89,6 +89,8 @@ export interface MyProfileOpts {
   email: string;
   fullName: string | null;
   change: (password: string) => Promise<SignInResult>;
+  /** Сохранить своё ФИО (сервер переписывает имя в моих записях). Нет — ФИО только показывается. */
+  saveName?: (name: string) => Promise<SignInResult>;
 }
 
 /** «Мой профиль»: ФИО, почта (логин — меняет администратор), «Сменить пароль». */
@@ -111,6 +113,34 @@ export function renderMyProfile(host: HTMLElement, opts: MyProfileOpts): () => v
   const row = el(doc, 'div', { class: 'p2-profile-row' });
   row.append(open);
   box.append(row, form, ok);
+  if (opts.saveName) {
+    const save = opts.saveName;
+    const editBtn = el(doc, 'button', { type: 'button', class: 'p2-profile-btn', 'data-testid': 'p2-profile-name-edit' }, 'Изменить ФИО');
+    const nameForm = el(doc, 'form', { 'data-testid': 'p2-profile-name-form', novalidate: '' });
+    const lab = el(doc, 'label', {}, 'ФИО');
+    lab.appendChild(el(doc, 'input', { name: 'full_name', maxlength: '120', autocomplete: 'name', value: opts.fullName || '' }));
+    const nerr = el(doc, 'div', { class: 'p2-profile-error', role: 'alert', hidden: '' });
+    const nsubmit = el(doc, 'button', { type: 'submit', class: 'p2-profile-btn p2-profile-btn--main' }, 'Сохранить ФИО');
+    const ncancel = el(doc, 'button', { type: 'button', class: 'p2-profile-btn' }, 'Отмена');
+    nameForm.append(lab, nerr, nsubmit, ncancel);
+    nameForm.hidden = true;
+    editBtn.addEventListener('click', () => { nameForm.hidden = false; editBtn.hidden = true; ok.hidden = true; });
+    ncancel.addEventListener('click', () => { nameForm.hidden = true; editBtn.hidden = false; nerr.hidden = true; });
+    nameForm.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      if (nsubmit.disabled) return;
+      const v = (nameForm.elements.namedItem('full_name') as HTMLInputElement).value.trim();
+      if (v.length < 2) { nerr.textContent = 'Укажите ФИО'; nerr.hidden = false; return; }
+      nsubmit.disabled = true; nerr.hidden = true;
+      void save(v).then((res) => {
+        nsubmit.disabled = false;
+        if (!res.ok) { nerr.textContent = res.message; nerr.hidden = false; return; }
+        nameForm.hidden = true; editBtn.hidden = false;
+      });
+    });
+    row.prepend(editBtn);
+    box.insertBefore(nameForm, form);
+  }
   host.appendChild(box);
   return () => host.replaceChildren();
 }

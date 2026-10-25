@@ -851,7 +851,13 @@ else {
     check('032: после сброса прежний сеанс не продлевается', rf.status >= 400, `статус ${rf.status}`);
     const t2 = (await login(email, temp2)).json.access_token;
     check('032: после сброса флаг снова стоит', (await j(await rpc('pf_my_profile', {}, t2)))?.must_change_password === true);
-    check('032: прораб не отключает', !(await rpc('pf_company_disable_member', { p_company: cA, p_user: uid }, tok.alfaForeman)).ok);
+    // 032a: ФИО — сам себе, администратор; прораб чужое не меняет
+    const nm = await rpc('pf_set_full_name', { p_user: uid, p_full_name: 'Тестов Тест Тестович' }, t2);
+    check('032a: сотрудник меняет своё ФИО', nm.ok, `статус ${nm.status}`);
+    check('032a: прораб не меняет чужое ФИО', !(await rpc('pf_set_full_name', { p_user: uid, p_full_name: 'Взлом В.В.' }, tok.alfaForeman)).ok);
+    check('032a: администратор меняет ФИО сотрудника', (await rpc('pf_set_full_name', { p_user: uid, p_full_name: 'Тестов Т.Т.' }, tok.alfaAdmin)).ok);
+    check('032a: pf_my_profile — новое ФИО', (await j(await rpc('pf_my_profile', {}, t2)))?.full_name === 'Тестов Т.Т.');
+    check('032: прораб не отключает',!(await rpc('pf_company_disable_member', { p_company: cA, p_user: uid }, tok.alfaForeman)).ok);
     check('032: админ отключил доступ', (await rpc('pf_company_disable_member', { p_company: cA, p_user: uid }, tok.alfaAdmin)).ok);
     const l3 = await login(email, temp2);
     check('032: отключённый не входит (400)', l3.status === 400 && !l3.json.access_token, `статус ${l3.status}`);

@@ -240,7 +240,8 @@ export const api = {
     if (host.dataset.p2Profile === key && host.firstChild) return;   // тот же человек — не перерисовывать (сообщение «Пароль сменён» остаётся)
     host.dataset.p2Profile = key;
     ensureStyle();
-    drawMyProfile(host, { email: st.email, fullName: st.fullName || null, change: (pw) => getPlatform().changePassword(pw) });
+    drawMyProfile(host, { email: st.email, fullName: st.fullName || null, change: (pw) => getPlatform().changePassword(pw),
+      saveName: st.userId ? (n) => getPlatform().setFullName(n) : undefined });
   },
   /** Вызов функции сервера от имени вошедшего (одно соединение платформы; раздел администрирования своего клиента не создаёт). */
   rpc: async (fn: string, args?: Record<string, unknown>): Promise<{ data: unknown; error: { message: string; code?: string } | null }> => {

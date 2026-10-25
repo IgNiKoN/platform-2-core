@@ -214,6 +214,8 @@ export interface QualitySync {
   projectId: string | null;
   role: string;
   actions: string[];
+  /** P2-0028: имя инженера в записях Качества — ФИО учётки (без ФИО — почта). */
+  engineerName?: string;
   selectProject(id: string): Promise<void>;
 }
 
@@ -277,7 +279,17 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
   const rbi = (deps.win.RBI = deps.win.RBI || {});
   if (!company || !deps.platformClient || !deps.cfg || !st.email) { rbi.qualitySync = null; return null; }
   const prev = rbi.qualitySync as QualitySync | null | undefined;
-  if (prev && prev.companyId === company) return prev;
+  if (prev && prev.companyId === company) {
+    // P2-0028: ФИО сменили (Мой профиль / администратор) — новые записи сразу подписываются новым ФИО
+    const nm = (st.fullName || '').trim() || st.email;
+    if (prev.engineerName !== nm) {
+      prev.engineerName = nm;
+      const c = deps.win.syncConfig;
+      if (c) { c.engineerName = nm; deps.store.setItem('rbi_sync_config', JSON.stringify(c)); }
+      if (deps.win.appSettings) pinAccess(deps.win.appSettings, { engineerName: nm });
+    }
+    return prev;
+  }
 
   wireStorageToken(deps);
   const client = createQualityClient(deps.createClient, deps.cfg, company, deps.platformClient);
@@ -295,12 +307,14 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
     : projects.length === 1 ? projects[0].id : null;
   const cur = st.companies.find((c) => c.id === company);
   const email = st.email;
+  // P2-0028: имя инженера в записях Качества — ФИО учётки (ядро); без ФИО — почта, как раньше.
+  const engineerName = (st.fullName || '').trim() || email;
 
   const applyRole = (a: QualityAccess): void => {
     sync.actions = a.actions;
     sync.role = roleFor(a.actions);
     // Фирма подрядчика — из назначения роли (020); объекты экрану не передаются: их держит сервер.
-    if (deps.win.appSettings) pinAccess(deps.win.appSettings, { userRole: sync.role, cloudStatus: 'approved', engineerName: email,
+    if (deps.win.appSettings) pinAccess(deps.win.appSettings, { userRole: sync.role, cloudStatus: 'approved', engineerName,
       contractorName: a.contractor, assignedContractor: a.contractor, assignedProjects: [], assigned_projects: [] });
     // Руководящим ролям экрана (Админ, Директор) — режим «Вся команда», как делал профиль старого Качества (sync-engine).
     const c = deps.win.syncConfig;
@@ -312,7 +326,7 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
   const writeConfig = (pid: string | null): void => {
     const c = (deps.win.syncConfig = deps.win.syncConfig || {});
     c.enabled = !!pid;
-    c.engineerName = email;
+    c.engineerName = engineerName;
     c.projectCode = pid || '';
     c.pinHash = null;
     if (!c.syncMode) c.syncMode = 'personal';
@@ -324,6 +338,7 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
     companyId: company,
     companyName: cur ? cur.name : '',
     email,
+    engineerName,
     projects,
     projectId,
     role: 'guest',
@@ -334,7 +349,7 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
       sync.projectId = id;
       applyRole(await loadAccess(id));
       // Прежний путь подключения (очистка данных старого объекта по подтверждению, полный pull) — без PIN.
-      if (deps.win.applySyncConnect) await deps.win.applySyncConnect(email, id, null);
+      if (deps.win.applySyncConnect) await deps.win.applySyncConnect(engineerName, id, null);
       else writeConfig(id);
       if (deps.win.initSync) await deps.win.initSync();
     }
