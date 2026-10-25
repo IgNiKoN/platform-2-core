@@ -1792,6 +1792,7 @@
   "quality.game.toast.audit_mode": "⚖️ Režim audita: proveravate rad inspektora {name}",
   "quality.game.toast.audit_ready": "✅ Plan audita spreman! Pronađene anomalije.",
   "quality.game.toast.bad_pin": "❌ Pogrešan PIN",
+  "quality.game.toast.admin_by_role": "🔒 Dostupno administratoru kompanije (uloga u „Kompanija → Zaposleni”)",
   "quality.game.toast.block_fail": "❌ Nije uspelo blokiranje",
   "quality.game.toast.cloud_off": "❌ Oblak nije povezan",
   "quality.game.toast.cloud_off_plain": "Oblak nije povezan",

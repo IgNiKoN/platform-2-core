@@ -207,6 +207,9 @@ export function companyStorage(storage: StorageLike, companyId: string): Storage
   };
 }
 
+/** P2-0037: права компании в Качестве пришли / сменились (RBI.qualitySync.actions) — Настройки перечитывают «Админ Качества». */
+export const QUALITY_ACCESS_EVENT = 'rbi:quality-access';
+
 export interface QualityProject { id: string; name: string }
 export interface QualitySync {
   active: true;
@@ -327,6 +330,8 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
       c.syncMode = 'full';
       deps.store.setItem('rbi_sync_config', JSON.stringify(c));
     }
+    const ev = (deps.win as { dispatchEvent?: (e: Event) => boolean }).dispatchEvent;
+    if (typeof ev === 'function') ev.call(deps.win, new Event(QUALITY_ACCESS_EVENT));
   };
   const writeConfig = (pid: string | null): void => {
     const c = (deps.win.syncConfig = deps.win.syncConfig || {});

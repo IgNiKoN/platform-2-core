@@ -1792,6 +1792,7 @@
   "quality.game.toast.audit_mode": "⚖️ Audit mode: you are reviewing inspector {name}",
   "quality.game.toast.audit_ready": "✅ Audit plan ready! Anomalies found.",
   "quality.game.toast.bad_pin": "❌ Invalid PIN",
+  "quality.game.toast.admin_by_role": "🔒 Available to the company administrator (role in “Company → Staff”)",
   "quality.game.toast.block_fail": "❌ Failed to block user",
   "quality.game.toast.cloud_off": "❌ Cloud not connected",
   "quality.game.toast.cloud_off_plain": "Cloud not connected",
