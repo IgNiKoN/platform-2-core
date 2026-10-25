@@ -15,7 +15,10 @@ const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 function company(id: string, name: string, planfact: boolean): AdminCompany {
   return { id, name, is_test: true, created_at: '', people: 3, modules: [
     { code: 'planfact', name: 'План/Факт', managed: true, enabled: planfact },
-    { code: 'quality', name: 'Качество', managed: false, enabled: null }
+    { code: 'quality', name: 'Качество', managed: true, enabled: true },
+    { code: 'construction', name: 'Стройконтроль', managed: true, enabled: true },
+    { code: 'knowledge', name: 'База знаний', managed: true, enabled: true },
+    { code: 'ai', name: 'ИИ-помощник', managed: true, enabled: false }
   ] };
 }
 
@@ -35,7 +38,7 @@ function fakeApi(over: Partial<AdminApi> = {}) {
 function host(): N { const el = win.document.createElement('div'); win.document.body.appendChild(el); return el; }
 function submit(form: N): void { form.dispatchEvent(new win.Event('submit', { cancelable: true })); }
 
-test('список компаний: название, тестовая, людей; «План/Факт» — выключатель; «Качество» — с пометкой, без выключателя', async () => {
+test('список компаний: название, тестовая, людей; 5 выключателей модулей (P2-0031), у Базы знаний и ИИ — пояснение', async () => {
   const el = host();
   renderAdminScreen(el, { api: fakeApi().api });
   await tick();
@@ -45,8 +48,29 @@ test('список компаний: название, тестовая, люд�
   const pf = cards[0].querySelector('[data-module=planfact] input[type=checkbox]');
   assert.equal(pf.checked, true);
   assert.equal(cards[1].querySelector('[data-module=planfact] input[type=checkbox]').checked, false);
-  assert.equal(cards[0].querySelector('[data-module=quality] input'), null);
-  assert.match(cards[0].querySelector('[data-module=quality]').textContent, /старому входу \(PIN\)/);
+  const names = Array.from(cards[0].querySelectorAll('[data-module]')).map((x: N) => x.getAttribute('data-module'));
+  assert.deepEqual(names, ['planfact', 'quality', 'construction', 'knowledge', 'ai']);
+  assert.equal(cards[0].querySelectorAll('[data-module] input[type=checkbox]').length, 5);
+  assert.equal(cards[0].querySelector('[data-module=ai] input').checked, false);
+  assert.match(cards[0].querySelector('[data-module=ai] input').getAttribute('aria-label'), /ИИ-помощник у компании Альфа/);
+  assert.match(cards[0].querySelector('[data-module=knowledge]').textContent, /вместе с «Качеством»/);
+  assert.match(cards[0].querySelector('[data-module=ai]').textContent, /галочка «ИИ-помощник» в роли/);
+  assert.equal(cards[0].querySelector('[data-module=quality] .pa-mod-hint'), null);
+  assert.ok(!/старому входу/.test(el.textContent));
+});
+
+test('выключатель «ИИ-помощник»: вызов сервера с кодом ai только для этой компании', async () => {
+  const { api, calls } = fakeApi();
+  const el = host();
+  renderAdminScreen(el, { api });
+  await tick();
+  const box = el.querySelector('[data-company=d] [data-module=ai] input');
+  box.checked = true;
+  box.dispatchEvent(new win.Event('change'));
+  await tick();
+  assert.ok(calls.includes('module:d:ai:true'));
+  assert.ok(!calls.some((c) => c.startsWith('module:a:')));
+  assert.match(el.querySelector('[data-company=d]').textContent, /«ИИ-помощник» включён/);
 });
 
 test('выключатель модуля: вызов сервера, сообщение, «кто я» перечитывается; отказ сервера — выключатель возвращается', async () => {

@@ -1,13 +1,13 @@
 function j(r) {
   return r.code === "42501" ? "Только для администратора платформы" : /failed to fetch|network|load failed/i.test(r.message) ? "Нет связи с сервером. Попробуйте позже" : /[а-яё]/i.test(r.message) ? r.message : "Не удалось выполнить. Попробуйте ещё раз";
 }
-function T(r) {
+function H(r) {
   const o = async (e, t, n) => {
     try {
-      const { data: i, error: p } = await r(e, t);
-      return p ? { ok: !1, message: j(p) } : { ok: !0, value: n(i) };
-    } catch (i) {
-      return { ok: !1, message: j({ message: i instanceof Error ? i.message : "" }) };
+      const { data: d, error: p } = await r(e, t);
+      return p ? { ok: !1, message: j(p) } : { ok: !0, value: n(d) };
+    } catch (d) {
+      return { ok: !1, message: j({ message: d instanceof Error ? d.message : "" }) };
     }
   };
   return {
@@ -31,7 +31,7 @@ function T(r) {
     })
   };
 }
-const O = `
+const R = `
 .pa-root{display:flex;flex-direction:column;gap:12px;color:var(--text-main)}
 .pa-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .pa-title{margin:0;font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.02em}
@@ -48,41 +48,44 @@ const O = `
 .pa-mods{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--card-border);padding-top:10px}
 .pa-mod{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;min-height:44px}
 .pa-mod-name{font-size:14px;font-weight:700}
-.pa-mod-legacy{flex:1 1 100%;font-size:11px;color:var(--text-muted);margin-top:-6px}
+.pa-mod-hint{flex:1 1 100%;font-size:11px;color:var(--text-muted);margin-top:-6px}
 .pa-switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;cursor:pointer;min-height:44px}
 .pa-switch input{width:22px;height:22px}
 .pa-msg{font-size:13px}
 .pa-msg[data-kind="error"]{color:var(--color-red,#dc2626)}
 .pa-msg[data-kind="ok"]{color:var(--color-green,#16a34a)}
 .pa-root [hidden]{display:none!important}
-`;
+`, B = {
+  knowledge: "Работает вместе с «Качеством»: документы и чек-листы компании, видят все с доступом к Качеству.",
+  ai: "Работает вместе с «Качеством». Кому именно — галочка «ИИ-помощник» в роли (Компания → Роли)."
+};
 function a(r, o, e = {}, t) {
   const n = r.createElement(o);
-  for (const [i, p] of Object.entries(e)) n.setAttribute(i, p);
+  for (const [d, p] of Object.entries(e)) n.setAttribute(d, p);
   return t !== void 0 && (n.textContent = t), n;
 }
-function $(r) {
+function M(r) {
   const o = a(r, "div", { class: "pa-msg", role: "status", hidden: "" });
   return o.show = (e, t) => {
     o.dataset.kind = e, o.textContent = t, o.hidden = !1;
   }, o;
 }
-function Q(r, o) {
+function U(r, o) {
   const e = r.ownerDocument, { api: t } = o;
   let n = !0;
-  const i = a(e, "div", { class: "pa-root", "data-testid": "pa-root" });
-  r.replaceChildren(i);
-  const p = a(e, "form", { class: "pa-card", "data-testid": "pa-create", novalidate: "" }), w = a(e, "input", { class: "pa-input", name: "name", placeholder: "Название компании", "aria-label": "Название компании" }), y = a(e, "input", { type: "checkbox", name: "is_test" }), I = a(e, "label", { class: "pa-check" });
-  I.append(y, e.createTextNode("тестовая"));
-  const k = a(e, "button", { type: "submit", class: "pa-btn" }, "Создать компанию"), b = $(e), M = a(e, "div", { class: "pa-row" });
-  M.append(w, I, k), p.append(
+  const d = a(e, "div", { class: "pa-root", "data-testid": "pa-root" });
+  r.replaceChildren(d);
+  const p = a(e, "form", { class: "pa-card", "data-testid": "pa-create", novalidate: "" }), w = a(e, "input", { class: "pa-input", name: "name", placeholder: "Название компании", "aria-label": "Название компании" }), y = a(e, "input", { type: "checkbox", name: "is_test" }), $ = a(e, "label", { class: "pa-check" });
+  $.append(y, e.createTextNode("тестовая"));
+  const k = a(e, "button", { type: "submit", class: "pa-btn" }, "Создать компанию"), b = M(e), D = a(e, "div", { class: "pa-row" });
+  D.append(w, $, k), p.append(
     a(e, "h3", { class: "pa-title" }, "Новая компания"),
     a(e, "div", { class: "pa-muted" }, "При создании у компании появляются 9 ролей-шаблонов и включается «План/Факт». Людей заводит администратор компании."),
-    M,
+    D,
     b
   );
-  const u = a(e, "div", { class: "pa-root", "data-testid": "pa-list" }), C = $(e);
-  i.append(
+  const u = a(e, "div", { class: "pa-root", "data-testid": "pa-list" }), C = M(e);
+  d.append(
     a(e, "div", { class: "pa-muted" }, "Компании платформы и их модули. Раздел видит только администратор платформы; каждое изменение пишется в журнал."),
     p,
     C,
@@ -95,36 +98,35 @@ function Q(r, o) {
         u.replaceChildren(), C.show("error", s.message);
         return;
       }
-      u.replaceChildren(...s.value.map(P)), s.value.length || u.appendChild(a(e, "div", { class: "pa-muted" }, "Компаний пока нет."));
+      u.replaceChildren(...s.value.map(O)), s.value.length || u.appendChild(a(e, "div", { class: "pa-muted" }, "Компаний пока нет."));
     }
   }
-  function P(s) {
-    const m = a(e, "section", { class: "pa-card", "data-company": s.id }), f = a(e, "div", { class: "pa-head" }), z = a(e, "div", { class: "pa-row" });
-    z.appendChild(a(e, "span", { class: "pa-name" }, s.name)), s.is_test && z.appendChild(a(e, "span", { class: "pa-badge" }, "тестовая")), f.append(z, a(e, "span", { class: "pa-muted" }, "людей: " + s.people));
-    const h = $(e), D = a(e, "div", { class: "pa-mods" });
-    for (const d of s.modules) {
-      const l = a(e, "div", { class: "pa-mod", "data-module": d.code });
-      if (l.appendChild(a(e, "span", { class: "pa-mod-name" }, d.name)), d.managed) {
-        const g = a(e, "label", { class: "pa-switch" }), c = a(e, "input", { type: "checkbox", "aria-label": `${d.name} у компании ${s.name}` });
-        c.checked = d.enabled === !0;
+  function O(s) {
+    const m = a(e, "section", { class: "pa-card", "data-company": s.id }), f = a(e, "div", { class: "pa-head" }), S = a(e, "div", { class: "pa-row" });
+    S.appendChild(a(e, "span", { class: "pa-name" }, s.name)), s.is_test && S.appendChild(a(e, "span", { class: "pa-badge" }, "тестовая")), f.append(S, a(e, "span", { class: "pa-muted" }, "людей: " + s.people));
+    const h = M(e), I = a(e, "div", { class: "pa-mods" });
+    for (const i of s.modules) {
+      const l = a(e, "div", { class: "pa-mod", "data-module": i.code });
+      if (l.appendChild(a(e, "span", { class: "pa-mod-name" }, i.name)), i.managed) {
+        const g = a(e, "label", { class: "pa-switch" }), c = a(e, "input", { type: "checkbox", "aria-label": `${i.name} у компании ${s.name}` });
+        c.checked = i.enabled === !0;
         const L = a(e, "span", {}, c.checked ? "включён" : "выключен");
         c.addEventListener("change", () => {
           const v = c.checked;
-          c.disabled = !0, t.setModule(s.id, d.code, v).then((N) => {
+          c.disabled = !0, t.setModule(s.id, i.code, v).then((N) => {
             if (c.disabled = !1, !N.ok) {
               c.checked = !v, h.show("error", N.message);
               return;
             }
-            L.textContent = v ? "включён" : "выключен", h.show("ok", `«${d.name}» ${v ? "включён" : "выключен"}. Люди компании увидят изменение после обновления страницы.`), o.onChanged && o.onChanged();
+            L.textContent = v ? "включён" : "выключен", h.show("ok", `«${i.name}» ${v ? "включён" : "выключен"}. Люди компании увидят изменение после обновления страницы.`), o.onChanged && o.onChanged();
           });
         }), g.append(c, L), l.appendChild(g);
-      } else
-        l.appendChild(a(e, "div", { class: "pa-mod-legacy" }, "работает по старому входу (PIN), управление — после переноса Quality в Platform 2.0"));
-      D.appendChild(l);
+      }
+      B[i.code] && l.appendChild(a(e, "div", { class: "pa-mod-hint" }, B[i.code])), I.appendChild(l);
     }
-    const S = a(e, "form", { class: "pa-row", "data-testid": "pa-admin", novalidate: "" }), A = a(e, "input", { class: "pa-input", type: "email", name: "email", inputmode: "email", placeholder: "почта существующей учётки", "aria-label": `Почта администратора компании ${s.name}` }), E = a(e, "button", { type: "submit", class: "pa-btn" }, "Назначить администратора");
-    return S.append(A, E), S.addEventListener("submit", (d) => {
-      d.preventDefault();
+    const z = a(e, "form", { class: "pa-row", "data-testid": "pa-admin", novalidate: "" }), A = a(e, "input", { class: "pa-input", type: "email", name: "email", inputmode: "email", placeholder: "почта существующей учётки", "aria-label": `Почта администратора компании ${s.name}` }), E = a(e, "button", { type: "submit", class: "pa-btn" }, "Назначить администратора");
+    return z.append(A, E), z.addEventListener("submit", (i) => {
+      i.preventDefault();
       const l = A.value.trim();
       if (!l) {
         h.show("error", "Введите почту");
@@ -137,7 +139,7 @@ function Q(r, o) {
         }
         A.value = "", _().then(() => C.show("ok", `${l} — администратор компании «${s.name}».`));
       });
-    }), m.append(f, D, a(e, "div", { class: "pa-muted" }, "Администратор компании"), S, h), m;
+    }), m.append(f, I, a(e, "div", { class: "pa-muted" }, "Администратор компании"), z, h), m;
   }
   return p.addEventListener("submit", (s) => {
     s.preventDefault();
@@ -157,34 +159,34 @@ function Q(r, o) {
     n = !1, r.replaceChildren();
   };
 }
-const B = "platform-admin-style";
+const T = "platform-admin-style";
 let x = null;
-function Y(r) {
+function q(r) {
   var t;
-  R();
+  Y();
   const o = r.ownerDocument;
-  if (!o.getElementById(B)) {
+  if (!o.getElementById(T)) {
     const n = o.createElement("style");
-    n.id = B, n.textContent = O, o.head.appendChild(n);
+    n.id = T, n.textContent = R, o.head.appendChild(n);
   }
   const e = (t = window.RBI) == null ? void 0 : t.platform2;
   if (!e || typeof e.rpc != "function") {
     r.textContent = "Вход платформы не загружен.";
     return;
   }
-  x = Q(r, { api: T(e.rpc), onChanged: () => {
+  x = U(r, { api: H(e.rpc), onChanged: () => {
     e.refresh && e.refresh();
   } });
 }
-function R() {
+function Y() {
   x && x(), x = null;
 }
-function q() {
+function F() {
   return x !== null;
 }
 export {
-  q as isMounted,
-  Y as mount,
-  R as unmount
+  F as isMounted,
+  q as mount,
+  Y as unmount
 };
 //# sourceMappingURL=platform-admin.js.map

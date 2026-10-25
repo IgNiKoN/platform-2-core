@@ -1800,6 +1800,20 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         }
     }
     window.addEventListener('rbi:platform-access', _syncP2Account);
+    /** P2-0031: модуль «ИИ-помощник» выключен у компании (вход по почте) — переключатель ИИ недоступен и выключен, пояснение вместо него. */
+    function _syncAiCompanyOff() {
+        var box = document.getElementById('set-ai-enabled');
+        if (!box) return;
+        var sh = window.RBI && window.RBI.services && window.RBI.services.shell;
+        var off = !!(sh && typeof sh.legacyModuleAllowed === 'function' && !sh.legacyModuleAllowed('ai'));
+        box.disabled = off;
+        var note = document.getElementById('set-ai-company-off');
+        if (note) note.classList.toggle('hidden', !off);
+        box.checked = !!_getSetting('aiEnabled');
+        var body = document.getElementById('ai-settings-body');
+        if (body) body.style.display = _getSetting('aiEnabled') ? 'block' : 'none';
+    }
+    window.addEventListener('rbi:platform-access', _syncAiCompanyOff);
     /** «Администрирование платформы» — файл раздела скачивается только администратору платформы (js/dist/platform-admin/). */
     var _platformAdminBundle = null;
     function _mountPlatformAdminPanel(on) {
@@ -2115,16 +2129,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (document.getElementById('set-task-month')) document.getElementById('set-task-month').value = _getSetting('taskMonthReportDay') || '1';
 
         // 3.5. AI-настройки
-        if (document.getElementById('set-ai-enabled')) {
-            // P2-0031: модуль «ИИ-помощник» выключен у компании — переключатель недоступен, пояснение вместо него
-            var shAi = window.RBI && window.RBI.services && window.RBI.services.shell;
-            var aiCompanyOff = !!(shAi && typeof shAi.legacyModuleAllowed === 'function' && !shAi.legacyModuleAllowed('ai'));
-            document.getElementById('set-ai-enabled').disabled = aiCompanyOff;
-            var aiOffNote = document.getElementById('set-ai-company-off');
-            if (aiOffNote) aiOffNote.classList.toggle('hidden', !aiCompanyOff);
-            document.getElementById('set-ai-enabled').checked = _getSetting('aiEnabled');
-            document.getElementById('ai-settings-body').style.display = _getSetting('aiEnabled') ? 'block' : 'none';
-        }
+        if (document.getElementById('set-ai-enabled')) _syncAiCompanyOff();
         if (document.getElementById('set-ai-key')) document.getElementById('set-ai-key').value = _getSetting('apiKey') || '';
 
         var aiModes = document.getElementsByName('ai-mode');

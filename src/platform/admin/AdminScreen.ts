@@ -23,7 +23,7 @@ export const ADMIN_CSS = `
 .pa-mods{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--card-border);padding-top:10px}
 .pa-mod{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;min-height:44px}
 .pa-mod-name{font-size:14px;font-weight:700}
-.pa-mod-legacy{flex:1 1 100%;font-size:11px;color:var(--text-muted);margin-top:-6px}
+.pa-mod-hint{flex:1 1 100%;font-size:11px;color:var(--text-muted);margin-top:-6px}
 .pa-switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;cursor:pointer;min-height:44px}
 .pa-switch input{width:22px;height:22px}
 .pa-msg{font-size:13px}
@@ -31,6 +31,12 @@ export const ADMIN_CSS = `
 .pa-msg[data-kind="ok"]{color:var(--color-green,#16a34a)}
 .pa-root [hidden]{display:none!important}
 `;
+
+/** P2-0031: пояснения к выключателям модулей, которые живут внутри «Качества» (038: без включённого Качества их нет). */
+const MODULE_HINTS: Record<string, string> = {
+  knowledge: 'Работает вместе с «Качеством»: документы и чек-листы компании, видят все с доступом к Качеству.',
+  ai: 'Работает вместе с «Качеством». Кому именно — галочка «ИИ-помощник» в роли (Компания → Роли).'
+};
 
 function el<K extends keyof HTMLElementTagNameMap>(doc: Document, tag: K, attrs: Record<string, string> = {}, text?: string): HTMLElementTagNameMap[K] {
   const e = doc.createElement(tag);
@@ -116,9 +122,8 @@ export function renderAdminScreen(host: HTMLElement, opts: AdminScreenOpts): () 
         });
         sw.append(box, state);
         line.appendChild(sw);
-      } else {
-        line.appendChild(el(doc, 'div', { class: 'pa-mod-legacy' }, 'работает по старому входу (PIN), управление — после переноса Quality в Platform 2.0'));
       }
+      if (MODULE_HINTS[m.code]) line.appendChild(el(doc, 'div', { class: 'pa-mod-hint' }, MODULE_HINTS[m.code]));
       mods.appendChild(line);
     }
 
