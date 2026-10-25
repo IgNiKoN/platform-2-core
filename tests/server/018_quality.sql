@@ -54,6 +54,7 @@ begin
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[ua, ua_eco, ua_qc, ub]) u;
   insert into core.companies(id, name, is_test) values (ca, 'Альфа 018', true), (cb, 'Бета 018', true);
   insert into core.company_members(company_id, user_id) values (ca, ua), (ca, ua_eco), (ca, ua_qc), (cb, ub);
+  perform set_config('quality.object_sync', '1', true);   -- структура и права таблиц «как до 039b/039c»: без синхронизации объектов
   insert into core.projects(id, company_id, name) values (pa, ca, 'Спутник'), (pb, cb, 'Проект Б');
   insert into core.company_modules(company_id, module, enabled)
     select c, m, true from unnest(array[ca, cb]) c, unnest(array['quality', 'construction']) m
