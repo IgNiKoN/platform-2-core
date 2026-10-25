@@ -215,6 +215,7 @@ begin
    where action like 'quality.%' or action like 'construction.%';
   -- после 033c: + справочник объектов и дерево локаций у шаблона «Администратор компании»
   s := replace(replace(s, 'company_admin:construction.objects.manage ', ''), 'company_admin:quality.objects.manage ', '');
+  s := replace(replace(s, 'company_admin:quality.ai ', ''), 'qc_engineer:quality.ai ', '');  -- после 034
   res := res || pg_temp.t(s = 'company_admin:construction.edit company_admin:construction.manage company_admin:construction.view '
     || 'company_admin:quality.edit company_admin:quality.manage company_admin:quality.scope.company company_admin:quality.view '
     || 'contractor_rep:construction.edit contractor_rep:construction.view contractor_rep:quality.scope.contractor contractor_rep:quality.view '

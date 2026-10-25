@@ -36,8 +36,9 @@ begin
 
   perform pg_temp.as_user(ua, ca); j := pg_temp.acc(null);
   -- после 020: + quality.scope.company у админа; прораб — только просмотр
-  -- после 033c: + справочник объектов и дерево локаций у админа (quality.objects.manage, construction.objects.manage) — вычитаются
-  res := res || pg_temp.t((j -> 'actions') - 'quality.objects.manage' - 'construction.objects.manage' = case
+  -- после 033c: + справочник объектов и дерево локаций у админа (quality.objects.manage, construction.objects.manage) — вычитаются;
+  -- после 034: + ИИ-помощник (quality.ai) — вычитается
+  res := res || pg_temp.t((j -> 'actions') - 'quality.objects.manage' - 'construction.objects.manage' - 'quality.ai' = case
       when to_regprocedure('quality.row_visible(uuid,uuid,text[],text,uuid,uuid,text,text)') is not null then '["construction.edit", "construction.manage", "construction.view", "quality.edit", "quality.manage", "quality.scope.company", "quality.view"]'::jsonb
       else '["construction.edit", "construction.manage", "construction.view", "quality.edit", "quality.manage", "quality.view"]' end
     and j -> 'templates' = '["company_admin"]' and j ->> 'company_id' = ca::text, 'админ: все 6 действий, шаблон company_admin: ' || j::text);

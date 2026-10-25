@@ -62,10 +62,10 @@ begin
                           || 'p5@test.invalid:назначено | p6@test.invalid:пропущен | p7@test.invalid:пропущен', 'применение: ' || s);
   res := res || pg_temp.t((select string_agg(r2.name || '=' || (select string_agg(rp.action, ',' order by rp.action) from core.company_role_permissions rp where rp.role_id = r2.id), ' ; ' order by r2.name)
                              from core.company_roles r2 where r2.company_id = ca and r2.template_code is null)
-     = 'Админ=construction.edit,construction.manage,construction.objects.manage,construction.view,quality.edit,quality.manage,quality.objects.manage,quality.scope.company,quality.view,security.roles.assign'
-       || ' ; Директор=construction.view,quality.scope.company,quality.view'
-       || ' ; Зам. руководителя=construction.edit,construction.manage,construction.view,quality.edit,quality.manage,quality.scope.company,quality.view,security.roles.assign'
-       || ' ; Инженер СК=construction.edit,construction.view,quality.edit,quality.view', '4 роли — права ROLE_MATRIX');
+     = 'Админ=construction.edit,construction.manage,construction.objects.manage,construction.view,quality.ai,quality.edit,quality.manage,quality.objects.manage,quality.scope.company,quality.view,security.roles.assign'
+       || ' ; Директор=construction.view,quality.ai,quality.scope.company,quality.view'
+       || ' ; Зам. руководителя=construction.edit,construction.manage,construction.view,quality.ai,quality.edit,quality.manage,quality.scope.company,quality.view,security.roles.assign'
+       || ' ; Инженер СК=construction.edit,construction.view,quality.ai,quality.edit,quality.view', '4 роли — права ROLE_MATRIX (после 034 — с quality.ai)');
   res := res || pg_temp.t((select string_agg(coalesce(r2.template_code, r2.name), ',' order by coalesce(r2.template_code, r2.name)) from core.role_assignments a join core.company_roles r2 on r2.id = a.role_id
                              where a.user_id = uadm and a.revoked_at is null) = 'company_admin,Админ', 'адм: Администратор компании остался + Админ');
   res := res || pg_temp.t((select string_agg(r2.name, ',') from core.role_assignments a join core.company_roles r2 on r2.id = a.role_id

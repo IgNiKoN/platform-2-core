@@ -13,7 +13,11 @@ const MAX_TOKENS = 2000;
 const MAX_MESSAGES = 50;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Версия функции — в каждом ответе (заголовок x-pf-ai-version): проверка, что сервер подхватил выложенный файл. */
+export const VERSION = '2';
+
 export const corsHeaders = {
+  'x-pf-ai-version': VERSION,
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-company-id',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -50,10 +54,9 @@ export function createHandler(env: Env, doFetch: Fetch = fetch): (req: Request) 
     return await r.json();
   }
 
-  /** Есть ли у учётки право «ИИ-помощник» в компании запроса.
-   *  Этап 1 (до миграции 034): достаточно членства в компании (quality.request_company вернёт её id). */
+  /** Есть ли у учётки право «ИИ-помощник» (quality.ai, миграция 034) в компании запроса — тот же quality.can, что у RLS. */
   async function canUseAi(token: string, company: string): Promise<boolean> {
-    return (await qualityRpc('request_company', {}, token, company)) === company;
+    return (await qualityRpc('can', { p_company: company, p_project: null, p_actions: ['quality.ai'] }, token, company)) === true;
   }
 
   return async (req: Request): Promise<Response> => {
