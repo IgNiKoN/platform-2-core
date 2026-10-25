@@ -79,6 +79,16 @@ test('почта (P2-0031): «ИИ-помощник» выключен у ком
   const svc = load(off);
   off.appSettings.aiEnabled = false;
   assert.equal(svc.get('aiEnabled'), false, 'выключенный пользователем остаётся выключенным');
+  // ai.service.isEnabled — через settings.get (ревью P2-0031 L1)
+  const ai = (win: N): N => {
+    const code = readFileSync(new URL('../../../../js/services/ai.service.js', import.meta.url), 'utf8');
+    runInNewContext(code, { window: win, document: win.document, console });
+    return win.RBI.services.ai;
+  };
+  const w1 = shell('email', { quality: true }, { active: true }); load(w1);
+  assert.equal(ai(w1).isEnabled(), false, 'модуль выключен у компании — ai.isEnabled false');
+  const w2 = shell('email', { quality: true, ai: true }, { active: true }); load(w2);
+  assert.equal(ai(w2).isEnabled(), true);
 });
 
 test('PIN (старый вход): Quality / Стройконтроль как раньше, пунктов Platform 2.0 нет — даже если флаг остался', () => {
