@@ -12,6 +12,7 @@ import type { QualityProject } from './quality-bridge.ts';
 import { createPlatform, homePathFor, LAST_MODULE_HASH_KEY } from './platform.service.ts';
 import type { Platform, PlatformState } from './platform.service.ts';
 import { LOGIN_CSS, renderLoginScreen } from './login-screen.ts';
+import { PASSWORD_CSS, renderMyProfile as drawMyProfile, renderPasswordScreen } from './password-screen.ts';
 import { showShellUser, restoreShellUser } from './shell-user.ts';
 
 type Rbi = Record<string, unknown> & {
@@ -32,7 +33,7 @@ function ensureStyle(): void {
   if (document.getElementById(STYLE_ID)) return;
   const s = document.createElement('style');
   s.id = STYLE_ID;
-  s.textContent = LOGIN_CSS + `
+  s.textContent = LOGIN_CSS + PASSWORD_CSS + `
 .p2-company-switch{max-width:100%;font-size:12px;font-weight:700;min-height:40px;padding:4px 8px;border:1px solid var(--card-border);border-radius:10px;background:var(--card-bg);color:var(--text-main)}`;
   document.head.appendChild(s);
 }
@@ -44,7 +45,7 @@ function getPlatform(): Platform {
   const client = auth ? getClient() : null;
   platform = createPlatform({
     auth,
-    rpc: client ? async (fn) => { const r = await client.rpc(fn); return { data: r.data, error: r.error }; } : null,
+    rpc: client ? async (fn, args) => { const r = await client.rpc(fn, args || {}); return { data: r.data, error: r.error }; } : null,
     storage: (() => { try { return window.localStorage; } catch { return null; } })(),
     // P2-0016: в Платформе 2.0 вход только почтой (+ демо); PIN — в старом приложении РБИ.
     pinActive: () => false
@@ -74,7 +75,31 @@ function showLogin(): void {
   o.classList.remove('hidden');
 }
 
+/** P2-0028: вошли временным паролем — «Придумайте пароль» поверх оболочки, дальше не пускает. */
+let passwordShown = false;
+function showPasswordScreen(email: string): void {
+  const o = overlay();
+  if (!o) return;
+  ensureStyle();
+  const host = o.querySelector('[data-p2-login-host]') as HTMLElement | null || o;
+  const p = getPlatform();
+  if (!passwordShown) {
+    renderPasswordScreen(host, {
+      email,
+      change: async (pw) => {
+        const res = await p.changePassword(pw);
+        if (res.ok) goHome();
+        return res;
+      },
+      signOut: () => { void p.signOut(); }
+    });
+    passwordShown = true;
+  }
+  o.classList.remove('hidden');
+}
+
 function hideLogin(): void {
+  passwordShown = false;
   const o = overlay();
   if (o) o.classList.add('hidden');
 }
@@ -122,11 +147,12 @@ function apply(st: PlatformState): void {
   if (amm && typeof amm.renderBottomNav === 'function') amm.renderBottomNav();   // подвкладки: вошедшему почтой — без старого Quality
   if (st.mode === 'email' && st.email) {
     const cur = st.companies.find((c) => c.id === st.companyId);
-    showShellUser(st.email, cur ? cur.name + (cur.roles[0] ? ' · ' + cur.roles[0] : '') : (st.isPlatformAdmin ? 'администратор платформы' : ''));
+    showShellUser(st.fullName || st.email, cur ? cur.name + (cur.roles[0] ? ' · ' + cur.roles[0] : '') : (st.isPlatformAdmin ? 'администратор платформы' : ''));
   } else {
     restoreShellUser();
   }
-  if (st.mode === 'none') showLogin(); else hideLogin();
+  if (st.mode === 'email' && st.mustChangePassword && st.email) { showPasswordScreen(st.email); return; }   // сначала свой пароль
+  if (st.mode === 'none') { passwordShown = false; showLogin(); } else hideLogin();
   postCacheAllowlist();
   void applyQuality(st);
 }
@@ -205,6 +231,17 @@ export const api = {
   signOut: async (): Promise<void> => { await getPlatform().signOut(); },
   showLogin,
   renderCompanySwitch,
+  /** P2-0028: «Настройки → Платформа → Мой профиль» (вызывают Настройки при показе). Не вошёл почтой — пусто. */
+  renderMyProfile: (host: HTMLElement | null): void => {
+    if (!host) return;
+    const st = getPlatform().getState();
+    if (st.mode !== 'email' || !st.email) { host.replaceChildren(); delete host.dataset.p2Profile; return; }
+    const key = st.email + '|' + (st.fullName || '');
+    if (host.dataset.p2Profile === key && host.firstChild) return;   // тот же человек — не перерисовывать (сообщение «Пароль сменён» остаётся)
+    host.dataset.p2Profile = key;
+    ensureStyle();
+    drawMyProfile(host, { email: st.email, fullName: st.fullName || null, change: (pw) => getPlatform().changePassword(pw) });
+  },
   /** Вызов функции сервера от имени вошедшего (одно соединение платформы; раздел администрирования своего клиента не создаёт). */
   rpc: async (fn: string, args?: Record<string, unknown>): Promise<{ data: unknown; error: { message: string; code?: string } | null }> => {
     getPlatform();

@@ -28,7 +28,9 @@ const LEGACY: Record<string, string> = {
   estimate_overheads: 'надбавки сметы — компания через смету',
   ks2_settings: 'настройки КС-2, ключ — объект',
   platform_admins: 'администраторы платформы, ключ — пользователь',
-  module_catalog: 'каталог платформы'
+  module_catalog: 'каталог платформы',
+  // P2-0028 (032) — не «до правила»: исключение вынесено Архитектору на приёмку (отчёт P2-0028).
+  user_profiles: 'профиль учётки: одно ФИО на человека во всех компаниях, ключ — пользователь; компания-владелец учётки — managed_company_id'
 };
 
 export interface TableDef { file: string; schema: string; name: string; hasUuidId: boolean; hasCompany: boolean }

@@ -98,6 +98,8 @@ var SettingsRender = {
                     <button type="button" id="settings-p2-login"
                         class="hidden min-h-[40px] px-4 rounded-xl border border-[var(--card-border)] font-black text-rbi-caption uppercase tracking-widest active:scale-95">Войти по почте</button>
                 </div>
+                <!-- P2-0028: «Мой профиль» (ФИО, «Сменить пароль») — рисует platform2.renderMyProfile при входе по почте -->
+                <div id="settings-p2-profile"></div>
                 <!-- СИНХРОНИЗАЦИЯ КОМАНДЫ -->
                 <details
                     class="bg-[var(--card-bg)] border border-brand-soft rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden"
@@ -1788,6 +1790,8 @@ console.log('[SettingsRender] settings.render.js markup mounted');
             if (who) who.textContent = st.email + (cur ? ' \u00b7 ' + cur.name : '') + (role ? ' \u00b7 ' + role : '');
             if (typeof p2.renderCompanySwitch === 'function') p2.renderCompanySwitch(document.getElementById('settings-p2-company'));
         } else {
+            var prof = document.getElementById('settings-p2-profile');
+            if (prof) prof.replaceChildren();
             if (title) title.textContent = mode === 'pin' ? 'Вы вошли по PIN — «Качество» и «Стройконтроль»' : 'Вы смотрите без входа (демо)';
             if (who) who.textContent = mode === 'pin'
                 ? '«План/Факт» и «Админ платформы» — при входе по почте. Админ «Качества» — подраздел «Админ Качества».'
@@ -1795,6 +1799,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
             var sw = document.querySelector('#settings-p2-company select');
             if (sw) sw.remove();
         }
+        if (mode === 'email' && typeof p2.renderMyProfile === 'function') p2.renderMyProfile(document.getElementById('settings-p2-profile'));
         if (out) out.classList.toggle('hidden', mode !== 'email');
         if (login) {
             login.classList.toggle('hidden', mode === 'email');

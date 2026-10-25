@@ -54,7 +54,7 @@ test('сессия есть (F5) → сразу вошёл почтой, мод�
   const st = await p.boot();
   assert.equal(st.mode, 'email');
   assert.equal(st.email, 'pto@test.invalid');
-  assert.deepEqual(d.rpcCalls, ['pf_my_platform']);
+  assert.deepEqual(d.rpcCalls, ['pf_my_platform', 'pf_my_profile']);
   assert.equal(st.companyId, 'a', 'по умолчанию — первая компания с модулями');
   assert.deepEqual(p.access(), { company: true, platformAdmin: false, planfact: true });
 });

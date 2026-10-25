@@ -32,7 +32,7 @@ function fakeApi(opts: { fail?: string } = {}) {
   const calls: string[] = [];
   let members: MemberRow[] = [
     A('a-adm', 'u-adm', 'alfa-admin@test.invalid', 'Администратор компании', null, true),
-    A('a-for', 'u-for', 'alfa-foreman@test.invalid', 'Прораб / мастер', 'Проект Альфа', true),
+    { ...A('a-for', 'u-for', 'alfa-foreman@test.invalid', 'Прораб / мастер', 'Проект Альфа', true), full_name: 'Петров П.П.', managed: true },
     A('a-old', 'u-for', 'alfa-foreman@test.invalid', 'Инженер ПТО', 'Проект Альфа', false, '2026-10-10T20:59:59Z'),
     { user_id: 'u-new', email: 'new@test.invalid', assignment_id: null, role_id: null, role_name: null, project_id: null, project_name: null, valid_from: null, valid_to: null, is_active: null }
   ];
@@ -51,7 +51,22 @@ function fakeApi(opts: { fail?: string } = {}) {
         counterparty_id: cp || null, counterparty_name: cp === 'k1' ? 'ООО «Альфа-Строй»' : null }];
       return res('a-new');
     },
-    async revoke(id) { calls.push(`revoke:${id}`); if (!opts.fail) members = members.filter((m) => m.assignment_id !== id); return res(null); }
+    async revoke(id) { calls.push(`revoke:${id}`); if (!opts.fail) members = members.filter((m) => m.assignment_id !== id); return res(null); },
+    async addMember(co, email, name, role, project) {
+      calls.push(`add:${co}:${email}:${name}:${role}:${project}`);
+      if (opts.fail) return { ok: false, message: opts.fail };
+      const existing = email === 'old@test.invalid';
+      members = [...members, { ...A('a-added', 'u-added', email.toLowerCase(), 'Старший прораб', project ? 'Проект Альфа' : null, true),
+        full_name: name, must_change_password: !existing, managed: !existing }];
+      return { ok: true, value: { user_id: 'u-added', temp_password: existing ? null : 'Tmp7Pass9wordQ', created: !existing } };
+    },
+    async resetPassword(co, u) { calls.push(`reset:${co}:${u}`); return res('NewTmp8Pass2xy'); },
+    async disableMember(co, u) {
+      calls.push(`disable:${co}:${u}`);
+      if (!opts.fail) members = members.filter((m) => m.user_id !== u || !m.assignment_id).concat(members.some((m) => m.user_id === u)
+        ? [{ ...members.find((m) => m.user_id === u)!, assignment_id: null, role_id: null, role_name: null, project_id: null, project_name: null, is_active: null, disabled_at: '2026-10-25T10:00:00Z' }] : []);
+      return res(null);
+    }
   };
   return { api, calls };
 }
@@ -196,4 +211,119 @@ test('роль «только своя фирма»: появляется выб
   assert.deepEqual(calls, ['assign:u-for:r-con:null:null:k1']);
   assert.match(el.querySelector('[data-assignment-id=a-new]').textContent, /Представитель подрядчика · ООО «Альфа-Строй»/);
   assert.equal(el.querySelector('[data-testid=co-firm]'), null, 'после назначения форма сброшена');
+});
+
+test('P2-0028: ФИО в списке и в выборе сотрудника; без ФИО — почта', async () => {
+  const el = mount(fakeApi().api);
+  await tick();
+  const row = el.querySelector('[data-user-id=u-for]');
+  assert.match(row.textContent, /Петров П\.П\./);
+  assert.match(row.textContent, /alfa-foreman@test\.invalid/);
+  const opt = Array.from(el.querySelectorAll('select[name=user] option')).find((o: N) => o.value === 'u-for') as N;
+  assert.equal(opt.textContent, 'Петров П.П. · alfa-foreman@test.invalid');
+});
+
+test('P2-0028: добавить сотрудника → сервер получает почту, ФИО, роль, объект; временный пароль показан один раз', async () => {
+  const { api, calls } = fakeApi();
+  const el = mount(api);
+  await tick();
+  click(el.querySelector('[data-testid=co-add-open]'));
+  await tick();
+  const form = el.querySelector('[data-testid=co-add]');
+  fill(form, { email: 'New.Man@test.invalid', full_name: 'Новиков Н.Н.', role: 'r-senior', project: 'p1' });
+  submit(form);
+  await tick();
+  assert.equal(calls[0], 'add:c1:New.Man@test.invalid:Новиков Н.Н.:r-senior:p1');
+  const box = el.querySelector('[data-testid=co-temp]');
+  assert.ok(box, 'окно временного пароля');
+  assert.equal(el.querySelector('[data-testid=co-temp-pw]').textContent, 'Tmp7Pass9wordQ');
+  assert.match(box.textContent, /Больше этот пароль не покажем/);
+  assert.match(box.textContent, /new\.man@test\.invalid/);
+  assert.match(el.querySelector('[data-user-id=u-added]').textContent, /ещё не сменил временный пароль/);
+  click(el.querySelector('[data-testid=co-temp-done]'));
+  await tick();
+  assert.equal(el.querySelector('[data-testid=co-temp]'), null, '«Готово» — пароль исчез');
+  assert.ok(!el.textContent.includes('Tmp7Pass9wordQ'));
+});
+
+test('P2-0028: «Скопировать» кладёт пароль в буфер', async () => {
+  const copied: string[] = [];
+  Object.defineProperty(globalThis.navigator, 'clipboard', { value: { writeText: async (t: string) => { copied.push(t); } }, configurable: true });
+  const el = mount(fakeApi().api);
+  await tick();
+  click(el.querySelector('[data-testid=co-add-open]'));
+  await tick();
+  const form = el.querySelector('[data-testid=co-add]');
+  fill(form, { email: 'a@test.invalid', full_name: 'Аа Б.В.', role: 'r-senior' });
+  submit(form);
+  await tick();
+  click(el.querySelector('[data-testid=co-temp-copy]'));
+  await tick();
+  assert.deepEqual(copied, ['Tmp7Pass9wordQ']);
+  assert.equal(el.querySelector('[data-testid=co-temp-copy]').textContent, 'Скопировано');
+});
+
+test('P2-0028: почта уже с учёткой — без пароля, понятное сообщение; пустые поля — подсказка без запроса', async () => {
+  const { api, calls } = fakeApi();
+  const el = mount(api);
+  await tick();
+  click(el.querySelector('[data-testid=co-add-open]'));
+  await tick();
+  let form = el.querySelector('[data-testid=co-add]');
+  submit(form);
+  await tick();
+  assert.deepEqual(calls, []);
+  assert.match(el.querySelector('[role=alert]').textContent, /почту, ФИО и роль/);
+  fill(form, { email: 'old@test.invalid', full_name: 'Старый С.С.', role: 'r-senior' });
+  submit(form);
+  await tick();
+  assert.equal(el.querySelector('[data-testid=co-temp]'), null);
+  assert.match(el.textContent, /уже есть учётка/);
+  form = el.querySelector('[data-testid=co-add]');
+  assert.equal(form, null, 'форма закрыта');
+});
+
+test('P2-0028: отказ сервера при добавлении — текст сервера', async () => {
+  const el = mount(fakeApi({ fail: 'Сотрудник с этой почтой уже есть в компании' }).api);
+  await tick();
+  click(el.querySelector('[data-testid=co-add-open]'));
+  await tick();
+  const form = el.querySelector('[data-testid=co-add]');
+  fill(form, { email: 'x@test.invalid', full_name: 'Икс И.И.', role: 'r-senior' });
+  submit(form);
+  await tick();
+  assert.match(el.querySelector('[role=alert]').textContent, /уже есть в компании/);
+});
+
+test('P2-0028: «Сбросить пароль» — только учётке компании, с подтверждением; новый пароль показан', async () => {
+  const { api, calls } = fakeApi();
+  const el = mount(api);
+  await tick();
+  assert.equal(el.querySelector('[data-user-id=u-adm] [data-testid=co-reset]'), null, 'себе — нет кнопок');
+  assert.equal(el.querySelector('[data-user-id=u-new] [data-testid=co-reset]'), null, 'учётка не компании — сброса нет');
+  click(el.querySelector('[data-user-id=u-for] [data-testid=co-reset]'));
+  await tick();
+  assert.deepEqual(calls, []);
+  click(el.querySelector('[data-user-id=u-for] [data-testid=co-reset-yes]'));
+  await tick();
+  assert.deepEqual(calls, ['reset:c1:u-for']);
+  assert.equal(el.querySelector('[data-testid=co-temp-pw]').textContent, 'NewTmp8Pass2xy');
+  assert.match(el.querySelector('[data-testid=co-temp]').textContent, /Петров П\.П\./);
+});
+
+test('P2-0028: «Отключить доступ» — с подтверждением; человек помечен, без ролей и кнопок, в выборе его нет', async () => {
+  const { api, calls } = fakeApi();
+  const el = mount(api);
+  await tick();
+  click(el.querySelector('[data-user-id=u-for] [data-testid=co-disable]'));
+  await tick();
+  click(el.querySelector('[data-user-id=u-for] [data-testid=co-disable-yes]'));
+  await tick();
+  assert.deepEqual(calls, ['disable:c1:u-for']);
+  const row = el.querySelector('[data-user-id=u-for]');
+  assert.ok(row.querySelector('[data-testid=co-badge-disabled]'));
+  assert.equal(row.querySelector('[data-testid=co-disable]'), null);
+  assert.match(el.textContent, /Доступ отключён: Петров П\.П\./);
+  const opts = Array.from(el.querySelectorAll('select[name=user] option')).map((o: N) => o.value);
+  assert.ok(!opts.includes('u-for'));
 });

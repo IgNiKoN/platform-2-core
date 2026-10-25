@@ -19,6 +19,8 @@ export interface AuthApi {
   signOut(): Promise<void>;
   getEmail(): Promise<string | null>;
   getAccess(): Promise<AccessEntry[]>;
+  /** P2-0028: сменить пароль вошедшего (GoTrue PUT /user). */
+  changePassword?(password: string): Promise<SignInResult>;
   /** Вход/выход в любом разделе Platform 2.0 (сессия общая). Возвращает отписку. */
   onAuthChange?(cb: () => void): () => void;
 }
@@ -40,8 +42,24 @@ export function readAuthConfig(): AuthConfig | null {
 export function mapAuthError(message: string): string {
   if (/invalid login credentials/i.test(message)) return 'Неверная почта или пароль';
   if (/email not confirmed/i.test(message)) return 'Почта не подтверждена';
+  if (/banned/i.test(message)) return 'Доступ отключён администратором компании';
   if (/failed to fetch|network|load failed/i.test(message)) return 'Нет связи с сервером. Попробуйте позже';
   return 'Не удалось войти. Попробуйте ещё раз';
+}
+
+/** P2-0028: ошибка смены пароля → понятный текст. */
+export function mapPasswordError(message: string): string {
+  if (/same_password|should be different/i.test(message)) return 'Новый пароль должен отличаться от прежнего';
+  if (/weak|at least|too short|characters/i.test(message)) return 'Пароль слишком короткий или простой';
+  if (/failed to fetch|network|load failed/i.test(message)) return 'Нет связи с сервером. Попробуйте позже';
+  return 'Не удалось сменить пароль. Попробуйте ещё раз';
+}
+
+/** P2-0028: правило нового пароля на экране (сервер проверяет своё): не короче 8 знаков, два поля совпадают. */
+export function checkNewPassword(password: string, repeat: string): string | null {
+  if (password.length < 8) return 'Пароль — не короче 8 знаков';
+  if (password !== repeat) return 'Пароли не совпадают';
+  return null;
 }
 
 /** Один клиент на страницу: разделы Platform 2.0 (отдельные бандлы) делят сессию и не плодят клиентов Auth. */
@@ -63,6 +81,14 @@ export function createAuthService(cfg: AuthConfig): AuthApi {
     },
     async signOut() {
       await c.auth.signOut();
+    },
+    async changePassword(password) {
+      try {
+        const { error } = await c.auth.updateUser({ password });
+        return error ? { ok: false, message: mapPasswordError(error.message) } : { ok: true };
+      } catch (e) {
+        return { ok: false, message: mapPasswordError(e instanceof Error ? e.message : '') };
+      }
     },
     async getEmail() {
       const { data } = await c.auth.getSession();

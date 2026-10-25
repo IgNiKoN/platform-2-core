@@ -13,7 +13,11 @@ export interface MemberRow {
   project_id: string | null; project_name: string | null; valid_from: string | null; valid_to: string | null; is_active: boolean | null;
   /** P2-0018: фирма подрядчика назначения (контрагент ядра). */
   counterparty_id?: string | null; counterparty_name?: string | null;
+  /** P2-0028 (032): ФИО (ядро), отключён, ждёт смены пароля, учётка создана этой компанией (её пароль можно сбросить). */
+  full_name?: string | null; disabled_at?: string | null; must_change_password?: boolean; managed?: boolean;
 }
+/** P2-0028: результат «Добавить сотрудника» — временный пароль только у новой учётки и только один раз. */
+export interface AddMemberResult { user_id: string; temp_password: string | null; created: boolean }
 export interface ContractorRef { id: string; name: string; draft?: boolean }
 export interface ProjectRef { id: string; name: string; company_id: string; archived_at?: string | null }
 export interface CompanyAuditRow {
@@ -37,6 +41,10 @@ export interface CompanyApi {
   listContractors(companyId: string): Promise<ContractorRef[]>;
   assignRole(userId: string, roleId: string, projectId: string | null, validTo: string | null, counterpartyId?: string | null): Promise<Result<string>>;
   revoke(assignmentId: string): Promise<Result>;
+  /** P2-0028: сотрудники — добавить (учётка + роль), сбросить пароль (новый временный), отключить доступ. */
+  addMember(companyId: string, email: string, fullName: string, roleId: string, projectId: string | null): Promise<Result<AddMemberResult>>;
+  resetPassword(companyId: string, userId: string): Promise<Result<string>>;
+  disableMember(companyId: string, userId: string): Promise<Result>;
 }
 
 /** Ошибка сервера → понятный текст. Русские сообщения сервера (миграция 005) показываются как есть. */
@@ -79,6 +87,14 @@ export function createCompanyService(): CompanyApi | null {
     listContractors: async (co) => ((await createCoreService()?.listCounterparties(co, false)) || [])   // REUSE: контрагенты — ядро
       .filter((x) => x.kinds.includes('contractor')).map((x) => ({ id: x.id, name: x.name, draft: x.draft })),
     assignRole: (u, r, p, to, cp) => call<string>('pf_assign_role', { p_user: u, p_role: r, p_project: p, p_valid_to: to, ...(cp ? { p_counterparty: cp } : {}) }),
-    revoke: (id) => call('pf_revoke_assignment', { p_assignment: id })
+    revoke: (id) => call('pf_revoke_assignment', { p_assignment: id }),
+    addMember: async (co, email, name, role, project) => {
+      const r = await call<AddMemberResult[]>('pf_company_add_member', { p_company: co, p_email: email, p_full_name: name, p_role: role, p_project: project });
+      if (!r.ok) return r;
+      const row = Array.isArray(r.value) ? r.value[0] : null;
+      return row ? { ok: true, value: row } : { ok: false, message: 'Не удалось выполнить. Попробуйте ещё раз' };
+    },
+    resetPassword: (co, u) => call<string>('pf_company_reset_password', { p_company: co, p_user: u }),
+    disableMember: (co, u) => call('pf_company_disable_member', { p_company: co, p_user: u })
   };
 }

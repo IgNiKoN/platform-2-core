@@ -23,6 +23,9 @@ export interface PlatformState {
   isPlatformAdmin: boolean;
   companies: PlatformCompany[];
   companyId: string | null;
+  /** P2-0028: ФИО вошедшего (ядро, pf_my_profile) и «сначала придумайте свой пароль» (временный пароль от администратора). */
+  fullName?: string | null;
+  mustChangePassword?: boolean;
 }
 
 /** Флаги для меню и Настроек (window.RBI.platformMenuAccess): модули выбранной компании, «Компания», «Администрирование платформы». */
@@ -30,7 +33,7 @@ export type PlatformAccess = Record<string, boolean>;
 
 export interface PlatformDeps {
   auth: AuthApi | null;
-  rpc: ((fn: string) => Promise<{ data: unknown; error: unknown }>) | null;
+  rpc: ((fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>) | null;
   storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null;
   /** Вошёл ли человек по старому PIN-входу Quality (облако Quality включено и подключено). */
   pinActive: () => boolean;
@@ -63,6 +66,11 @@ export function parsePlatform(data: unknown): { isPlatformAdmin: boolean; compan
   };
 }
 
+export function parseProfile(data: unknown): { fullName: string | null; mustChangePassword: boolean } {
+  const d = (data && typeof data === 'object' ? data : {}) as { full_name?: unknown; must_change_password?: unknown };
+  return { fullName: typeof d.full_name === 'string' && d.full_name ? d.full_name : null, mustChangePassword: d.must_change_password === true };
+}
+
 export function accessFor(st: PlatformState): PlatformAccess {
   const cur = st.companies.find((c) => c.id === st.companyId) || null;
   const a: PlatformAccess = {
@@ -92,6 +100,8 @@ export interface Platform {
   refresh(): Promise<PlatformState>;
   signIn(email: string, password: string): Promise<SignInResult>;
   signOut(): Promise<void>;
+  /** P2-0028: сменить свой пароль (Auth) и снять флаг на сервере (pf_password_changed). */
+  changePassword(password: string): Promise<SignInResult>;
   chooseDemo(): void;
   setCompany(id: string): void;
   getState(): PlatformState;
@@ -106,14 +116,16 @@ export function createPlatform(deps: PlatformDeps): Platform {
 
   async function loadEmail(email: string): Promise<PlatformState> {
     let parsed = { isPlatformAdmin: false, companies: [] as PlatformCompany[] };
+    let profile = { fullName: null as string | null, mustChangePassword: false };
     if (deps.rpc) {
-      const { data, error } = await deps.rpc('pf_my_platform');
-      if (!error) parsed = parsePlatform(data);
+      const [pl, pr] = await Promise.all([deps.rpc('pf_my_platform'), deps.rpc('pf_my_profile')]);
+      if (!pl.error) parsed = parsePlatform(pl.data);
+      if (!pr.error) profile = parseProfile(pr.data);
     }
     const saved = safeGet(deps.storage, COMPANY_KEY);
     const companyId = parsed.companies.some((c) => c.id === saved) ? saved
       : (parsed.companies.find((c) => c.modules.length > 0) || parsed.companies[0] || null)?.id || null;
-    return { mode: 'email', email, isPlatformAdmin: parsed.isPlatformAdmin, companies: parsed.companies, companyId };
+    return { mode: 'email', email, isPlatformAdmin: parsed.isPlatformAdmin, companies: parsed.companies, companyId, ...profile };
   }
 
   async function refresh(): Promise<PlatformState> {
@@ -148,6 +160,15 @@ export function createPlatform(deps: PlatformDeps): Platform {
       safeSet(deps.storage, COMPANY_KEY, null);
       state = { ...EMPTY };
       emit();
+    },
+    async changePassword(password) {
+      if (!deps.auth || !deps.auth.changePassword || !deps.rpc) return { ok: false, message: 'Сервер не настроен' };
+      const res = await deps.auth.changePassword(password);
+      if (!res.ok) return res;
+      const { error } = await deps.rpc('pf_password_changed');
+      if (error) return { ok: false, message: 'Пароль сменён, но сервер не принял отметку — войдите заново новым паролем' };
+      await refresh();
+      return { ok: true };
     },
     chooseDemo() {
       safeSet(deps.storage, ENTRY_KEY, 'demo');
