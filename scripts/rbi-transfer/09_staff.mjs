@@ -3,7 +3,7 @@
 //   Первая строка с пометкой «;владелец» в конце — владелец (рабочая почта): его старый профиль переходит с gmail на неё.
 // Выход: .env.rbi-staff.sql — выполнить в SQL Editor по разрешению владельца, затем удалить файл.
 // Что делает SQL (от имени администратора платформы, теми же функциями, что экран «Сотрудники»):
-//   для каждого — профиль РБИ по ФИО (rbi-test), pf_company_add_member (почта, ФИО, роль временно по старой роли:
+//   для каждого — профиль РБИ по ФИО (rbi-test, без учёта регистра: «ПЕТРУШКО Д.М.»), pf_company_add_member (почта, ФИО, роль временно по старой роли:
 //   manager → «Администратор компании», deputy_manager/director → «Руководство», engineer → «Инженер строительного контроля»
 //   на объект «Объекты RBI»), quality.rbi_transfer_people (профиль → почта → учётка).
 // Временные пароли в SQL не выводятся и нигде не сохраняются (хранится только хэш); сотрудникам их выдаёт владелец
@@ -43,10 +43,10 @@ begin
 
   for s in select * from _staff loop
     select count(*) into v_n from public.rbi_engineer_profiles
-     where project_code = 'rbi-test' and (btrim(inspector_name) = s.name or btrim(engineer_name) = s.name);
+     where project_code = 'rbi-test' and (lower(btrim(inspector_name)) = lower(s.name) or lower(btrim(engineer_name)) = lower(s.name));
     if v_n <> 1 then raise exception 'Профиль «%»: найдено %, нужен ровно один', s.name, v_n; end if;
     select * into v_prof from public.rbi_engineer_profiles
-     where project_code = 'rbi-test' and (btrim(inspector_name) = s.name or btrim(engineer_name) = s.name);
+     where project_code = 'rbi-test' and (lower(btrim(inspector_name)) = lower(s.name) or lower(btrim(engineer_name)) = lower(s.name));
     v_tpl := case v_prof.role when 'manager' then 'company_admin' when 'deputy_manager' then 'management'
                               when 'director' then 'management' when 'engineer' then 'qc_engineer' end;
     if v_tpl is null then raise exception 'Профиль «%»: роль «%» не сопоставлена', s.name, v_prof.role; end if;
