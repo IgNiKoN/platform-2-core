@@ -235,6 +235,32 @@ describe('createPhotoLazyLoader', () => {
   });
 });
 
+describe('createPhotoLazyLoader: сломанное превью (P2-0032)', () => {
+  it('адрес blob: перестал работать (iPhone после перехода между разделами) — превью перезагружается, не больше двух раз подряд', async () => {
+    const observed = [];
+    const IO = class { constructor(cb) { this.cb = cb; } observe(el) { observed.push(el); } unobserve() {} };
+    const attrs = { 'data-photo-ref': 'https://x/p.jpg' };
+    const img = { src: 'blob:dead', isConnected: true,
+      getAttribute: (n) => (n in attrs ? attrs[n] : null), setAttribute: (n, v) => { attrs[n] = String(v); }, removeAttribute: (n) => { delete attrs[n]; } };
+    const forgotten = [];
+    const loader = createPhotoLazyLoader({
+      resolve: async () => ({ state: 'ok', url: 'blob:new' }), placeholderFor: () => 'ph', IntersectionObserver: IO,
+      document: makeDoc([]), forgetUrl: (u) => forgotten.push(u)
+    });
+    assert.equal(loader.heal(img), true);
+    assert.equal(img.src, 'ph');
+    assert.equal(attrs['data-local-src'], 'https://x/p.jpg');
+    assert.deepEqual(forgotten, ['blob:dead']);
+    assert.equal(observed[0], img);
+    img.src = 'blob:dead2';
+    assert.equal(loader.heal(img), true);
+    img.src = 'blob:dead3';
+    assert.equal(loader.heal(img), false, 'третья попытка подряд — не зацикливаться');
+    const noRef = { src: 'blob:x', getAttribute: () => null, setAttribute() {}, removeAttribute() {} };
+    assert.equal(loader.heal(noRef), false);
+  });
+});
+
 // ---------- PhotoManager (с заглушками IndexedDB/сети) ----------
 describe('PhotoManager', () => {
   let PM;
@@ -351,6 +377,34 @@ describe('PhotoManager', () => {
     delete globalThis.AuditState;
     for (const r of ['local://a1', 'local://a2', 'local://d', 'local://s1', 'https://s/x.jpg']) assert.ok(refs.has(r), r);
     assert.ok(![...refs].some(r => r.startsWith('data:')));
+  });
+
+  it('P2-0032: адрес, который сейчас на странице, при освобождении не отзывается (iPhone рисовал бы «сломанную картинку»); ушёл со страницы — отзывается', async () => {
+    const revoked = [];
+    const orig = URL.revokeObjectURL;
+    URL.revokeObjectURL = (u) => { revoked.push(u); };
+    try {
+      PM._rememberObjectUrl('k1', 'blob:shown');
+      PM._rememberObjectUrl('k2', 'blob:gone');
+      pageImgs = ['blob:shown'];
+      PM.releaseCachedUrl('k1');
+      PM.releaseCachedUrl('k2');
+      assert.deepEqual(revoked, ['blob:gone']);
+      assert.equal(PM.cache.k1, undefined, 'запись кэша убрана — следующий показ возьмёт фото из базы');
+      pageImgs = [];
+      PM.sweepUnusedUrls({ force: true });
+      assert.deepEqual(revoked, ['blob:gone', 'blob:shown']);
+    } finally {
+      URL.revokeObjectURL = orig;
+    }
+  });
+
+  it('P2-0032: forgetUrl убирает все записи кэша с этим адресом', async () => {
+    PM._rememberObjectUrl('a', 'blob:z');
+    PM._rememberObjectUrl('thumb:a', 'blob:z');
+    PM.forgetUrl('blob:z');
+    assert.equal(PM.cache.a, undefined);
+    assert.equal(PM.cache['thumb:a'], undefined);
   });
 
   it('демо-режим: адреса не отзываются (база на устройстве отключена, фото только в памяти)', async () => {
