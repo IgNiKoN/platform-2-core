@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.59.0';
-const SW_VERSION = '18.86.1';
+const SW_VERSION = '18.86.2';
 // P2-0013: «разработка / выпуск» — из единственного переключателя js/services/config.service.js (выпуск: rbi-quality-* вместо старой версии).
 importScripts('./js/services/config.service.js');
 const CACHE_PREFIX = (self.APP_CONFIG && self.APP_CONFIG.SW_CACHE_PREFIX) || 'platform2-';
@@ -316,6 +316,7 @@ const urlsToCache = [
 // кнопку «Обновить» → postMessage('SKIP_WAITING'), иначе controllerchange
 // + location.reload на iPhone выглядят как внезапная перезагрузка.
 self.addEventListener('install', event => {
+  const legacyAtStart = hasLegacyCache();   // P2-0032: до скачивания — пока кэш старого приложения на месте
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       console.log('[SW] Кэшируем ядро и библиотеки...');
@@ -360,7 +361,7 @@ self.addEventListener('install', event => {
         })
 
       );
-    }).then(() => hasLegacyCache()).then((legacy) => {
+    }).then(() => Promise.all([legacyAtStart, hasLegacyCache()])).then(([a, b]) => a || b).then((legacy) => {
       // P2-0032: поверх старого приложения РБИ — сразу (его страница не знает новых файлов и может зависнуть)
       if (!self.registration.active || legacy) {
         return self.skipWaiting();

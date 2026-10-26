@@ -1,15 +1,16 @@
 /**
  * P2-0032: разовый переход устройства со старого приложения РБИ (тот же адрес) на Платформу 2.0.
- * Старая локальная база (RBI_QUALITY_DB) и кэш старого приложения (rbi-quality-v*) удаляются один раз; после успеха —
+ * Старая локальная база (RBI_QUALITY_DB) удаляется один раз; после успеха —
  * отметка LEGACY_CLEANUP_KEY, при следующих открытиях ничего не делается. Не удалось (база занята другой вкладкой,
  * ошибка) — отметки нет, повтор при следующем открытии. Старые черновики и очередь не читаются и не отправляются
- * (решение владельца 25.10.2026). Новая база (PLATFORM2_DB*) и кэш (platform2-*) — другие имена, не затрагиваются.
+ * (решение владельца 25.10.2026). Новая база (PLATFORM2_DB*) — другое имя, не затрагивается.
+ * Кэш старого приложения (rbi-quality-*) удаляет кэш приложения (sw.js) при включении: по нему он узнаёт переход со
+ * старого приложения и включается сразу — удалить его здесь раньше значило бы оставить старый кэш приложения главным.
  */
 import { QUALITY_COMPANY_KEY, SYNC_STATE_KEYS } from './quality-bridge.ts';
 
 export const LEGACY_CLEANUP_KEY = 'platform2_legacy_cleanup_v1';
 export const LEGACY_DB_NAME = 'RBI_QUALITY_DB';
-export const LEGACY_CACHE_PREFIX = 'rbi-quality-';
 /** Отложенное состояние синхронизации «без компании» (quality-bridge.ts) — на старом устройстве это состояние старого приложения. */
 const EMPTY_SLOT_STASH = 'platform2_quality_state_';
 
@@ -19,8 +20,6 @@ export interface LegacyDeviceDeps {
   store: Store | null;
   /** Удалить базу устройства; resolve — удалена (или её не было), reject — не удалось. */
   deleteDatabase: ((name: string) => Promise<void>) | null;
-  cacheKeys: (() => Promise<string[]>) | null;
-  deleteCache: ((name: string) => Promise<boolean>) | null;
   now?: () => string;
 }
 
@@ -41,10 +40,6 @@ export async function cleanupLegacyDevice(deps: LegacyDeviceDeps): Promise<Legac
   } catch { return 'retry'; }
   try {
     if (deps.deleteDatabase) await deps.deleteDatabase(LEGACY_DB_NAME);
-    if (deps.cacheKeys && deps.deleteCache) {
-      const names = (await deps.cacheKeys()).filter((n) => n.startsWith(LEGACY_CACHE_PREFIX));
-      for (const n of names) await deps.deleteCache(n);
-    }
   } catch { return 'retry'; }
   try { s.setItem(LEGACY_CLEANUP_KEY, deps.now ? deps.now() : new Date().toISOString()); } catch { return 'retry'; }
   return 'done';

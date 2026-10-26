@@ -83,6 +83,14 @@ test('установка поверх старого приложения: вк�
   assert.deepEqual(sw.calls.navigated, ['https://app.rbi-q.ru/#/quality/audit']);
 });
 
+test('кэш старого приложения пропал во время скачивания (страница уже открылась) — всё равно включается сразу', async () => {
+  const sw = loadSw({ [OLD]: { '/index.html': 'OLD' } }, { '/index.html': 'NEW' });
+  const realOpen = sw.ctx.caches.open;
+  sw.ctx.caches.open = async (n: string) => { sw.stores.delete(OLD); return realOpen(n); };
+  await sw.fire('install');
+  assert.equal(sw.calls.skipWaiting, 1);
+});
+
 test('обычное обновление (старого кэша нет): ждёт кнопку, окна не перезагружает', async () => {
   const sw = loadSw({ 'platform2-v18.85.0': { '/index.html': 'PREV' } }, { '/index.html': 'NEW' });
   await sw.fire('install');

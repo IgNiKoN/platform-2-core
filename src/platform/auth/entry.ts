@@ -222,9 +222,7 @@ function cleanupLegacy(): void {
   try { store = window.localStorage; } catch { store = null; }
   void cleanupLegacyDevice({
     store,
-    deleteDatabase: typeof indexedDB !== 'undefined' ? (n) => deleteIndexedDb(indexedDB, n) : null,
-    cacheKeys: typeof caches !== 'undefined' ? () => caches.keys() : null,
-    deleteCache: typeof caches !== 'undefined' ? (n) => caches.delete(n) : null
+    deleteDatabase: typeof indexedDB !== 'undefined' ? (n) => deleteIndexedDb(indexedDB, n) : null
   }).catch(() => { /* повтор при следующем открытии */ });
 }
 
