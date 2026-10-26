@@ -28,7 +28,7 @@ function loadSw(initial: Record<string, Record<string, string>>, net: Record<str
     };
   };
   const handlers: Record<string, (e: N) => void> = {};
-  const calls = { skipWaiting: 0, navigated: [] as string[] };
+  const calls = { skipWaiting: 0, navigated: [] as string[], fetches: [] as { url: string; cache?: string }[] };
   const ctx: N = {
     self: {
       addEventListener: (t: string, fn: (e: N) => void) => { handlers[t] = fn; },
@@ -46,7 +46,7 @@ function loadSw(initial: Record<string, Record<string, string>>, net: Record<str
       match: async (r: N) => { for (const m of stores.values()) if (m.has(key(r))) return res(m.get(key(r))!); return undefined; }
     },
     console: { log: () => {}, warn: () => {}, error: () => {} }, URL, Promise, setTimeout,
-    fetch: async (r: N) => (key(r) in net ? res(net[key(r)]) : Promise.reject(new Error('offline')))
+    fetch: async (r: N, init?: N) => { calls.fetches.push({ url: key(r), cache: init && init.cache }); return key(r) in net ? res(net[key(r)]) : Promise.reject(new Error('offline')); }
   };
   ctx.importScripts = () => { runInNewContext(CONFIG, ctx); };
   runInNewContext(SW + '\n;self.__cacheName = CACHE_NAME;', ctx);
@@ -98,4 +98,17 @@ test('обычное обновление (старого кэша нет): жд
   await sw.fire('activate');
   assert.equal(sw.stores.has('platform2-v18.85.0'), false);
   assert.deepEqual(sw.calls.navigated, []);
+});
+
+test('файл приложения из сети — с перепроверкой (cache: no-cache), а не из кэша браузера: иначе старый файл прежнего приложения встречается с новым', async () => {
+  const sw = loadSw({}, { '/js/modules/quality/features/history/history.state.js': 'NEW' });
+  const r = await sw.fire('fetch', { request: { url: 'https://app.rbi-q.ru/js/modules/quality/features/history/history.state.js', method: 'GET', mode: 'cors' } });
+  assert.equal(await r.text(), 'NEW');
+  assert.deepEqual(sw.calls.fetches[sw.calls.fetches.length - 1], { url: '/js/modules/quality/features/history/history.state.js', cache: 'no-cache' });
+});
+
+test('страница (navigate) — как есть, без замены режима', async () => {
+  const sw = loadSw({}, { '/index.html': 'NEW' });
+  await sw.fire('fetch', { request: { url: 'https://app.rbi-q.ru/index.html', method: 'GET', mode: 'navigate' } });
+  assert.equal(sw.calls.fetches[sw.calls.fetches.length - 1]?.cache, undefined);
 });
