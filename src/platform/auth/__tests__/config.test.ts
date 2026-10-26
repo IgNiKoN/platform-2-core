@@ -47,8 +47,9 @@ async function activate(sw: N, names: string[]): Promise<string[]> {
   return [...left];
 }
 
-test('кэш приложения: старые кэши platform2-* заменяются, чужие (rbi-quality-* старого приложения) не трогаются', async () => {
+test('кэш приложения: старые кэши platform2-* и кэш старого приложения rbi-quality-* (P2-0032) удаляются, прочие не трогаются', async () => {
   const sw = loadSw([]);
+  sw.ctx.self.clients.matchAll = async () => [];
   assert.ok(sw.ctx.self.__cacheName.startsWith('platform2-v'));
-  assert.deepEqual(await activate(sw, ['rbi-quality-v18.59.59', 'platform2-v1', sw.ctx.self.__cacheName]), ['rbi-quality-v18.59.59', sw.ctx.self.__cacheName]);
+  assert.deepEqual(await activate(sw, ['rbi-quality-v18.59.59', 'platform2-v1', 'other-app', sw.ctx.self.__cacheName]), ['other-app', sw.ctx.self.__cacheName]);
 });
