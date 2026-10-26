@@ -71,6 +71,7 @@ begin
     select c, m, true from unnest(array[ca, cb]) c, unnest(array['quality', 'construction']) m
     on conflict (company_id, module) do update set enabled = true;
   -- как у РБИ: все объекты Качества — внутри одного объекта ядра
+  perform set_config('quality.object_sync', '1', true);   -- данные «как до 039b»: без синхронизации объектов ядра и Качества
   insert into core.projects(id, company_id, name) values (pa, ca, 'Объекты Альфы 033'), (pb, cb, 'Объекты Беты 033');
   perform set_config('m33.pc', pa::text, true);
   insert into quality.project_objects(id, canonical_key, display_name, synonyms, core_company_id) values
@@ -79,6 +80,7 @@ begin
     (ob, 'большевиков,22 (гений)', 'Чужой объект', '{}', cb);
   insert into quality.location_nodes(id, canonical_key, "displayName", "nodeType", core_company_id) values
     ('n1-m33', 'Большевиков,22 (гений)', 'Большевиков, 22', 'object', ca);
+  perform set_config('quality.object_sync', '', true);
   -- 4 роли «как в РБИ» (наборы прав — таблица «флаг ROLE_MATRIX → действие», этап 2)
   insert into core.company_roles(company_id, name) values (ca, 'Админ 033') returning id into r_adm;
   insert into core.company_roles(company_id, name) values (ca, 'Зам. руководителя 033') returning id into r_dep;

@@ -54,6 +54,7 @@ begin
   insert into auth.users(id, email) select u, u || '@test.invalid' from unnest(array[ua, ua_eco, ua_qc, ub]) u;
   insert into core.companies(id, name, is_test) values (ca, 'Альфа 018', true), (cb, 'Бета 018', true);
   insert into core.company_members(company_id, user_id) values (ca, ua), (ca, ua_eco), (ca, ua_qc), (cb, ub);
+  perform set_config('quality.object_sync', '1', true);   -- структура и права таблиц «как до 039b/039c»: без синхронизации объектов
   insert into core.projects(id, company_id, name) values (pa, ca, 'Спутник'), (pb, cb, 'Проект Б');
   insert into core.company_modules(company_id, module, enabled)
     select c, m, true from unnest(array[ca, cb]) c, unnest(array['quality', 'construction']) m
@@ -75,7 +76,14 @@ begin
      and tg.tgname <> 'contractor_directory_to_core'    -- 018e: подрядчик из Качества → «Контрагенты»
      and tg.tgname not like '%_set_author'              -- 020: автор записи
      and tg.tgname not like '%_refresh_object_keys'     -- 033: пересчёт признаков закреплённых объектов
-     and tg.tgname not like '%_queue_guard';            -- 037: решение по заявке — только администратор
+     and tg.tgname not like '%_queue_guard'             -- 037: решение по заявке — только администратор
+     and tg.tgname not like '%_record_object'           -- 039: объект ядра записи
+     and tg.tgname not like '%_record_counterparty'     -- 039a: контрагент записи
+     and tg.tgname not like '%_queue_unresolved'        -- 039b: «не разобрано» → очередь названий
+     and tg.tgname not like '%_reresolve'               -- 039b: заново узнать «не разобрано»
+     and tg.tgname not like '%_reresolve_flush'         -- 039d: пересчёт «не разобрано» один раз на запрос
+     and tg.tgname <> 'location_nodes_object_sync'      -- 039b: узел-объект ↔ объект Качества и ядра
+     and tg.tgname <> 'project_objects_core_object';     -- 039: объект ядра объекта Качества
   res := res || pg_temp.t(n = 0, 'в quality только триггер привязки к компании (лишние: ' || coalesce(s, '—') || ')');
   select count(*), string_agg(p.proname, ', ') into n, s from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
    where ns.nspname = 'quality' and has_function_privilege('anon', p.oid, 'execute');

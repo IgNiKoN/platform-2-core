@@ -102,9 +102,9 @@ export function roleFor(actions: string[]): string {
 
 /** Доступ из quality.my_access: projects — назначенные объекты ядра (null — вся компания), contractor — фирма назначения,
  *  objects — ключи закреплённых объектов Качества (P2-0033, 033; null — все объекты). */
-export interface QualityAccess { actions: string[]; templates: string[]; projects: string[] | null; contractor: string; objects: string[] | null }
+export interface QualityAccess { actions: string[]; templates: string[]; projects: string[] | null; contractor: string; objects: string[] | null; container: string | null }
 export function parseAccess(data: unknown): QualityAccess {
-  const d = (data && typeof data === 'object' ? data : {}) as { actions?: unknown; templates?: unknown; projects?: unknown; contractor?: unknown; objects?: unknown };
+  const d = (data && typeof data === 'object' ? data : {}) as { actions?: unknown; templates?: unknown; projects?: unknown; contractor?: unknown; objects?: unknown; container?: unknown };
   const c = (d.contractor && typeof d.contractor === 'object' ? d.contractor : {}) as { name?: unknown };
   return {
     actions: Array.isArray(d.actions) ? d.actions.map(String) : [],
@@ -112,7 +112,9 @@ export function parseAccess(data: unknown): QualityAccess {
     projects: Array.isArray(d.projects) ? d.projects.map(String) : null,
     contractor: typeof c.name === 'string' ? c.name : '',
     objects: Array.isArray(d.objects)
-      ? d.objects.map((o) => (o && typeof o === 'object' ? String((o as { key?: unknown }).key ?? '') : '')).filter(Boolean) : null
+      ? d.objects.map((o) => (o && typeof o === 'object' ? String((o as { key?: unknown }).key ?? '') : '')).filter(Boolean) : null,
+    // P2-0035 (039b): служебный объект-контейнер компании (как «Объекты RBI») — Качество работает в нём
+    container: typeof d.container === 'string' && d.container ? d.container : null
   };
 }
 
@@ -305,13 +307,16 @@ export async function applyQualityBridge(st: PlatformState, deps: BridgeDeps): P
     return parseAccess(error ? null : data);
   };
   // «Синхронизация команды» — только свои объекты (назначения роли); вся компания — все объекты.
-  const scope = (await loadAccess(null)).projects;
-  const projects = (await deps.listProjects(company).catch(() => [] as QualityProject[]))
-    .filter((p) => scope === null || scope.includes(p.id));
-  const savedProject = deps.store.getItem(PROJECT_PREFIX + company);
-  const projectId = projects.some((p) => p.id === savedProject) ? savedProject
-    : projects.length === 1 ? projects[0].id : null;
+  const first = await loadAccess(null);
+  const scope = first.projects;
   const cur = st.companies.find((c) => c.id === company);
+  // P2-0035: у компании с контейнером объекты ЖК — внутри него; список объектов ядра контейнера не содержит
+  const projects = first.container ? [{ id: first.container, name: cur ? cur.name : '' }]
+    : (await deps.listProjects(company).catch(() => [] as QualityProject[])).filter((p) => scope === null || scope.includes(p.id));
+  const savedProject = deps.store.getItem(PROJECT_PREFIX + company);
+  const projectId = first.container ? first.container
+    : projects.some((p) => p.id === savedProject) ? savedProject
+    : projects.length === 1 ? projects[0].id : null;
   const email = st.email;
   // P2-0028: имя инженера в записях Качества — ФИО учётки (ядро); без ФИО — почта, как раньше.
   const engineerName = (st.fullName || '').trim() || email;

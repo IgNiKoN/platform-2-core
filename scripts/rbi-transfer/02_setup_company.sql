@@ -34,9 +34,12 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
   select core_project_id into v_p from quality.rbi_transfer_projects where core_company_id = v_c and old_code = 'rbi-test';
   if v_p is null then
+    perform set_config('quality.object_sync', '1', true);   -- P2-0035 (039b): контейнер — не объект Качества
     v_p := public.pf_create_project(v_c, v_name, 'rbi-test');
+    perform set_config('quality.object_sync', '', true);
     insert into quality.rbi_transfer_projects(core_company_id, old_code, core_project_id) values (v_c, 'rbi-test', v_p);
   end if;
+  update core.projects set quality_container = true where id = v_p and not quality_container;   -- P2-0035: служебный контейнер, скрыт из списков
   insert into quality.rbi_transfer_people(core_company_id, old_profile_id, email, user_id) values (v_c, v_prof, lower(btrim(v_email)), v_owner)
   on conflict (core_company_id, old_profile_id) do update set email = excluded.email, user_id = excluded.user_id;
   perform set_config('request.jwt.claim.sub', '', true);
