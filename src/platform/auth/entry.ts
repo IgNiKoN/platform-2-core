@@ -14,6 +14,7 @@ import type { Platform, PlatformState } from './platform.service.ts';
 import { LOGIN_CSS, renderLoginScreen } from './login-screen.ts';
 import { PASSWORD_CSS, renderMyProfile as drawMyProfile, renderPasswordScreen } from './password-screen.ts';
 import { showShellUser, restoreShellUser } from './shell-user.ts';
+import { cleanupLegacyDevice, deleteIndexedDb } from './legacy-device.ts';
 
 type Rbi = Record<string, unknown> & {
   services?: { shell?: { renderSidebar?: () => void; renderMobileModuleMenu?: () => void } };
@@ -215,8 +216,18 @@ function postCacheAllowlist(): void {
 }
 
 /** Запуск при открытии (оболочка). Повторный вызов — то же состояние; экран входа показывается, если никто не вошёл. */
+/** P2-0032: разовая чистка старого приложения РБИ на этом устройстве (не задерживает вход). */
+function cleanupLegacy(): void {
+  let store: Storage | null = null;
+  try { store = window.localStorage; } catch { store = null; }
+  void cleanupLegacyDevice({
+    store,
+    deleteDatabase: typeof indexedDB !== 'undefined' ? (n) => deleteIndexedDb(indexedDB, n) : null
+  }).catch(() => { /* повтор при следующем открытии */ });
+}
+
 export function start(): Promise<PlatformState> {
-  if (!started) started = getPlatform().boot();
+  if (!started) { cleanupLegacy(); started = getPlatform().boot(); }
   else void started.then((st) => { if (st.mode === 'none') showLogin(); });
   return started;
 }
